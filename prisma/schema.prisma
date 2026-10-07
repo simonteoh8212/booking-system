@@ -1,0 +1,115 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Service catalog
+// ---------------------------------------------------------------------------
+model Service {
+  id              String    @id @default(cuid())
+  name            String
+  description     String?
+  category        String?
+  durationMinutes Int
+  priceCents      Int
+  isActive        Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  bookings        Booking[]
+
+  @@map("services")
+}
+
+// ---------------------------------------------------------------------------
+// Business operating hours (one row per day-of-week, 0 = Sunday … 6 = Saturday)
+// ---------------------------------------------------------------------------
+model BusinessSchedule {
+  id        String  @id @default(cuid())
+  dayOfWeek Int     @unique // 0-6
+  openTime  String  // "HH:mm" e.g. "09:00"
+  closeTime String  // "HH:mm" e.g. "18:00"
+  isClosed  Boolean @default(false)
+
+  @@map("business_schedules")
+}
+
+// ---------------------------------------------------------------------------
+// Admin-defined blackout windows (lunch, holidays, etc.)
+// ---------------------------------------------------------------------------
+model TimeBlockout {
+  id            String   @id @default(cuid())
+  startDatetime DateTime
+  endDatetime   DateTime
+  reason        String?
+  createdAt     DateTime @default(now())
+
+  @@map("time_blockouts")
+}
+
+// ---------------------------------------------------------------------------
+// Customer records (upserted by phone number)
+// ---------------------------------------------------------------------------
+model Customer {
+  id          String    @id @default(cuid())
+  name        String
+  phoneNumber String    @unique
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  bookings    Booking[]
+
+  @@map("customers")
+}
+
+// ---------------------------------------------------------------------------
+// Bookings
+// ---------------------------------------------------------------------------
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+model Booking {
+  id              String        @id @default(cuid())
+  referenceCode   String        @unique
+  customerId      String
+  serviceId       String
+  startDatetime   DateTime
+  endDatetime     DateTime
+  totalPriceCents Int
+  status          BookingStatus @default(PENDING)
+  notes           String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  customer        Customer      @relation(fields: [customerId], references: [id])
+  service         Service       @relation(fields: [serviceId], references: [id])
+
+  @@index([startDatetime])
+  @@index([status])
+  @@map("bookings")
+}
+
+// ---------------------------------------------------------------------------
+// Admin user (single-tenant — typically one row)
+// ---------------------------------------------------------------------------
+model AdminUser {
+  id           String   @id @default(cuid())
+  username     String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+
+  @@map("admin_users")
+}
