@@ -34,7 +34,34 @@ const STATUS_CONFIG: Record<
   },
 };
 
-export function BookingStatusBadge({ status }: { status: BookingStatus }) {
+export function BookingStatusBadge({
+  status,
+  receiptSubmittedAt,
+}: {
+  status: BookingStatus;
+  receiptSubmittedAt?: string | null;
+}) {
+  if (status === "PENDING") {
+    if (receiptSubmittedAt) {
+      return (
+        <Badge
+          variant="outline"
+          className="border-indigo-500 text-indigo-700 bg-indigo-50 dark:bg-indigo-950/30 dark:text-indigo-300 dark:border-indigo-800"
+        >
+          Receipt Sent
+        </Badge>
+      );
+    }
+    return (
+      <Badge
+        variant="outline"
+        className="border-amber-500 text-amber-700 bg-amber-50 dark:bg-amber-950/30 dark:text-amber-300 dark:border-amber-800"
+      >
+        Holding (Unpaid)
+      </Badge>
+    );
+  }
+
   const config = STATUS_CONFIG[status];
   return (
     <Badge variant={config.variant} className={config.className}>

@@ -28,7 +28,8 @@ interface BookingState {
   // Step 3 – customer details
   customerDetails: CustomerDetails;
 
-  // Step 4 – confirmation
+  // Step 4 – pending hold & confirmation
+  pendingHold: BookingConfirmation | null;
   confirmation: BookingConfirmation | null;
 
   // Loading/error feedback
@@ -56,7 +57,8 @@ interface BookingActions {
   updateCustomerDetails: (details: Partial<CustomerDetails>) => void;
 
   // Step 4
-  setConfirmation: (confirmation: BookingConfirmation) => void;
+  setPendingHold: (hold: BookingConfirmation | null) => void;
+  setConfirmation: (confirmation: BookingConfirmation | null) => void;
 
   // Submit state
   setSubmitting: (value: boolean) => void;
@@ -80,6 +82,7 @@ const initialState: BookingState = {
     phoneNumber: "",
     notes: "",
   },
+  pendingHold: null,
   confirmation: null,
   isSubmitting: false,
   submitError: null,
@@ -112,6 +115,7 @@ export const useBookingStore = create<BookingState & BookingActions>()(
           selectedDate: null,
           selectedSlotStart: null,
           selectedSlotEnd: null,
+          pendingHold: null,
         }),
 
       selectDate: (date) =>
@@ -120,15 +124,18 @@ export const useBookingStore = create<BookingState & BookingActions>()(
           // Reset slot when date changes
           selectedSlotStart: null,
           selectedSlotEnd: null,
+          pendingHold: null,
         }),
 
       selectSlot: (startIso, endIso) =>
-        set({ selectedSlotStart: startIso, selectedSlotEnd: endIso }),
+        set({ selectedSlotStart: startIso, selectedSlotEnd: endIso, pendingHold: null }),
 
       updateCustomerDetails: (details) =>
         set((state) => ({
           customerDetails: { ...state.customerDetails, ...details },
         })),
+
+      setPendingHold: (pendingHold) => set({ pendingHold }),
 
       setConfirmation: (confirmation) => set({ confirmation }),
 

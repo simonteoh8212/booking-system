@@ -91,6 +91,7 @@ model Booking {
   totalPriceCents Int
   status          BookingStatus @default(PENDING)
   notes           String?
+  receiptSubmittedAt DateTime?
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 

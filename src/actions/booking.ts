@@ -10,12 +10,14 @@ import { buildWhatsAppUrl } from "@/lib/whatsapp";
 import type {
   ActionResult,
   BookingConfirmation,
+  CustomerBookingLookupDto,
   TimeSlot,
 } from "@/types";
 import { addMinutes, areIntervalsOverlapping, subMinutes } from "date-fns";
 
 // Slot granularity in minutes (every 15 min)
 const SLOT_INTERVAL = 15;
+const HOLD_DURATION_MINUTES = 7;
 
 // ----------------------------------------------------------------
 // getAvailableSlots
@@ -25,12 +27,14 @@ export async function getAvailableSlots(
   serviceDurationMinutes: number
 ): Promise<ActionResult<TimeSlot[]>> {
   try {
-    // 0. Auto-release stale PENDING bookings older than 30 minutes
-    const thirtyMinutesAgo = subMinutes(new Date(), 30);
+    // 0. Auto-release stale unsubmitted PENDING holds older than 7 minutes
+    // (Note: bookings where receiptSubmittedAt is set are NEVER auto-cancelled)
+    const holdCutoff = subMinutes(new Date(), HOLD_DURATION_MINUTES);
     await prisma.booking.updateMany({
       where: {
         status: "PENDING",
-        createdAt: { lt: thirtyMinutesAgo },
+        receiptSubmittedAt: null,
+        createdAt: { lt: holdCutoff },
       },
       data: { status: "CANCELLED" },
     });
@@ -68,7 +72,7 @@ export async function getAvailableSlots(
       select: { startDatetime: true, endDatetime: true },
     });
 
-    // 4. Fetch blockouts that overlap with this day
+    // 5. Fetch blockouts that overlap with this day
     const blockouts = await prisma.timeBlockout.findMany({
       where: {
         startDatetime: { lte: endOfDay },
@@ -77,7 +81,7 @@ export async function getAvailableSlots(
       select: { startDatetime: true, endDatetime: true },
     });
 
-    // 5. Build busy intervals
+    // 6. Build busy intervals
     const busyIntervals = [
       ...existingBookings.map((b) => ({
         start: b.startDatetime,
@@ -89,7 +93,7 @@ export async function getAvailableSlots(
       })),
     ];
 
-    // 6. Generate candidate start times at SLOT_INTERVAL increments
+    // 7. Generate candidate start times at SLOT_INTERVAL increments
     const slots: TimeSlot[] = [];
     let cursor = new Date(dayOpen);
 
@@ -129,7 +133,7 @@ export async function getAvailableSlots(
 }
 
 // ----------------------------------------------------------------
-// createBooking
+// createBookingHold (Stage 1: Hold slot for 7 minutes)
 // ----------------------------------------------------------------
 interface CreateBookingInput {
   serviceId: string;
@@ -139,7 +143,7 @@ interface CreateBookingInput {
   notes?: string;
 }
 
-export async function createBooking(
+export async function createBookingHold(
   input: CreateBookingInput
 ): Promise<ActionResult<BookingConfirmation>> {
   const { serviceId, startDatetimeIso, customerName, phoneNumber, notes } = input;
@@ -158,17 +162,35 @@ export async function createBooking(
       // 1. Acquire transaction-level advisory lock to serialize concurrent reservation attempts
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('booking_reservation_lock'))`;
 
-      // 2. Auto-release stale PENDING bookings older than 30 minutes
-      const thirtyMinutesAgo = subMinutes(new Date(), 30);
+      // 2. Auto-release expired unsubmitted PENDING holds (older than 7 minutes)
+      const holdCutoff = subMinutes(new Date(), HOLD_DURATION_MINUTES);
       await tx.booking.updateMany({
         where: {
           status: "PENDING",
-          createdAt: { lt: thirtyMinutesAgo },
+          receiptSubmittedAt: null,
+          createdAt: { lt: holdCutoff },
         },
         data: { status: "CANCELLED" },
       });
 
-      // 3. Check for overlapping bookings
+      // 3. Upsert customer by phone number
+      const customer = await tx.customer.upsert({
+        where: { phoneNumber },
+        update: { name: customerName },
+        create: { name: customerName, phoneNumber },
+      });
+
+      // 4. Invalidate any previous unsubmitted holds for THIS customer (prevents 1 user locking multiple slots)
+      await tx.booking.updateMany({
+        where: {
+          customerId: customer.id,
+          status: "PENDING",
+          receiptSubmittedAt: null,
+        },
+        data: { status: "CANCELLED" },
+      });
+
+      // 5. Check for overlapping active bookings
       const conflict = await tx.booking.findFirst({
         where: {
           status: { notIn: ["CANCELLED", "NO_SHOW"] },
@@ -197,13 +219,6 @@ export async function createBooking(
         throw new Error("SLOT_BLOCKED");
       }
 
-      // Upsert customer by phone number
-      const customer = await tx.customer.upsert({
-        where: { phoneNumber },
-        update: { name: customerName },
-        create: { name: customerName, phoneNumber },
-      });
-
       // Generate unique reference code (retry on collision)
       let referenceCode = generateReferenceCode();
       let attempts = 0;
@@ -214,7 +229,7 @@ export async function createBooking(
         attempts++;
       }
 
-      // Create the booking (PENDING status — slot is now locked)
+      // Create the booking with PENDING status and receiptSubmittedAt: null (7-min hold)
       const booking = await tx.booking.create({
         data: {
           referenceCode,
@@ -225,11 +240,14 @@ export async function createBooking(
           totalPriceCents: service.priceCents,
           status: "PENDING",
           notes: notes ?? null,
+          receiptSubmittedAt: null,
         },
       });
 
       return { booking, customer, service };
     });
+
+    const holdExpiresAt = addMinutes(result.booking.createdAt, HOLD_DURATION_MINUTES);
 
     const whatsappUrl = buildWhatsAppUrl({
       referenceCode: result.booking.referenceCode,
@@ -247,6 +265,7 @@ export async function createBooking(
       customerName: result.customer.name,
       totalPriceCents: result.booking.totalPriceCents,
       whatsappUrl,
+      holdExpiresAt: holdExpiresAt.toISOString(),
     };
 
     return { success: true, data: confirmation };
@@ -256,17 +275,184 @@ export async function createBooking(
         return {
           success: false,
           error:
-            "This time slot was just booked by someone else. Please select another slot.",
+            "This time slot was just selected by someone else. Please choose another slot.",
         };
       }
       if (error.message === "SLOT_BLOCKED") {
         return {
           success: false,
-          error: "This time slot is not available. Please select another slot.",
+          error: "This time slot is not available. Please choose another slot.",
         };
       }
     }
-    console.error("[createBooking]", error);
-    return { success: false, error: "Failed to create booking. Please try again." };
+    console.error("[createBookingHold]", error);
+    return { success: false, error: "Failed to hold slot. Please try again." };
   }
 }
+
+// Backwards compatibility alias
+export async function createBooking(
+  input: CreateBookingInput
+): Promise<ActionResult<BookingConfirmation>> {
+  return createBookingHold(input);
+}
+
+// ----------------------------------------------------------------
+// confirmBookingReceipt (Stage 2: Customer submitted receipt — permanently locked)
+// ----------------------------------------------------------------
+export async function confirmBookingReceipt(
+  referenceCode: string
+): Promise<ActionResult<BookingConfirmation>> {
+  try {
+    const booking = await prisma.booking.findUnique({
+      where: { referenceCode },
+      include: { customer: true, service: true },
+    });
+
+    if (!booking) {
+      return { success: false, error: "Booking not found." };
+    }
+
+    if (booking.status === "CANCELLED") {
+      return {
+        success: false,
+        error:
+          "Your 7-minute slot reservation expired. Please pick another slot.",
+      };
+    }
+
+    // Mark receipt as submitted — this locks the slot permanently until admin reviews
+    const updated = await prisma.booking.update({
+      where: { referenceCode },
+      data: {
+        receiptSubmittedAt: new Date(),
+      },
+      include: { customer: true, service: true },
+    });
+
+    const whatsappUrl = buildWhatsAppUrl({
+      referenceCode: updated.referenceCode,
+      serviceName: updated.service.name,
+      startDatetime: updated.startDatetime,
+      customerName: updated.customer.name,
+      totalPriceCents: updated.totalPriceCents,
+    });
+
+    return {
+      success: true,
+      data: {
+        referenceCode: updated.referenceCode,
+        serviceName: updated.service.name,
+        startDatetime: updated.startDatetime.toISOString(),
+        endDatetime: updated.endDatetime.toISOString(),
+        customerName: updated.customer.name,
+        totalPriceCents: updated.totalPriceCents,
+        whatsappUrl,
+      },
+    };
+  } catch (error) {
+    console.error("[confirmBookingReceipt]", error);
+    return { success: false, error: "Failed to confirm receipt submission." };
+  }
+}
+
+// ----------------------------------------------------------------
+// lookupBookingStatus (Public customer booking tracker)
+// ----------------------------------------------------------------
+export async function lookupBookingStatus(
+  query: string
+): Promise<ActionResult<CustomerBookingLookupDto>> {
+  try {
+    const trimmed = query.trim();
+    if (!trimmed) {
+      return {
+        success: false,
+        error: "Please enter your booking reference code or phone number.",
+      };
+    }
+
+    // 1. Search by reference code (case-insensitive)
+    let booking = await prisma.booking.findFirst({
+      where: {
+        referenceCode: {
+          equals: trimmed,
+          mode: "insensitive",
+        },
+      },
+      include: {
+        customer: true,
+        service: true,
+      },
+    });
+
+    // 2. If not found by reference code, search by customer phone number
+    if (!booking) {
+      const cleanPhone = trimmed.replace(/\D/g, "");
+      if (cleanPhone.length >= 6) {
+        booking = await prisma.booking.findFirst({
+          where: {
+            customer: {
+              phoneNumber: {
+                contains: cleanPhone,
+              },
+            },
+          },
+          include: {
+            customer: true,
+            service: true,
+          },
+          orderBy: {
+            createdAt: "desc",
+          },
+        });
+      }
+    }
+
+    if (!booking) {
+      return {
+        success: false,
+        error:
+          "No booking found matching that reference code or phone number. Please check and try again.",
+      };
+    }
+
+    const whatsappUrl = buildWhatsAppUrl({
+      referenceCode: booking.referenceCode,
+      serviceName: booking.service.name,
+      startDatetime: booking.startDatetime,
+      customerName: booking.customer.name,
+      totalPriceCents: booking.totalPriceCents,
+    });
+
+    const phone = booking.customer.phoneNumber;
+    const maskedPhone =
+      phone.length > 4
+        ? `${phone.slice(0, 3)}****${phone.slice(-4)}`
+        : "****";
+
+    return {
+      success: true,
+      data: {
+        referenceCode: booking.referenceCode,
+        status: booking.status,
+        receiptSubmittedAt: booking.receiptSubmittedAt
+          ? booking.receiptSubmittedAt.toISOString()
+          : null,
+        serviceName: booking.service.name,
+        customerName: booking.customer.name,
+        maskedPhone,
+        startDatetime: booking.startDatetime.toISOString(),
+        endDatetime: booking.endDatetime.toISOString(),
+        totalPriceCents: booking.totalPriceCents,
+        whatsappUrl,
+      },
+    };
+  } catch (error) {
+    console.error("[lookupBookingStatus]", error);
+    return {
+      success: false,
+      error: "Failed to look up booking. Please try again.",
+    };
+  }
+}
+

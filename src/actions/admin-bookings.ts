@@ -18,6 +18,7 @@ function toDto(b: any): BookingDto {
     endDatetime: b.endDatetime.toISOString(),
     totalPriceCents: b.totalPriceCents,
     notes: b.notes,
+    receiptSubmittedAt: b.receiptSubmittedAt ? b.receiptSubmittedAt.toISOString() : null,
     createdAt: b.createdAt.toISOString(),
     customer: {
       name: b.customer.name,

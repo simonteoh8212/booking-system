@@ -6,15 +6,27 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 /**
- * Generate a short, uppercase booking reference code like BK-8F29A.
+ * Generate a short, uppercase booking reference code like BK-8F29A or SPA-8F29A.
+ * The prefix is dynamically loaded from NEXT_PUBLIC_BOOKING_REF_PREFIX in .env (defaults to BK).
  */
 export function generateReferenceCode(): string {
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  const rawPrefix = (
+    process.env.NEXT_PUBLIC_BOOKING_REF_PREFIX ||
+    process.env.BOOKING_REF_PREFIX ||
+    "BK"
+  )
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "");
+
+  const prefix = rawPrefix || "BK";
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   const random = Array.from({ length: 5 }, () =>
     chars.charAt(Math.floor(Math.random() * chars.length))
   ).join("");
-  return `BK-${random}`;
+  return `${prefix}-${random}`;
 }
+
 
 /**
  * Format a price in cents to a currency string (MYR).

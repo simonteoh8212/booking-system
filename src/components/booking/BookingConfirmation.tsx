@@ -6,12 +6,15 @@ import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { CheckCircle2, MessageCircle, CalendarCheck, Copy, RotateCcw } from "lucide-react";
+import { CheckCircle2, MessageCircle, CalendarCheck, Copy, RotateCcw, Search } from "lucide-react";
 import { useState } from "react";
+import Link from "next/link";
+import { getOperatingHoursInfo } from "@/lib/operating-hours";
 
 export function BookingConfirmation() {
   const { confirmation, reset } = useBookingStore();
   const [copied, setCopied] = useState(false);
+  const operatingHours = getOperatingHoursInfo();
 
   if (!confirmation) return null;
 
@@ -87,17 +90,33 @@ export function BookingConfirmation() {
         </CardContent>
       </Card>
 
-      {/* What's next */}
-      <Card className="bg-amber-50 border-amber-200 text-left">
-        <CardContent className="p-4">
-          <h4 className="font-semibold text-amber-800 text-sm mb-2">⏳ Next Step — Required!</h4>
-          <p className="text-amber-700 text-sm leading-relaxed">
-            Your slot is temporarily reserved. To <strong>confirm</strong> your booking,
-            you must send your payment receipt screenshot via WhatsApp within{" "}
-            <strong>30 minutes</strong>, or the slot will be released.
-          </p>
-        </CardContent>
-      </Card>
+      {/* Confirmation & Operating Hours Notice */}
+      {operatingHours.isOutside ? (
+        <Card className="bg-indigo-50/80 border-indigo-200 text-left dark:bg-indigo-950/20 dark:border-indigo-800">
+          <CardContent className="p-4 space-y-1.5">
+            <h4 className="font-semibold text-indigo-900 dark:text-indigo-300 text-sm flex items-center gap-1.5">
+              🌙 Slot Locked & Reserved!
+            </h4>
+            <p className="text-indigo-800 dark:text-indigo-200 text-sm leading-relaxed">
+              You submitted your booking outside operating hours ({operatingHours.displayDays},{" "}
+              {operatingHours.displayHours}). <strong>Your slot is securely locked</strong> and
+              will be reviewed and confirmed {operatingHours.nextOpenDayNotice} once our team verifies
+              your receipt.
+            </p>
+          </CardContent>
+        </Card>
+      ) : (
+        <Card className="bg-green-50 border-green-200 text-left dark:bg-green-950/20 dark:border-green-800">
+          <CardContent className="p-4 space-y-1.5">
+            <h4 className="font-semibold text-green-900 dark:text-green-300 text-sm">
+              ✅ Slot Successfully Reserved!
+            </h4>
+            <p className="text-green-800 dark:text-green-200 text-sm leading-relaxed">
+              Please attach your payment receipt screenshot in the WhatsApp chat. Our team will verify your payment and confirm your appointment shortly.
+            </p>
+          </CardContent>
+        </Card>
+      )}
 
       {/* WhatsApp CTA */}
       <a
@@ -108,12 +127,23 @@ export function BookingConfirmation() {
       >
         <Button
           size="lg"
-          className="w-full h-14 text-base bg-[#25D366] hover:bg-[#20BD5A] text-white gap-2"
+          className="w-full h-14 text-base bg-[#25D366] hover:bg-[#20BD5A] text-white gap-2 shadow-lg"
         >
           <MessageCircle className="h-5 w-5" />
-          Send Receipt via WhatsApp
+          Open WhatsApp to Send Receipt
         </Button>
       </a>
+
+      {/* Self-check status link */}
+      <div className="pt-1">
+        <Link
+          href={`/check-booking?ref=${confirmation.referenceCode}`}
+          className="inline-flex items-center gap-1.5 text-xs text-primary hover:underline font-medium"
+        >
+          <Search className="h-3.5 w-3.5" />
+          Track your booking status online anytime
+        </Link>
+      </div>
 
       <button
         onClick={reset}

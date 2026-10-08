@@ -36,6 +36,7 @@ export interface BookingConfirmation {
   customerName: string;
   totalPriceCents: number;
   whatsappUrl: string;
+  holdExpiresAt?: string; // ISO
 }
 
 export interface BookingDto {
@@ -46,6 +47,7 @@ export interface BookingDto {
   endDatetime: string;
   totalPriceCents: number;
   notes: string | null;
+  receiptSubmittedAt?: string | null;
   createdAt: string;
   customer: {
     name: string;
@@ -72,9 +74,23 @@ export interface TimeBlockoutDto {
   reason: string | null;
 }
 
+export interface CustomerBookingLookupDto {
+  referenceCode: string;
+  status: BookingStatus;
+  receiptSubmittedAt: string | null;
+  serviceName: string;
+  customerName: string;
+  maskedPhone: string;
+  startDatetime: string;
+  endDatetime: string;
+  totalPriceCents: number;
+  whatsappUrl: string;
+}
+
 // ----------------------------------------------------------------
 // Server action response wrapper
 // ----------------------------------------------------------------
 export type ActionResult<T = void> =
   | { success: true; data: T }
   | { success: false; error: string };
+

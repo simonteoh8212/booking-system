@@ -1,6 +1,7 @@
 "use client";
 
 import { useBookingStore } from "@/stores/bookingStore";
+import { createBookingHold } from "@/actions/booking";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -9,8 +10,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { formatPrice } from "@/lib/utils";
 import { format } from "date-fns";
-import { ArrowLeft, ArrowRight, User } from "lucide-react";
-import { useState } from "react";
+import { ArrowLeft, ArrowRight, User, Loader2, AlertCircle } from "lucide-react";
+import { useState, useTransition } from "react";
 
 export function StepCustomerForm() {
   const {
@@ -18,11 +19,14 @@ export function StepCustomerForm() {
     selectedSlotStart,
     customerDetails,
     updateCustomerDetails,
+    setPendingHold,
     nextStep,
     prevStep,
   } = useBookingStore();
 
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [holdError, setHoldError] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
 
   function validate() {
     const newErrors: Record<string, string> = {};
@@ -37,7 +41,25 @@ export function StepCustomerForm() {
   }
 
   function handleContinue() {
-    if (validate()) nextStep();
+    if (!validate() || !selectedService || !selectedSlotStart) return;
+
+    setHoldError(null);
+    startTransition(async () => {
+      const result = await createBookingHold({
+        serviceId: selectedService.id,
+        startDatetimeIso: selectedSlotStart,
+        customerName: customerDetails.name,
+        phoneNumber: customerDetails.phoneNumber.replace(/\s/g, ""),
+        notes: customerDetails.notes || undefined,
+      });
+
+      if (result.success) {
+        setPendingHold(result.data);
+        nextStep();
+      } else {
+        setHoldError(result.error);
+      }
+    });
   }
 
   return (
@@ -129,15 +151,34 @@ export function StepCustomerForm() {
         </div>
       </div>
 
+      {/* Error alert */}
+      {holdError && (
+        <div className="flex items-start gap-2 rounded-lg bg-destructive/10 border border-destructive/20 p-3 text-sm text-destructive">
+          <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+          <div className="flex-1">
+            <p>{holdError}</p>
+          </div>
+        </div>
+      )}
+
       {/* Navigation */}
       <div className="flex gap-3">
-        <Button variant="outline" onClick={prevStep} className="flex-1">
+        <Button variant="outline" onClick={prevStep} disabled={isPending} className="flex-1">
           <ArrowLeft className="h-4 w-4 mr-2" />
           Back
         </Button>
-        <Button onClick={handleContinue} className="flex-1">
-          Review & Pay
-          <ArrowRight className="h-4 w-4 ml-2" />
+        <Button onClick={handleContinue} disabled={isPending} className="flex-1">
+          {isPending ? (
+            <>
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              Holding slot…
+            </>
+          ) : (
+            <>
+              Hold Slot & Pay
+              <ArrowRight className="h-4 w-4 ml-2" />
+            </>
+          )}
         </Button>
       </div>
     </div>

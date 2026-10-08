@@ -65,7 +65,10 @@ export default async function BookingsPage() {
                   </TableCell>
                   <TableCell>{formatPrice(b.totalPriceCents)}</TableCell>
                   <TableCell>
-                    <BookingStatusBadge status={b.status} />
+                    <BookingStatusBadge
+                      status={b.status}
+                      receiptSubmittedAt={b.receiptSubmittedAt}
+                    />
                   </TableCell>
                 </TableRow>
               ))

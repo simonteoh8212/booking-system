@@ -76,8 +76,10 @@ export function AgendaCard({ booking, onUpdate }: AgendaCardProps) {
       {/* Details */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
-          <p className="font-semibold truncate">{booking.customer.name}</p>
-          <BookingStatusBadge status={booking.status} />
+          <BookingStatusBadge
+            status={booking.status}
+            receiptSubmittedAt={booking.receiptSubmittedAt}
+          />
         </div>
         <p className="text-sm text-muted-foreground truncate">
           {booking.service.name}
