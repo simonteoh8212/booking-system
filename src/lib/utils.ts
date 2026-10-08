@@ -23,6 +23,30 @@ export function formatPrice(cents: number): string {
   return `RM ${(cents / 100).toFixed(2)}`;
 }
 
+export const BUSINESS_TIMEZONE = "Asia/Kuala_Lumpur";
+export const BUSINESS_TIMEZONE_OFFSET = "+08:00";
+
+/**
+ * Convert any date input (ISO string, Date, or YYYY-MM-DD) into a YYYY-MM-DD string
+ * in the business timezone (Asia/Kuala_Lumpur).
+ */
+export function toBusinessDateString(input: string | Date): string {
+  if (typeof input === "string" && /^\d{4}-\d{2}-\d{2}$/.test(input)) {
+    return input;
+  }
+  const d = typeof input === "string" ? new Date(input) : input;
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: BUSINESS_TIMEZONE,
+  }).format(d);
+}
+
+/**
+ * Create a Date object for a given YYYY-MM-DD and HH:mm in the business timezone.
+ */
+export function createBusinessDateTime(dateStr: string, timeStr: string): Date {
+  return new Date(`${dateStr}T${timeStr}:00${BUSINESS_TIMEZONE_OFFSET}`);
+}
+
 /**
  * Parse "HH:mm" time string and apply it to a given Date object,
  * returning a new Date with that time set in local time.

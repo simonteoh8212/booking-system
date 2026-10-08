@@ -33,7 +33,7 @@ export function StepDateTimePicker() {
 
     startTransition(async () => {
       const result = await getAvailableSlots(
-        selectedDate.toISOString(),
+        format(selectedDate, "yyyy-MM-dd"),
         selectedService.durationMinutes
       );
       if (ignore) return;

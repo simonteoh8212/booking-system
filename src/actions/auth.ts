@@ -34,9 +34,22 @@ export async function adminLogin(
 
     await signAndSetSession({ sub: admin.id, username: admin.username });
     return { success: true, data: undefined };
-  } catch (error) {
+  } catch (error: unknown) {
     console.error("[adminLogin]", error);
-    return { success: false, error: "Login failed. Please try again." };
+    const msg = error instanceof Error ? error.message : String(error);
+    if (!process.env.DATABASE_URL) {
+      return {
+        success: false,
+        error: "Missing DATABASE_URL in environment variables.",
+      };
+    }
+    if (msg.includes("Can't reach database") || msg.includes("P1001")) {
+      return {
+        success: false,
+        error: "Cannot connect to database. Ensure DATABASE_URL uses the Supabase connection pooler.",
+      };
+    }
+    return { success: false, error: "Login failed. Please check server logs or try again." };
   }
 }
 

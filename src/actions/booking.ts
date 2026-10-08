@@ -1,14 +1,18 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
-import { applyTimeToDate, generateReferenceCode } from "@/lib/utils";
+import {
+  generateReferenceCode,
+  toBusinessDateString,
+  createBusinessDateTime,
+} from "@/lib/utils";
 import { buildWhatsAppUrl } from "@/lib/whatsapp";
 import type {
   ActionResult,
   BookingConfirmation,
   TimeSlot,
 } from "@/types";
-import { addMinutes, areIntervalsOverlapping } from "date-fns";
+import { addMinutes, areIntervalsOverlapping, subMinutes } from "date-fns";
 
 // Slot granularity in minutes (every 15 min)
 const SLOT_INTERVAL = 15;
@@ -17,14 +21,26 @@ const SLOT_INTERVAL = 15;
 // getAvailableSlots
 // ----------------------------------------------------------------
 export async function getAvailableSlots(
-  dateIso: string,
+  dateInput: string,
   serviceDurationMinutes: number
 ): Promise<ActionResult<TimeSlot[]>> {
   try {
-    const date = new Date(dateIso);
-    const dayOfWeek = date.getDay(); // 0-6
+    // 0. Auto-release stale PENDING bookings older than 30 minutes
+    const thirtyMinutesAgo = subMinutes(new Date(), 30);
+    await prisma.booking.updateMany({
+      where: {
+        status: "PENDING",
+        createdAt: { lt: thirtyMinutesAgo },
+      },
+      data: { status: "CANCELLED" },
+    });
 
-    // 1. Check business schedule for this day
+    // 1. Resolve calendar date in business timezone (+08:00)
+    const dateStr = toBusinessDateString(dateInput);
+    const dayRef = createBusinessDateTime(dateStr, "12:00");
+    const dayOfWeek = dayRef.getDay(); // 0-6
+
+    // 2. Check business schedule for this day
     const schedule = await prisma.businessSchedule.findUnique({
       where: { dayOfWeek },
     });
@@ -33,15 +49,15 @@ export async function getAvailableSlots(
       return { success: true, data: [] };
     }
 
-    // 2. Compute the business open/close window for this date
-    const dayOpen = applyTimeToDate(date, schedule.openTime);
-    const dayClose = applyTimeToDate(date, schedule.closeTime);
+    // 3. Compute the business open/close window for this date
+    const dayOpen = createBusinessDateTime(dateStr, schedule.openTime);
+    const dayClose = createBusinessDateTime(dateStr, schedule.closeTime);
 
-    // 3. Fetch active bookings that overlap with this day
-    const startOfDay = new Date(date);
-    startOfDay.setHours(0, 0, 0, 0);
-    const endOfDay = new Date(date);
-    endOfDay.setHours(23, 59, 59, 999);
+    // 4. Fetch active bookings that overlap with this full business day
+    const startOfDay = createBusinessDateTime(dateStr, "00:00");
+    const endOfDay = new Date(
+      createBusinessDateTime(dateStr, "23:59").getTime() + 59999
+    );
 
     const existingBookings = await prisma.booking.findMany({
       where: {
@@ -139,7 +155,20 @@ export async function createBooking(
 
     // Re-validate slot availability inside transaction to prevent race conditions
     const result = await prisma.$transaction(async (tx) => {
-      // Check for overlapping bookings
+      // 1. Acquire transaction-level advisory lock to serialize concurrent reservation attempts
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('booking_reservation_lock'))`;
+
+      // 2. Auto-release stale PENDING bookings older than 30 minutes
+      const thirtyMinutesAgo = subMinutes(new Date(), 30);
+      await tx.booking.updateMany({
+        where: {
+          status: "PENDING",
+          createdAt: { lt: thirtyMinutesAgo },
+        },
+        data: { status: "CANCELLED" },
+      });
+
+      // 3. Check for overlapping bookings
       const conflict = await tx.booking.findFirst({
         where: {
           status: { notIn: ["CANCELLED", "NO_SHOW"] },

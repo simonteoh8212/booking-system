@@ -21,7 +21,7 @@ export default function AdminLoginPage() {
     startTransition(async () => {
       const result = await adminLogin(form);
       if (result.success) {
-        router.push("/admin");
+        window.location.href = "/admin";
       } else {
         setError(result.error);
       }

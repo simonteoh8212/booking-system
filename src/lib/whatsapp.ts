@@ -25,8 +25,20 @@ export function buildWhatsAppUrl(details: WhatsAppBookingDetails): string {
   const { referenceCode, serviceName, startDatetime, customerName, totalPriceCents } =
     details;
 
-  const formattedDate = format(startDatetime, "EEEE, d MMMM yyyy");
-  const formattedTime = format(startDatetime, "h:mm a");
+  const formattedDate = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Kuala_Lumpur",
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).format(startDatetime);
+
+  const formattedTime = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Kuala_Lumpur",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  }).format(startDatetime);
   const formattedPrice = formatPrice(totalPriceCents);
 
   const message = [
