@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { getBookings } from "@/actions/admin-bookings";
 import { AgendaView } from "@/components/admin/AgendaView";
-import { startOfDay, endOfDay } from "date-fns";
+import { startOfMonth, endOfMonth, startOfWeek, endOfWeek } from "date-fns";
 
 import { connection } from "next/server";
 
@@ -10,9 +10,12 @@ export const metadata: Metadata = { title: "Dashboard" };
 export default async function AdminDashboardPage() {
   await connection();
   const today = new Date();
+  const rangeStart = startOfWeek(startOfMonth(today), { weekStartsOn: 0 });
+  const rangeEnd = endOfWeek(endOfMonth(today), { weekStartsOn: 0 });
+
   const result = await getBookings(
-    startOfDay(today).toISOString(),
-    endOfDay(today).toISOString()
+    rangeStart.toISOString(),
+    rangeEnd.toISOString()
   );
   const bookings = result.success ? result.data : [];
 

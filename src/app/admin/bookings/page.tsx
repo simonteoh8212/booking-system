@@ -39,13 +39,14 @@ export default async function BookingsPage() {
               <TableHead>Service</TableHead>
               <TableHead>Date & Time</TableHead>
               <TableHead>Amount</TableHead>
+              <TableHead>Note</TableHead>
               <TableHead>Status</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {bookings.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center text-muted-foreground py-12">
+                <TableCell colSpan={7} className="text-center text-muted-foreground py-12">
                   No bookings found.
                 </TableCell>
               </TableRow>
@@ -64,6 +65,15 @@ export default async function BookingsPage() {
                     {format(new Date(b.startDatetime), "d MMM yyyy, h:mm a")}
                   </TableCell>
                   <TableCell>{formatPrice(b.totalPriceCents)}</TableCell>
+                  <TableCell className="max-w-[200px] text-xs text-muted-foreground">
+                    {b.notes ? (
+                      <span className="line-clamp-2" title={b.notes}>
+                        {b.notes}
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground/40">—</span>
+                    )}
+                  </TableCell>
                   <TableCell>
                     <BookingStatusBadge
                       status={b.status}
