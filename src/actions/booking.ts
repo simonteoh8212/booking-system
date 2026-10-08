@@ -7,6 +7,17 @@ import {
   createBusinessDateTime,
 } from "@/lib/utils";
 import { buildWhatsAppUrl } from "@/lib/whatsapp";
+import { headers } from "next/headers";
+import {
+  checkRateLimit,
+  recordFailedLookup,
+  recordSuccessfulLookup,
+} from "@/lib/rate-limit";
+import {
+  getBookingFromCache,
+  saveBookingToCache,
+  invalidateBookingCache,
+} from "@/lib/booking-cache";
 import type {
   ActionResult,
   BookingConfirmation,
@@ -330,6 +341,9 @@ export async function confirmBookingReceipt(
       include: { customer: true, service: true },
     });
 
+    // Invalidate any existing cached status for this booking
+    invalidateBookingCache(updated.referenceCode, updated.customer.phoneNumber);
+
     const whatsappUrl = buildWhatsAppUrl({
       referenceCode: updated.referenceCode,
       serviceName: updated.service.name,
@@ -356,13 +370,49 @@ export async function confirmBookingReceipt(
   }
 }
 
+async function getClientIp(): Promise<string> {
+  try {
+    const headersList = await headers();
+    const forwarded = headersList.get("x-forwarded-for");
+    if (forwarded) return forwarded.split(",")[0].trim();
+    const realIp = headersList.get("x-real-ip");
+    if (realIp) return realIp.trim();
+    const cfIp = headersList.get("cf-connecting-ip");
+    if (cfIp) return cfIp.trim();
+  } catch {
+    // Fallback if headers are not available
+  }
+  return "127.0.0.1";
+}
+
 // ----------------------------------------------------------------
-// lookupBookingStatus (Public customer booking tracker)
+// lookupBookingStatus (Public customer booking tracker - Bot & Rate Protected)
 // ----------------------------------------------------------------
 export async function lookupBookingStatus(
-  query: string
+  query: string,
+  honeypot?: string
 ): Promise<ActionResult<CustomerBookingLookupDto>> {
   try {
+    // 1. Bot Trap (Honeypot check)
+    // Automated crawlers blindly fill all input fields; human browsers leave this empty.
+    if (honeypot && honeypot.trim().length > 0) {
+      console.warn("[lookupBookingStatus] Bot trapped via honeypot field");
+      return {
+        success: false,
+        error: "Invalid request detected.",
+      };
+    }
+
+    // 2. IP Rate Limiting (Max 6 attempts per minute per IP)
+    const clientIp = await getClientIp();
+    const rateCheck = checkRateLimit(`status:${clientIp}`, 6, 60 * 1000);
+    if (!rateCheck.allowed) {
+      return {
+        success: false,
+        error: `Too many lookup attempts. Please wait ${rateCheck.retryAfterSeconds} seconds before trying again.`,
+      };
+    }
+
     const trimmed = query.trim();
     if (!trimmed) {
       return {
@@ -371,50 +421,89 @@ export async function lookupBookingStatus(
       };
     }
 
-    // 1. Search by reference code (case-insensitive)
-    let booking = await prisma.booking.findFirst({
-      where: {
-        referenceCode: {
-          equals: trimmed,
-          mode: "insensitive",
-        },
-      },
-      include: {
-        customer: true,
-        service: true,
-      },
-    });
-
-    // 2. If not found by reference code, search by customer phone number
-    if (!booking) {
-      const cleanPhone = trimmed.replace(/\D/g, "");
-      if (cleanPhone.length >= 6) {
-        booking = await prisma.booking.findFirst({
-          where: {
-            customer: {
-              phoneNumber: {
-                contains: cleanPhone,
-              },
-            },
-          },
-          include: {
-            customer: true,
-            service: true,
-          },
-          orderBy: {
-            createdAt: "desc",
-          },
-        });
-      }
+    if (trimmed.length > 35) {
+      return {
+        success: false,
+        error: "Invalid search query length.",
+      };
     }
 
+    // 3. Strict Input Format Validation
+    // Valid reference format: e.g. BK-8F29A, SPA-12345 (2-10 prefix chars, hyphen, 4-8 suffix chars)
+    const isRefCode = /^[a-zA-Z0-9]{2,10}-[a-zA-Z0-9]{4,8}$/i.test(trimmed);
+
+    // Valid phone format: 9 to 14 digits (e.g. 0123456789, 60123456789)
+    const cleanPhone = trimmed.replace(/\D/g, "");
+    const isPhone = cleanPhone.length >= 9 && cleanPhone.length <= 14;
+
+    // Reject invalid formats immediately BEFORE touching the database!
+    if (!isRefCode && !isPhone) {
+      return {
+        success: false,
+        error:
+          "Please enter a valid reference code (e.g. BK-XXXXX) or your full registered phone number (minimum 9 digits).",
+      };
+    }
+
+    // 4. Check Backend Cache First (0ms DB load, instant response)
+    const cached = getBookingFromCache(trimmed);
+    if (cached) {
+      return {
+        success: true,
+        data: cached,
+      };
+    }
+
+    let booking = null;
+
+    // 5. Search by Reference Code in Database
+    if (isRefCode) {
+      booking = await prisma.booking.findFirst({
+        where: {
+          referenceCode: {
+            equals: trimmed,
+            mode: "insensitive",
+          },
+        },
+        include: {
+          customer: true,
+          service: true,
+        },
+      });
+    }
+
+    // 6. If not found by reference code and input qualifies as phone number
+    if (!booking && isPhone) {
+      booking = await prisma.booking.findFirst({
+        where: {
+          customer: {
+            phoneNumber: {
+              contains: cleanPhone,
+            },
+          },
+        },
+        include: {
+          customer: true,
+          service: true,
+        },
+        orderBy: {
+          createdAt: "desc",
+        },
+      });
+    }
+
+    // 7. Track Failed Attempts against Brute-Force Attacks
     if (!booking) {
+      recordFailedLookup(`status:${clientIp}`);
       return {
         success: false,
         error:
           "No booking found matching that reference code or phone number. Please check and try again.",
       };
     }
+
+    // Reset strike counter on successful lookup
+    recordSuccessfulLookup(`status:${clientIp}`);
 
     const whatsappUrl = buildWhatsAppUrl({
       referenceCode: booking.referenceCode,
@@ -430,22 +519,27 @@ export async function lookupBookingStatus(
         ? `${phone.slice(0, 3)}****${phone.slice(-4)}`
         : "****";
 
+    const resultData: CustomerBookingLookupDto = {
+      referenceCode: booking.referenceCode,
+      status: booking.status,
+      receiptSubmittedAt: booking.receiptSubmittedAt
+        ? booking.receiptSubmittedAt.toISOString()
+        : null,
+      serviceName: booking.service.name,
+      customerName: booking.customer.name,
+      maskedPhone,
+      startDatetime: booking.startDatetime.toISOString(),
+      endDatetime: booking.endDatetime.toISOString(),
+      totalPriceCents: booking.totalPriceCents,
+      whatsappUrl,
+    };
+
+    // Store in backend cache for fast subsequent checks!
+    saveBookingToCache(resultData, booking.customer.phoneNumber);
+
     return {
       success: true,
-      data: {
-        referenceCode: booking.referenceCode,
-        status: booking.status,
-        receiptSubmittedAt: booking.receiptSubmittedAt
-          ? booking.receiptSubmittedAt.toISOString()
-          : null,
-        serviceName: booking.service.name,
-        customerName: booking.customer.name,
-        maskedPhone,
-        startDatetime: booking.startDatetime.toISOString(),
-        endDatetime: booking.endDatetime.toISOString(),
-        totalPriceCents: booking.totalPriceCents,
-        whatsappUrl,
-      },
+      data: resultData,
     };
   } catch (error) {
     console.error("[lookupBookingStatus]", error);

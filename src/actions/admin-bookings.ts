@@ -3,6 +3,7 @@
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "./auth";
 import { revalidatePath } from "next/cache";
+import { invalidateBookingCache } from "@/lib/booking-cache";
 import type { ActionResult, BookingDto, BookingStatus } from "@/types";
 
 // ----------------------------------------------------------------
@@ -72,8 +73,13 @@ export async function updateBookingStatus(
       data: { status },
       include: BOOKING_INCLUDE,
     });
+
+    // Invalidate customer lookup cache on-demand!
+    invalidateBookingCache(booking.referenceCode, booking.customer.phoneNumber);
+
     revalidatePath("/admin");
     revalidatePath("/admin/bookings");
+    revalidatePath("/check-booking");
     return { success: true, data: toDto(booking) };
   } catch {
     return { success: false, error: "Failed to update booking status." };

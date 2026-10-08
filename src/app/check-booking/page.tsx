@@ -32,6 +32,8 @@ function CheckBookingContent() {
   const initialRef = searchParams.get("ref") ?? "";
 
   const [query, setQuery] = useState(initialRef);
+  const [honeypot, setHoneypot] = useState("");
+  const [isCooldown, setIsCooldown] = useState(false);
   const [booking, setBooking] = useState<CustomerBookingLookupDto | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -41,11 +43,14 @@ function CheckBookingContent() {
   const businessName = process.env.NEXT_PUBLIC_BUSINESS_NAME ?? "Our Salon";
 
   function performSearch(searchQuery: string) {
-    if (!searchQuery.trim()) return;
+    if (!searchQuery.trim() || isCooldown) return;
     setErrorMessage(null);
 
+    setIsCooldown(true);
+    setTimeout(() => setIsCooldown(false), 1200);
+
     startTransition(async () => {
-      const result = await lookupBookingStatus(searchQuery);
+      const result = await lookupBookingStatus(searchQuery, honeypot);
       if (result.success) {
         setBooking(result.data);
       } else {
@@ -107,26 +112,41 @@ function CheckBookingContent() {
         </div>
 
         {/* Search Form */}
-        <form onSubmit={handleFormSubmit} className="flex gap-2">
-          <Input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder={`e.g. ${process.env.NEXT_PUBLIC_BOOKING_REF_PREFIX || "BK"}-8F29A or 0123456789`}
-            className="h-12 uppercase font-medium tracking-wide"
-            autoFocus
-          />
-          <Button
-            type="submit"
-            disabled={isPending || !query.trim()}
-            className="h-12 px-5 gap-2"
-          >
-            {isPending ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Search className="h-4 w-4" />
-            )}
-            Search
-          </Button>
+        <form onSubmit={handleFormSubmit} className="space-y-2">
+          {/* Invisible honeypot field (bot trap) */}
+          <div className="hidden" aria-hidden="true">
+            <input
+              type="text"
+              name="company_site_url"
+              tabIndex={-1}
+              autoComplete="off"
+              value={honeypot}
+              onChange={(e) => setHoneypot(e.target.value)}
+            />
+          </div>
+
+          <div className="flex gap-2">
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder={`e.g. ${process.env.NEXT_PUBLIC_BOOKING_REF_PREFIX || "BK"}-8F29A or 0123456789`}
+              className="h-12 uppercase font-medium tracking-wide"
+              autoFocus
+              maxLength={35}
+            />
+            <Button
+              type="submit"
+              disabled={isPending || isCooldown || !query.trim()}
+              className="h-12 px-5 gap-2"
+            >
+              {isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Search className="h-4 w-4" />
+              )}
+              Search
+            </Button>
+          </div>
         </form>
 
         {/* Error message */}

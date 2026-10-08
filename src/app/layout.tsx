@@ -20,6 +20,8 @@ export const metadata: Metadata = {
   description: "Easy online appointment booking for local service businesses.",
 };
 
+import { NavigationProgressBar } from "@/components/NavigationProgressBar";
+
 export const instant = false;
 
 export default function RootLayout({
@@ -32,6 +34,7 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-screen bg-background`}
       >
+        <NavigationProgressBar />
         {children}
       </body>
     </html>

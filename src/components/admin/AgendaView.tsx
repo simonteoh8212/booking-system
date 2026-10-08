@@ -29,9 +29,7 @@ import {
   CalendarIcon,
   ChevronLeft,
   ChevronRight,
-  Loader2,
   CalendarDays,
-  ListFilter,
 } from "lucide-react";
 import type { BookingDto } from "@/types";
 import { cn, toBusinessDateString } from "@/lib/utils";
@@ -223,19 +221,13 @@ export function AgendaView({ initialDate, initialBookings }: AgendaViewProps) {
         </div>
       </div>
 
-      {/* Loading Overlay State */}
-      {isPending && (
-        <div className="flex items-center gap-2 text-xs text-muted-foreground justify-end -mt-2">
-          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          <span>Updating schedule…</span>
-        </div>
-      )}
-
-      {/* ────────────────────────────────────────────────────────── */}
-      {/* CALENDAR VIEW                                             */}
-      {/* ────────────────────────────────────────────────────────── */}
-      {viewMode === "calendar" && (
-        <div className="space-y-6">
+      {/* Main Views Container with smooth transition */}
+      <div className={cn("transition-opacity duration-200", isPending && "opacity-75")}>
+        {/* ────────────────────────────────────────────────────────── */}
+        {/* CALENDAR VIEW                                             */}
+        {/* ────────────────────────────────────────────────────────── */}
+        {viewMode === "calendar" && (
+          <div className="space-y-6">
           {/* Calendar Card */}
           <div className="rounded-xl border bg-card shadow-xs overflow-hidden">
             {/* Calendar Header */}
@@ -460,6 +452,7 @@ export function AgendaView({ initialDate, initialBookings }: AgendaViewProps) {
           )}
         </div>
       )}
+      </div>
     </div>
   );
 }

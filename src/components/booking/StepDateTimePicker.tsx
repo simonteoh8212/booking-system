@@ -9,6 +9,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { format, addDays } from "date-fns";
 import { ArrowLeft, ArrowRight, CalendarIcon, Clock, Loader2 } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
 import type { TimeSlot } from "@/types";
 
 export function StepDateTimePicker() {
@@ -90,9 +91,16 @@ export function StepDateTimePicker() {
           </div>
 
           {isPending ? (
-            <div className="flex items-center justify-center py-8 text-muted-foreground gap-2">
-              <Loader2 className="h-5 w-5 animate-spin" />
-              <span className="text-sm">Loading available slots…</span>
+            <div className="space-y-2.5">
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+                <span>Loading available slots…</span>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <Skeleton key={i} className="h-10 rounded-lg" />
+                ))}
+              </div>
             </div>
           ) : loadError ? (
             <p className="text-sm text-destructive text-center py-4">{loadError}</p>
