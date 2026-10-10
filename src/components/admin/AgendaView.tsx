@@ -37,9 +37,14 @@ import { cn, toBusinessDateString } from "@/lib/utils";
 interface AgendaViewProps {
   initialDate: string; // ISO
   initialBookings: BookingDto[];
+  currencySymbol?: string;
 }
 
-export function AgendaView({ initialDate, initialBookings }: AgendaViewProps) {
+export function AgendaView({
+  initialDate,
+  initialBookings,
+  currencySymbol = "RM",
+}: AgendaViewProps) {
   const [selectedDate, setSelectedDate] = useState<Date>(new Date(initialDate));
   const [currentMonth, setCurrentMonth] = useState<Date>(
     startOfMonth(new Date(initialDate))
@@ -353,6 +358,7 @@ export function AgendaView({ initialDate, initialBookings }: AgendaViewProps) {
                   <AgendaCard
                     key={booking.id}
                     booking={booking}
+                    currencySymbol={currencySymbol}
                     onUpdate={handleUpdate}
                   />
                 ))}
@@ -366,6 +372,7 @@ export function AgendaView({ initialDate, initialBookings }: AgendaViewProps) {
                         <AgendaCard
                           key={booking.id}
                           booking={booking}
+                          currencySymbol={currencySymbol}
                           onUpdate={handleUpdate}
                         />
                       </div>
@@ -429,6 +436,7 @@ export function AgendaView({ initialDate, initialBookings }: AgendaViewProps) {
                 <AgendaCard
                   key={booking.id}
                   booking={booking}
+                  currencySymbol={currencySymbol}
                   onUpdate={handleUpdate}
                 />
               ))}
@@ -442,6 +450,7 @@ export function AgendaView({ initialDate, initialBookings }: AgendaViewProps) {
                       <AgendaCard
                         key={booking.id}
                         booking={booking}
+                        currencySymbol={currencySymbol}
                         onUpdate={handleUpdate}
                       />
                     </div>

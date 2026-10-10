@@ -13,10 +13,16 @@ export interface WhatsAppBookingDetails {
 }
 
 /**
- * Format price from cents to MYR string.
+ * Format price from cents to currency string.
  */
-export function formatPrice(cents: number): string {
-  return `RM ${(cents / 100).toFixed(2)}`;
+export function formatPrice(cents: number, overrideSymbol?: string): string {
+  const sym =
+    overrideSymbol ?? process.env.NEXT_PUBLIC_CURRENCY_SYMBOL ?? "RM";
+  const formatted = (cents / 100).toFixed(2);
+  if (sym === "$" || sym === "AUD" || sym === "A$") {
+    return `$${formatted}`;
+  }
+  return `${sym} ${formatted}`;
 }
 
 /**

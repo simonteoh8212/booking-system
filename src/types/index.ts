@@ -102,7 +102,16 @@ export interface DepositSettingDto {
   percentage: number;
   duitnowPayload: string | null;
   recipientName: string | null;
+  currency: string;
+  currencySymbol: string;
+  deskLanguage?: DeskLanguageMode;
 }
+
+export type DeskLanguageMode =
+  | "BILINGUAL_ZH_FIRST"
+  | "BILINGUAL_EN_FIRST"
+  | "ONLY_ZH"
+  | "ONLY_EN";
 
 // ----------------------------------------------------------------
 // Server action response wrapper
@@ -110,4 +119,61 @@ export interface DepositSettingDto {
 export type ActionResult<T = void> =
   | { success: true; data: T }
   | { success: false; error: string };
+
+export type ExpenseCategory =
+  | "STOCK"
+  | "RENT"
+  | "UTILITIES"
+  | "SALARY"
+  | "MARKETING"
+  | "OTHER";
+
+export interface ExpenseDto {
+  id: string;
+  title: string;
+  category: ExpenseCategory;
+  amountCents: number;
+  dateStr: string;
+  notes: string | null;
+  createdAt: string;
+}
+
+export interface MonthlyFinancialReportDto {
+  year: number;
+  month: number;
+  monthLabel: string;
+  currencySymbol: string;
+  currency: string;
+  grossSalesCents: number;
+  completedOrdersCount: number;
+  totalExpensesCents: number;
+  expenseCount: number;
+  netProfitCents: number;
+  profitMarginPercent: number;
+  expenseCategories: {
+    category: ExpenseCategory;
+    labelZh: string;
+    labelEn: string;
+    icon: string;
+    totalCents: number;
+    count: number;
+    percentage: number;
+  }[];
+  servicesBreakdown: {
+    serviceId: string;
+    serviceName: string;
+    category: string | null;
+    count: number;
+    totalCents: number;
+  }[];
+  expenses: ExpenseDto[];
+  dailyBreakdown: {
+    dateStr: string;
+    dayNum: number;
+    salesCents: number;
+    expenseCents: number;
+    netProfitCents: number;
+    ordersCount: number;
+  }[];
+}
 

@@ -40,46 +40,30 @@ async function main() {
   }
   console.log("✅ Business schedule seeded");
 
-  // ── Sample services ─────────────────────────────────────────────────────────
+  // ── Sample services (Salon) ────────────────────────────────────────────────
   const services = [
     {
-      name: "Swedish Massage",
-      description: "A relaxing full-body massage to relieve tension and improve circulation.",
-      category: "Massage",
-      durationMinutes: 60,
-      priceCents: 12000,
-      isActive: true,
-    },
-    {
-      name: "Deep Tissue Massage",
-      description: "Targets deeper layers of muscle to release chronic tension and knots.",
-      category: "Massage",
-      durationMinutes: 90,
-      priceCents: 16800,
-      isActive: true,
-    },
-    {
-      name: "Classic Facial",
-      description: "A nourishing facial treatment to cleanse, exfoliate, and hydrate skin.",
-      category: "Facial",
-      durationMinutes: 60,
-      priceCents: 14000,
-      isActive: true,
-    },
-    {
-      name: "Express Facial",
-      description: "Quick 30-minute facial for a refreshed glow on the go.",
-      category: "Facial",
-      durationMinutes: 30,
-      priceCents: 8000,
-      isActive: true,
-    },
-    {
-      name: "Scalp Treatment",
-      description: "Therapeutic scalp massage and treatment to promote hair health.",
+      name: "剪 (Hair Cut)",
+      description: "Professional cut and styling.",
       category: "Hair",
-      durationMinutes: 45,
-      priceCents: 9500,
+      durationMinutes: 30,
+      priceCents: 3500, // RM 35.00
+      isActive: true,
+    },
+    {
+      name: "洗 (Wash)",
+      description: "Shampoo wash and blow dry.",
+      category: "Hair",
+      durationMinutes: 20,
+      priceCents: 2500, // RM 25.00
+      isActive: true,
+    },
+    {
+      name: "染色 (Hair Color)",
+      description: "Full hair coloring or tinting.",
+      category: "Hair",
+      durationMinutes: 90,
+      priceCents: 15000, // RM 150.00
       isActive: true,
     },
   ];

@@ -54,11 +54,75 @@ export async function adminLogin(
 }
 
 // ----------------------------------------------------------------
-// Admin logout
+// Admin PIN login (iPhone-style 4-digit PIN for Desk POS)
+// ----------------------------------------------------------------
+export async function adminPinLogin(pin: string): Promise<ActionResult<void>> {
+  try {
+    const cleanPin = pin.trim();
+    if (!cleanPin || cleanPin.length !== 4) {
+      return { success: false, error: "Please enter a 4-digit PIN." };
+    }
+
+    const admin = await prisma.adminUser.findFirst({
+      orderBy: { createdAt: "asc" },
+    });
+
+    if (!admin) {
+      return { success: false, error: "No admin user found." };
+    }
+
+    const validPin = admin.pinCode || "1234";
+    if (cleanPin !== validPin) {
+      return { success: false, error: "Incorrect PIN code. Please try again." };
+    }
+
+    await signAndSetSession({ sub: admin.id, username: admin.username });
+    return { success: true, data: undefined };
+  } catch (error) {
+    console.error("[adminPinLogin]", error);
+    return { success: false, error: "Failed to sign in. Please try again." };
+  }
+}
+
+// ----------------------------------------------------------------
+// Update Admin PIN
+// ----------------------------------------------------------------
+export async function updateAdminPin(newPin: string): Promise<ActionResult<void>> {
+  await requireAdmin();
+  try {
+    const cleanPin = newPin.trim();
+    if (!/^\d{4}$/.test(cleanPin)) {
+      return { success: false, error: "PIN must be exactly 4 digits." };
+    }
+
+    const admin = await prisma.adminUser.findFirst({
+      orderBy: { createdAt: "asc" },
+    });
+    if (!admin) return { success: false, error: "Admin not found." };
+
+    await prisma.adminUser.update({
+      where: { id: admin.id },
+      data: { pinCode: cleanPin },
+    });
+
+    return { success: true, data: undefined };
+  } catch (error) {
+    console.error("[updateAdminPin]", error);
+    return { success: false, error: "Failed to update PIN." };
+  }
+}
+
+// ----------------------------------------------------------------
+// Admin logout / Lock Desk
 // ----------------------------------------------------------------
 export async function adminLogout(): Promise<void> {
   await clearSession();
   redirect("/admin/login");
+}
+
+export async function lockDeskSession(): Promise<void> {
+  await clearSession();
+  redirect("/admin/login?from=/admin/desk");
 }
 
 // ----------------------------------------------------------------

@@ -13,10 +13,12 @@ import {
   LogOut,
   Menu,
   X,
+  Scissors,
 } from "lucide-react";
 import { useState } from "react";
 
 const navItems = [
+  { href: "/admin/desk", label: "Salon Desk (POS)", icon: Scissors },
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard, exact: true },
   { href: "/admin/bookings", label: "Bookings", icon: CalendarDays },
   { href: "/admin/services", label: "Services", icon: Wrench },
@@ -27,7 +29,8 @@ export function AdminNav() {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  if (pathname === "/admin/login") {
+  // Hide standard navigation on login and dedicated Desk POS screens
+  if (pathname === "/admin/login" || pathname === "/admin/desk") {
     return null;
   }
 
@@ -57,6 +60,7 @@ export function AdminNav() {
               <Link
                 key={item.href}
                 href={item.href}
+                prefetch={false}
                 className={cn(
                   "flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
                   isActive(item.href, item.exact)
@@ -89,6 +93,7 @@ export function AdminNav() {
               <Link
                 key={item.href}
                 href={item.href}
+                prefetch={false}
                 onClick={() => setMobileOpen(false)}
                 className={cn(
                   "flex items-center gap-3 rounded-xl px-4 py-3 text-base font-medium transition-colors",

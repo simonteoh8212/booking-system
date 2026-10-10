@@ -29,13 +29,21 @@ export function generateReferenceCode(): string {
 
 
 /**
- * Format a price in cents to a currency string (MYR).
+ * Format a price in cents to a currency string.
+ * Supports RM (Malaysia) or $ (Australia).
  */
-export function formatPrice(cents: number): string {
-  return `RM ${(cents / 100).toFixed(2)}`;
+export function formatPrice(cents: number, overrideSymbol?: string): string {
+  const sym = overrideSymbol ?? process.env.NEXT_PUBLIC_CURRENCY_SYMBOL ?? "RM";
+
+  const formatted = (cents / 100).toFixed(2);
+  if (sym === "$" || sym === "AUD" || sym === "A$") {
+    return `$${formatted}`;
+  }
+  return `${sym} ${formatted}`;
 }
 
-export const BUSINESS_TIMEZONE = "Asia/Kuala_Lumpur";
+export const BUSINESS_TIMEZONE =
+  process.env.NEXT_PUBLIC_BUSINESS_TIMEZONE || "Asia/Kuala_Lumpur";
 export const BUSINESS_TIMEZONE_OFFSET = "+08:00";
 
 /**

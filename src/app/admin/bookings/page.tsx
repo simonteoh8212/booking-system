@@ -12,14 +12,21 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
+import { prisma } from "@/lib/prisma";
 import { connection } from "next/server";
 
 export const metadata: Metadata = { title: "All Bookings" };
 
 export default async function BookingsPage() {
   await connection();
-  const result = await getAllBookings();
+  const [result, depositSetting] = await Promise.all([
+    getAllBookings(),
+    prisma.depositSetting.findFirst(),
+  ]);
   const bookings = result.success ? result.data.bookings : [];
+  const currencySymbol =
+    depositSetting?.currencySymbol ||
+    (depositSetting?.currency === "AUD" ? "$" : "RM");
 
   return (
     <div className="space-y-6">
@@ -65,14 +72,14 @@ export default async function BookingsPage() {
                     {format(new Date(b.startDatetime), "d MMM yyyy, h:mm a")}
                   </TableCell>
                   <TableCell>
-                    <p className="font-medium">{formatPrice(b.totalPriceCents)}</p>
+                    <p className="font-medium">{formatPrice(b.totalPriceCents, currencySymbol)}</p>
                     {b.depositDueCents != null &&
                     b.depositDueCents > 0 &&
                     b.depositDueCents < b.totalPriceCents ? (
                       <p className="text-[11px] text-muted-foreground whitespace-nowrap leading-tight mt-0.5">
-                        Deposit: <span className="text-green-600 font-semibold">{formatPrice(b.depositDueCents)}</span>
+                        Deposit: <span className="text-green-600 font-semibold">{formatPrice(b.depositDueCents, currencySymbol)}</span>
                         <br />
-                        Bal: {formatPrice(b.balanceDueCents ?? b.totalPriceCents - b.depositDueCents)}
+                        Bal: {formatPrice(b.balanceDueCents ?? b.totalPriceCents - b.depositDueCents, currencySymbol)}
                       </p>
                     ) : null}
                   </TableCell>

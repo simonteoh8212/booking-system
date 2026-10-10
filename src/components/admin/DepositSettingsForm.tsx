@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useTransition, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { updateDepositSetting, getPreviewDepositQR } from "@/actions/deposit";
 import { parseDuitNowPayload, DEFAULT_DUITNOW_PAYLOAD } from "@/lib/duitnow";
 import { Button } from "@/components/ui/button";
@@ -10,7 +11,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import type { DepositSettingDto } from "@/types";
+import type { DepositSettingDto, DeskLanguageMode } from "@/types";
+import { DESK_LANGUAGE_OPTIONS } from "@/lib/desk-i18n";
 import jsQR from "jsqr";
 import {
   Wallet,
@@ -24,6 +26,7 @@ import {
   Info,
   DollarSign,
   Percent,
+  Languages,
 } from "lucide-react";
 
 interface DepositSettingsFormProps {
@@ -31,6 +34,12 @@ interface DepositSettingsFormProps {
 }
 
 export function DepositSettingsForm({ initialSetting }: DepositSettingsFormProps) {
+  const router = useRouter();
+  const [currency, setCurrency] = useState<string>(initialSetting.currency || "MYR");
+  const [currencySymbol, setCurrencySymbol] = useState<string>(initialSetting.currencySymbol || "RM");
+  const [deskLanguage, setDeskLanguage] = useState<DeskLanguageMode>(
+    initialSetting.deskLanguage || "BILINGUAL_ZH_FIRST"
+  );
   const [isEnabled, setIsEnabled] = useState(initialSetting.isEnabled);
   const [type, setType] = useState<"FIXED" | "PERCENTAGE">(initialSetting.type);
   const [amountRm, setAmountRm] = useState((initialSetting.amountCents / 100).toFixed(2));
@@ -154,6 +163,13 @@ export function DepositSettingsForm({ initialSetting }: DepositSettingsFormProps
       const amountCents = Math.round((parseFloat(amountRm) || 10) * 100);
       const parsedPercentage = parseInt(percentage, 10) || 20;
 
+      if (typeof window !== "undefined") {
+        try {
+          localStorage.setItem("app_currency_symbol", currencySymbol);
+          localStorage.setItem("app_desk_language", deskLanguage);
+        } catch {}
+      }
+
       const res = await updateDepositSetting({
         isEnabled,
         type,
@@ -161,13 +177,17 @@ export function DepositSettingsForm({ initialSetting }: DepositSettingsFormProps
         percentage: parsedPercentage,
         duitnowPayload,
         recipientName,
+        currency,
+        currencySymbol,
+        deskLanguage,
       });
 
       if (res.success) {
         setStatusMessage({
           type: "success",
-          text: "Deposit and DuitNow QR settings saved successfully!",
+          text: `Settings saved successfully! Currency: ${currencySymbol} (${currency}), Desk Language: ${deskLanguage}.`,
         });
+        router.refresh();
       } else {
         setStatusMessage({
           type: "error",
@@ -210,6 +230,115 @@ export function DepositSettingsForm({ initialSetting }: DepositSettingsFormProps
         </CardHeader>
 
         <CardContent className="space-y-6">
+          {/* Country & Currency Selector */}
+          <div className="space-y-2 p-4 rounded-xl border bg-muted/20">
+            <Label className="text-xs font-semibold uppercase text-muted-foreground tracking-wider">
+              Country & Currency / 国家与货币
+            </Label>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setCurrency("MYR");
+                  setCurrencySymbol("RM");
+                }}
+                className={`p-3.5 rounded-xl border-2 text-left flex items-center justify-between transition-all cursor-pointer ${
+                  currency === "MYR"
+                    ? "border-primary bg-primary/10 shadow-xs"
+                    : "border-border bg-card hover:bg-muted text-muted-foreground"
+                }`}
+              >
+                <div>
+                  <p className="font-bold text-sm text-foreground">🇲🇾 Malaysia</p>
+                  <p className="text-xs text-muted-foreground">RM (MYR)</p>
+                </div>
+                {currency === "MYR" && <CheckCircle2 className="h-5 w-5 text-primary" />}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setCurrency("AUD");
+                  setCurrencySymbol("$");
+                }}
+                className={`p-3.5 rounded-xl border-2 text-left flex items-center justify-between transition-all cursor-pointer ${
+                  currency === "AUD"
+                    ? "border-primary bg-primary/10 shadow-xs"
+                    : "border-border bg-card hover:bg-muted text-muted-foreground"
+                }`}
+              >
+                <div>
+                  <p className="font-bold text-sm text-foreground">🇦🇺 Australia</p>
+                  <p className="text-xs text-muted-foreground">$ (AUD)</p>
+                </div>
+                {currency === "AUD" && <CheckCircle2 className="h-5 w-5 text-primary" />}
+              </button>
+            </div>
+            {currency === "AUD" && (
+              <p className="text-[11px] text-muted-foreground pt-1">
+                🇦🇺 Australian Mode: Currency displays as <strong>$</strong>. Customers pay via Cash, Card, or PayID.
+              </p>
+            )}
+          </div>
+
+          {/* Desk Language & Priority Selector */}
+          <div className="space-y-3 p-4 rounded-xl border bg-muted/20">
+            <div className="flex items-center gap-2">
+              <Languages className="h-4 w-4 text-primary" />
+              <Label className="text-xs font-semibold uppercase text-muted-foreground tracking-wider">
+                Desk Language & Priority / 柜台语言显示模式与优先级
+              </Label>
+            </div>
+            <p className="text-xs text-muted-foreground -mt-1">
+              Choose language mode for the Salon Desk counter (/admin/desk). Selected language will be highlighted and prominent.
+            </p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+              {DESK_LANGUAGE_OPTIONS.map((opt) => {
+                const isSelected = deskLanguage === opt.id;
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => setDeskLanguage(opt.id)}
+                    className={`p-3.5 rounded-xl border-2 text-left flex flex-col justify-between transition-all cursor-pointer ${
+                      isSelected
+                        ? "border-primary bg-primary/10 shadow-xs ring-1 ring-primary"
+                        : "border-border bg-card hover:bg-muted text-muted-foreground"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between w-full">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-base">{opt.flag}</span>
+                        <span className="font-bold text-sm text-foreground">{opt.label}</span>
+                      </div>
+                      {isSelected && <CheckCircle2 className="h-5 w-5 text-primary shrink-0" />}
+                    </div>
+
+                    <p className="text-[11px] text-muted-foreground mt-1.5 leading-snug">
+                      {opt.description}
+                    </p>
+
+                    {/* Live Preview Bar */}
+                    <div className="mt-3 pt-2 border-t border-border/60 flex items-center justify-between text-xs">
+                      <span className="text-[10px] text-muted-foreground font-semibold uppercase">
+                        Preview:
+                      </span>
+                      <div className="text-right">
+                        <span className="font-black text-foreground">{opt.previewPrimary}</span>
+                        {opt.previewSecondary && (
+                          <span className="text-[10px] text-muted-foreground ml-1.5">
+                            ({opt.previewSecondary})
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           {/* Enable / Disable Deposit Toggle */}
           <div className="flex items-center justify-between p-4 rounded-xl border bg-muted/30">
             <div className="space-y-0.5">
@@ -254,7 +383,7 @@ export function DepositSettingsForm({ initialSetting }: DepositSettingsFormProps
                     }`}
                   >
                     <DollarSign className="h-4 w-4" />
-                    Exact Amount (RM)
+                    Exact Amount ({currencySymbol})
                   </button>
                   <button
                     type="button"
@@ -273,10 +402,10 @@ export function DepositSettingsForm({ initialSetting }: DepositSettingsFormProps
 
               {type === "FIXED" ? (
                 <div className="space-y-2">
-                  <Label htmlFor="fixedAmount">Deposit Amount (RM)</Label>
+                  <Label htmlFor="fixedAmount">Deposit Amount ({currencySymbol})</Label>
                   <div className="relative">
                     <span className="absolute left-3 top-2.5 text-sm text-muted-foreground font-semibold">
-                      RM
+                      {currencySymbol}
                     </span>
                     <Input
                       id="fixedAmount"
@@ -291,7 +420,7 @@ export function DepositSettingsForm({ initialSetting }: DepositSettingsFormProps
                   </div>
                   <p className="text-xs text-muted-foreground">
                     Regardless of service price, customer will pay exactly{" "}
-                    <strong>RM {parseFloat(amountRm || "0").toFixed(2)}</strong> deposit.
+                    <strong>{currencySymbol === "$" ? `$${parseFloat(amountRm || "0").toFixed(2)}` : `RM ${parseFloat(amountRm || "0").toFixed(2)}`}</strong> deposit.
                   </p>
                 </div>
               ) : (
@@ -314,8 +443,8 @@ export function DepositSettingsForm({ initialSetting }: DepositSettingsFormProps
                     </span>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    For example, on a RM 120.00 service, a {percentage}% deposit equals{" "}
-                    <strong>RM {((120 * (parseFloat(percentage) || 0)) / 100).toFixed(2)}</strong>.
+                    For example, on a {currencySymbol === "$" ? "$120.00" : "RM 120.00"} service, a {percentage}% deposit equals{" "}
+                    <strong>{currencySymbol === "$" ? `$${((120 * (parseFloat(percentage) || 0)) / 100).toFixed(2)}` : `RM ${((120 * (parseFloat(percentage) || 0)) / 100).toFixed(2)}`}</strong>.
                   </p>
                 </div>
               )}
@@ -444,12 +573,12 @@ export function DepositSettingsForm({ initialSetting }: DepositSettingsFormProps
             {isPending ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin" />
-                Saving Configuration…
+                正在保存设置… (Saving…)
               </>
             ) : (
               <>
                 <CheckCircle2 className="h-4 w-4" />
-                Save Deposit & QR Settings
+                保存设置 / Save Settings
               </>
             )}
           </Button>
@@ -477,9 +606,11 @@ export function DepositSettingsForm({ initialSetting }: DepositSettingsFormProps
               <p className="text-2xl font-black text-primary font-mono tracking-tight mt-0.5">
                 {isEnabled
                   ? type === "FIXED"
-                    ? `RM ${parseFloat(amountRm || "10").toFixed(2)}`
-                    : `RM ${((100 * (parseFloat(percentage) || 20)) / 100).toFixed(2)} (${percentage}%)`
-                  : "RM 100.00 (Full Amount)"}
+                    ? (currencySymbol === "$" ? `$${parseFloat(amountRm || "10").toFixed(2)}` : `RM ${parseFloat(amountRm || "10").toFixed(2)}`)
+                    : (currencySymbol === "$"
+                        ? `$${((100 * (parseFloat(percentage) || 20)) / 100).toFixed(2)}`
+                        : `RM ${((100 * (parseFloat(percentage) || 20)) / 100).toFixed(2)}`) + ` (${percentage}%)`
+                  : (currencySymbol === "$" ? "$100.00 (Full Amount)" : "RM 100.00 (Full Amount)")}
               </p>
               <p className="text-[11px] text-primary/80 mt-1 flex items-center justify-center gap-1">
                 <CheckCircle2 className="h-3 w-3 inline" /> Amount is locked & non-editable on scan
@@ -519,7 +650,7 @@ export function DepositSettingsForm({ initialSetting }: DepositSettingsFormProps
                 <strong className="text-foreground">
                   {isEnabled
                     ? type === "FIXED"
-                      ? `RM ${parseFloat(amountRm || "10").toFixed(2)}`
+                      ? (currencySymbol === "$" ? `$${parseFloat(amountRm || "10").toFixed(2)}` : `RM ${parseFloat(amountRm || "10").toFixed(2)}`)
                       : `${percentage}% deposit`
                     : "full amount"}
                 </strong>{" "}

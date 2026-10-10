@@ -29,6 +29,9 @@ export default async function SettingsPage() {
         percentage: 20,
         duitnowPayload: null,
         recipientName: "TEOH CHUN SEONG",
+        currency: "MYR",
+        currencySymbol: "RM",
+        deskLanguage: "BILINGUAL_ZH_FIRST" as const,
       };
 
   return (

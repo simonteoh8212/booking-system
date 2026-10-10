@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useEffect } from "react";
 import { createService, updateService, deleteService } from "@/actions/services";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -33,12 +33,22 @@ const EMPTY_FORM = {
 
 export function ServiceManager({ initialServices }: ServiceManagerProps) {
   const [services, setServices] = useState<ServiceDto[]>(initialServices);
+  const [currencySymbol, setCurrencySymbol] = useState("RM");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<ServiceDto | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [priceInput, setPriceInput] = useState("0.00");
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const stored = localStorage.getItem("app_currency_symbol");
+        if (stored) setCurrencySymbol(stored);
+      } catch {}
+    }
+  }, []);
 
   function openCreate() {
     setEditTarget(null);
@@ -144,7 +154,7 @@ export function ServiceManager({ initialServices }: ServiceManagerProps) {
                 </span>
                 <span className="flex items-center gap-1 font-medium text-primary">
                   <DollarSign className="h-3 w-3" />
-                  {formatPrice(service.priceCents)}
+                  {formatPrice(service.priceCents, currencySymbol)}
                 </span>
               </div>
             </div>
@@ -214,7 +224,7 @@ export function ServiceManager({ initialServices }: ServiceManagerProps) {
               </div>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="svc-price">Price (RM) *</Label>
+              <Label htmlFor="svc-price">Price ({currencySymbol}) *</Label>
               <Input
                 id="svc-price"
                 type="number"

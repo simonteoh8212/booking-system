@@ -34,9 +34,10 @@ const STATUS_OPTIONS: BookingStatus[] = [
 interface AgendaCardProps {
   booking: BookingDto;
   onUpdate: (updated: BookingDto) => void;
+  currencySymbol?: string;
 }
 
-export function AgendaCard({ booking, onUpdate }: AgendaCardProps) {
+export function AgendaCard({ booking, onUpdate, currencySymbol }: AgendaCardProps) {
   const [isPending, startTransition] = useTransition();
   const [cancelOpen, setCancelOpen] = useState(false);
 
@@ -90,13 +91,13 @@ export function AgendaCard({ booking, onUpdate }: AgendaCardProps) {
             {booking.customer.phoneNumber}
           </span>
           <span className="text-xs font-medium text-primary">
-            {formatPrice(booking.totalPriceCents)}
+            {formatPrice(booking.totalPriceCents, currencySymbol)}
           </span>
           {booking.depositDueCents != null &&
           booking.depositDueCents > 0 &&
           booking.depositDueCents < booking.totalPriceCents && (
             <span className="text-[11px] text-muted-foreground">
-              (Dep: <span className="text-green-600 font-semibold">{formatPrice(booking.depositDueCents)}</span> · Bal: {formatPrice(booking.balanceDueCents ?? booking.totalPriceCents - booking.depositDueCents)})
+              (Dep: <span className="text-green-600 font-semibold">{formatPrice(booking.depositDueCents, currencySymbol)}</span> · Bal: {formatPrice(booking.balanceDueCents ?? booking.totalPriceCents - booking.depositDueCents, currencySymbol)})
             </span>
           )}
           <span className="text-xs text-muted-foreground font-mono">
