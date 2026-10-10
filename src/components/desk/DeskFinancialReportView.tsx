@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useTransition } from "react";
+import { useState, useEffect, useTransition, useRef, useCallback } from "react";
 import {
   getMonthlyFinancialReport,
   createBatchDeskExpenses,
@@ -133,6 +133,37 @@ export function DeskFinancialReportView({
   const [activeTab, setActiveTab] = useState<"EXPENSES" | "SALES" | "DAILY">("EXPENSES");
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isPending, startTransition] = useTransition();
+
+  // Scrollable Tabs Overflow Detection
+  const tabsScrollRef = useRef<HTMLDivElement>(null);
+  const [canScrollLeft, setCanScrollLeft] = useState<boolean>(false);
+  const [canScrollRight, setCanScrollRight] = useState<boolean>(false);
+
+  const checkTabsScroll = useCallback(() => {
+    const el = tabsScrollRef.current;
+    if (!el) return;
+    const { scrollLeft, scrollWidth, clientWidth } = el;
+    setCanScrollLeft(scrollLeft > 6);
+    setCanScrollRight(scrollLeft + clientWidth < scrollWidth - 6);
+  }, []);
+
+  useEffect(() => {
+    checkTabsScroll();
+    const handleResize = () => checkTabsScroll();
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, [checkTabsScroll, reportData, activeTab]);
+
+  const scrollTabs = (direction: "left" | "right") => {
+    const el = tabsScrollRef.current;
+    if (!el) return;
+    const scrollAmount = 200;
+    el.scrollBy({
+      left: direction === "left" ? -scrollAmount : scrollAmount,
+      behavior: "smooth",
+    });
+    setTimeout(checkTabsScroll, 250);
+  };
 
   // Multi-Category Sheet State
   const [isLogOpen, setIsLogOpen] = useState<boolean>(false);
@@ -670,67 +701,113 @@ export function DeskFinancialReportView({
         </div>
       )} */}
 
-      {/* Navigation Tabs */}
-      <div className="flex border-b border-border/80 gap-2">
-        <button
-          type="button"
-          onClick={() => setActiveTab("EXPENSES")}
-          className={`pb-3 px-4 text-sm sm:text-base font-bold transition-all border-b-2 cursor-pointer flex items-center gap-2 ${
-            activeTab === "EXPENSES"
-              ? "border-foreground text-foreground"
-              : "border-transparent text-muted-foreground hover:text-foreground"
-          }`}
-        >
-          <Receipt className="h-4 w-4" />
-          <DeskText
-            text={DESK_DICT.financialReport.tabExpenses}
-            mode={languageMode}
-            layout="inline"
-            primaryClass="font-bold"
-          />
-          <Badge variant="outline" className="text-xs font-mono py-0 px-1.5 ml-1">
-            {reportData?.expenses.length || 0}
-          </Badge>
-        </button>
+      {/* Navigation Tabs (Smooth Scrollable + Dynamic Overflow Cue) */}
+      <div className="relative w-full max-w-full">
+        {/* Left Scroll Cue & Gradient */}
+        {canScrollLeft && (
+          <div className="absolute left-0 top-0 bottom-0 z-10 flex items-center pr-4 pointer-events-none bg-gradient-to-r from-background via-background/90 to-transparent">
+            <button
+              type="button"
+              onClick={() => scrollTabs("left")}
+              className="pointer-events-auto h-7 w-7 rounded-full bg-card border border-border/80 shadow-md flex items-center justify-center text-foreground hover:bg-muted transition-all cursor-pointer -ml-0.5 active:scale-95"
+              aria-label="Scroll tabs left"
+              title="Scroll left"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+          </div>
+        )}
 
-        <button
-          type="button"
-          onClick={() => setActiveTab("SALES")}
-          className={`pb-3 px-4 text-sm sm:text-base font-bold transition-all border-b-2 cursor-pointer flex items-center gap-2 ${
-            activeTab === "SALES"
-              ? "border-foreground text-foreground"
-              : "border-transparent text-muted-foreground hover:text-foreground"
-          }`}
+        {/* Scrollable Track */}
+        <div
+          ref={tabsScrollRef}
+          onScroll={checkTabsScroll}
+          className="flex items-center gap-1 sm:gap-2 border-b border-border/80 overflow-x-auto scroll-smooth select-none [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden px-0.5"
         >
-          <Scissors className="h-4 w-4" />
-          <DeskText
-            text={DESK_DICT.financialReport.tabSales}
-            mode={languageMode}
-            layout="inline"
-            primaryClass="font-bold"
-          />
-          <Badge variant="outline" className="text-xs font-mono py-0 px-1.5 ml-1">
-            {reportData?.servicesBreakdown.length || 0}
-          </Badge>
-        </button>
+          <button
+            type="button"
+            onClick={(e) => {
+              setActiveTab("EXPENSES");
+              e.currentTarget.scrollIntoView({ behavior: "smooth", inline: "nearest", block: "nearest" });
+            }}
+            className={`pb-3 px-3.5 sm:px-4 text-sm sm:text-base font-bold transition-all border-b-2 cursor-pointer flex items-center gap-2 shrink-0 whitespace-nowrap ${
+              activeTab === "EXPENSES"
+                ? "border-foreground text-foreground"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <Receipt className="h-4 w-4 shrink-0" />
+            <DeskText
+              text={DESK_DICT.financialReport.tabExpenses}
+              mode={languageMode}
+              layout="inline"
+              primaryClass="font-bold"
+            />
+            <Badge variant="outline" className="text-xs font-mono py-0 px-1.5 ml-0.5 shrink-0">
+              {reportData?.expenses.length || 0}
+            </Badge>
+          </button>
 
-        <button
-          type="button"
-          onClick={() => setActiveTab("DAILY")}
-          className={`pb-3 px-4 text-sm sm:text-base font-bold transition-all border-b-2 cursor-pointer flex items-center gap-2 ${
-            activeTab === "DAILY"
-              ? "border-foreground text-foreground"
-              : "border-transparent text-muted-foreground hover:text-foreground"
-          }`}
-        >
-          <CalendarDays className="h-4 w-4" />
-          <DeskText
-            text={DESK_DICT.financialReport.tabDaily}
-            mode={languageMode}
-            layout="inline"
-            primaryClass="font-bold"
-          />
-        </button>
+          <button
+            type="button"
+            onClick={(e) => {
+              setActiveTab("SALES");
+              e.currentTarget.scrollIntoView({ behavior: "smooth", inline: "nearest", block: "nearest" });
+            }}
+            className={`pb-3 px-3.5 sm:px-4 text-sm sm:text-base font-bold transition-all border-b-2 cursor-pointer flex items-center gap-2 shrink-0 whitespace-nowrap ${
+              activeTab === "SALES"
+                ? "border-foreground text-foreground"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <Scissors className="h-4 w-4 shrink-0" />
+            <DeskText
+              text={DESK_DICT.financialReport.tabSales}
+              mode={languageMode}
+              layout="inline"
+              primaryClass="font-bold"
+            />
+            <Badge variant="outline" className="text-xs font-mono py-0 px-1.5 ml-0.5 shrink-0">
+              {reportData?.servicesBreakdown.length || 0}
+            </Badge>
+          </button>
+
+          <button
+            type="button"
+            onClick={(e) => {
+              setActiveTab("DAILY");
+              e.currentTarget.scrollIntoView({ behavior: "smooth", inline: "nearest", block: "nearest" });
+            }}
+            className={`pb-3 px-3.5 sm:px-4 text-sm sm:text-base font-bold transition-all border-b-2 cursor-pointer flex items-center gap-2 shrink-0 whitespace-nowrap ${
+              activeTab === "DAILY"
+                ? "border-foreground text-foreground"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <CalendarDays className="h-4 w-4 shrink-0" />
+            <DeskText
+              text={DESK_DICT.financialReport.tabDaily}
+              mode={languageMode}
+              layout="inline"
+              primaryClass="font-bold"
+            />
+          </button>
+        </div>
+
+        {/* Right Scroll Cue & Gradient */}
+        {canScrollRight && (
+          <div className="absolute right-0 top-0 bottom-0 z-10 flex items-center pl-4 pointer-events-none bg-gradient-to-l from-background via-background/90 to-transparent">
+            <button
+              type="button"
+              onClick={() => scrollTabs("right")}
+              className="pointer-events-auto h-7 w-7 rounded-full bg-card border border-border/80 shadow-md flex items-center justify-center text-foreground hover:bg-muted transition-all cursor-pointer -mr-0.5 active:scale-95 animate-pulse"
+              aria-label="Scroll tabs right"
+              title="More tabs"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
+        )}
       </div>
 
       {/* TAB CONTENT 1: EXPENSE LIST */}

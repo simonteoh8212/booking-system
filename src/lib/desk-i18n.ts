@@ -256,9 +256,9 @@ export const DESK_DICT = {
     kpiExpenseCount: { zh: "支出笔数", en: "Entries" },
     kpiNetProfit: { zh: "当月净利润", en: "Net Profit" },
     kpiMargin: { zh: "净利润率", en: "Profit Margin" },
-    tabExpenses: { zh: "📦 支出与进货明细", en: "📦 Expense Records" },
-    tabSales: { zh: "💇 服务项目营业额", en: "💇 Service Sales" },
-    tabDaily: { zh: "📅 每日收支明细", en: "📅 Daily Breakdown" },
+    tabExpenses: { zh: "支出与进货明细", en: "Expense Records" },
+    tabSales: { zh: "服务项目营业额", en: "Service Sales" },
+    tabDaily: { zh: "每日收支明细", en: "Daily Breakdown" },
     modalLogExpenseTitle: { zh: "多项支出一键录入", en: "Multi-Category Expense Entry" },
     modalLogExpenseSub: {
       zh: "可同时在多个分类中输入金额，点击下方按钮一键全部保存：",

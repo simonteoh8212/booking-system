@@ -199,14 +199,14 @@ export function DeskCountSalesView({
           onClick={onBack}
           size="lg"
           variant="outline"
-          className="h-14 sm:h-16 px-6 text-base sm:text-lg font-bold border border-border/80 bg-card hover:bg-muted text-foreground gap-2.5 rounded-2xl shadow-xs cursor-pointer"
+          className="h-12 sm:h-16 px-4 sm:px-6 text-sm sm:text-lg font-bold border border-border/80 bg-card hover:bg-muted text-foreground gap-2 sm:gap-2.5 rounded-2xl shadow-xs cursor-pointer shrink-0"
         >
-          <ArrowLeft className="h-6 w-6 text-foreground shrink-0" />
+          <ArrowLeft className="h-5 sm:h-6 w-5 sm:w-6 text-foreground shrink-0" />
           <DeskText
             text={DESK_DICT.countSalesView.cancelBack}
             mode={languageMode}
             layout="inline"
-            primaryClass="font-black text-base sm:text-lg"
+            primaryClass="font-black text-sm sm:text-lg"
           />
         </Button>
 
