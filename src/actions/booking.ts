@@ -18,6 +18,10 @@ import {
   saveBookingToCache,
   invalidateBookingCache,
 } from "@/lib/booking-cache";
+import {
+  DEFAULT_DUITNOW_PAYLOAD,
+  generateDuitNowQRDataUrl,
+} from "@/lib/duitnow";
 import type {
   ActionResult,
   BookingConfirmation,
@@ -168,6 +172,24 @@ export async function createBookingHold(
     const startDatetime = new Date(startDatetimeIso);
     const endDatetime = addMinutes(startDatetime, service.durationMinutes);
 
+    // Check deposit configuration
+    const depositSetting = await prisma.depositSetting.findUnique({
+      where: { id: "default" },
+    });
+
+    let depositDueCents: number | null = null;
+    let balanceDueCents: number | null = null;
+
+    if (depositSetting?.isEnabled) {
+      if (depositSetting.type === "PERCENTAGE") {
+        depositDueCents = Math.round((service.priceCents * depositSetting.percentage) / 100);
+      } else {
+        depositDueCents = Math.min(depositSetting.amountCents, service.priceCents);
+      }
+      depositDueCents = Math.max(100, depositDueCents);
+      balanceDueCents = Math.max(0, service.priceCents - depositDueCents);
+    }
+
     // Re-validate slot availability inside transaction to prevent race conditions
     const result = await prisma.$transaction(async (tx) => {
       // 1. Acquire transaction-level advisory lock to serialize concurrent reservation attempts
@@ -249,6 +271,8 @@ export async function createBookingHold(
           startDatetime,
           endDatetime,
           totalPriceCents: service.priceCents,
+          depositDueCents,
+          balanceDueCents,
           status: "PENDING",
           notes: notes ?? null,
           receiptSubmittedAt: null,
@@ -260,12 +284,30 @@ export async function createBookingHold(
 
     const holdExpiresAt = addMinutes(result.booking.createdAt, HOLD_DURATION_MINUTES);
 
+    const amountToPayCents =
+      result.booking.depositDueCents != null && result.booking.depositDueCents > 0
+        ? result.booking.depositDueCents
+        : result.booking.totalPriceCents;
+
+    let paymentQrDataUrl: string | null = null;
+    try {
+      paymentQrDataUrl = await generateDuitNowQRDataUrl({
+        basePayload: depositSetting?.duitnowPayload || DEFAULT_DUITNOW_PAYLOAD,
+        amountCents: amountToPayCents,
+        referenceCode: result.booking.referenceCode,
+      });
+    } catch (qrErr) {
+      console.error("[createBookingHold] Failed to generate dynamic QR:", qrErr);
+    }
+
     const whatsappUrl = buildWhatsAppUrl({
       referenceCode: result.booking.referenceCode,
       serviceName: result.service.name,
       startDatetime: result.booking.startDatetime,
       customerName: result.customer.name,
       totalPriceCents: result.booking.totalPriceCents,
+      depositDueCents: result.booking.depositDueCents,
+      balanceDueCents: result.booking.balanceDueCents,
     });
 
     const confirmation: BookingConfirmation = {
@@ -275,6 +317,10 @@ export async function createBookingHold(
       endDatetime: result.booking.endDatetime.toISOString(),
       customerName: result.customer.name,
       totalPriceCents: result.booking.totalPriceCents,
+      depositDueCents: result.booking.depositDueCents,
+      balanceDueCents: result.booking.balanceDueCents,
+      paymentQrDataUrl,
+      recipientName: depositSetting?.recipientName || "Merchant",
       whatsappUrl,
       holdExpiresAt: holdExpiresAt.toISOString(),
     };
@@ -350,6 +396,8 @@ export async function confirmBookingReceipt(
       startDatetime: updated.startDatetime,
       customerName: updated.customer.name,
       totalPriceCents: updated.totalPriceCents,
+      depositDueCents: updated.depositDueCents,
+      balanceDueCents: updated.balanceDueCents,
     });
 
     return {
@@ -361,6 +409,8 @@ export async function confirmBookingReceipt(
         endDatetime: updated.endDatetime.toISOString(),
         customerName: updated.customer.name,
         totalPriceCents: updated.totalPriceCents,
+        depositDueCents: updated.depositDueCents,
+        balanceDueCents: updated.balanceDueCents,
         whatsappUrl,
       },
     };
@@ -511,6 +561,8 @@ export async function lookupBookingStatus(
       startDatetime: booking.startDatetime,
       customerName: booking.customer.name,
       totalPriceCents: booking.totalPriceCents,
+      depositDueCents: booking.depositDueCents,
+      balanceDueCents: booking.balanceDueCents,
     });
 
     const phone = booking.customer.phoneNumber;
@@ -531,6 +583,8 @@ export async function lookupBookingStatus(
       startDatetime: booking.startDatetime.toISOString(),
       endDatetime: booking.endDatetime.toISOString(),
       totalPriceCents: booking.totalPriceCents,
+      depositDueCents: booking.depositDueCents,
+      balanceDueCents: booking.balanceDueCents,
       whatsappUrl,
     };
 

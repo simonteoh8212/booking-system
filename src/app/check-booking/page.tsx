@@ -288,9 +288,31 @@ function CheckBookingContent() {
                   </div>
                   <Separator />
                   <div className="flex justify-between font-bold text-base">
-                    <span>Total</span>
+                    <span>Total Service Fee</span>
                     <span className="text-primary">{formatPrice(booking.totalPriceCents)}</span>
                   </div>
+
+                  {booking.depositDueCents != null &&
+                  booking.depositDueCents > 0 &&
+                  booking.depositDueCents < booking.totalPriceCents && (
+                    <>
+                      <div className="flex justify-between text-xs text-muted-foreground pt-0.5">
+                        <span>Deposit Paid</span>
+                        <span className="font-semibold text-green-600">
+                          {formatPrice(booking.depositDueCents)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-xs text-muted-foreground">
+                        <span>Balance Payable at Salon</span>
+                        <span className="font-semibold text-foreground">
+                          {formatPrice(
+                            booking.balanceDueCents ??
+                              booking.totalPriceCents - booking.depositDueCents
+                          )}
+                        </span>
+                      </div>
+                    </>
+                  )}
                 </div>
               </CardContent>
             </Card>

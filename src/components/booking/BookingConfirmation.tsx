@@ -77,13 +77,38 @@ export function BookingConfirmation() {
                 value: format(new Date(confirmation.startDatetime), "h:mm a"),
               },
               {
-                label: "Total",
+                label: "Total Price",
                 value: formatPrice(confirmation.totalPriceCents),
               },
+              ...(confirmation.depositDueCents != null &&
+              confirmation.depositDueCents > 0 &&
+              confirmation.depositDueCents < confirmation.totalPriceCents
+                ? [
+                    {
+                      label: "Deposit Paid",
+                      value: formatPrice(confirmation.depositDueCents),
+                    },
+                    {
+                      label: "Balance at Salon",
+                      value: formatPrice(
+                        confirmation.balanceDueCents ??
+                          confirmation.totalPriceCents - confirmation.depositDueCents
+                      ),
+                    },
+                  ]
+                : []),
             ].map(({ label, value }) => (
               <div key={label} className="flex justify-between">
                 <span className="text-muted-foreground">{label}</span>
-                <span className="font-medium text-right">{value}</span>
+                <span
+                  className={
+                    label === "Deposit Paid"
+                      ? "font-semibold text-green-600 text-right"
+                      : "font-medium text-right"
+                  }
+                >
+                  {value}
+                </span>
               </div>
             ))}
           </div>

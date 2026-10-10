@@ -92,6 +92,13 @@ export function AgendaCard({ booking, onUpdate }: AgendaCardProps) {
           <span className="text-xs font-medium text-primary">
             {formatPrice(booking.totalPriceCents)}
           </span>
+          {booking.depositDueCents != null &&
+          booking.depositDueCents > 0 &&
+          booking.depositDueCents < booking.totalPriceCents && (
+            <span className="text-[11px] text-muted-foreground">
+              (Dep: <span className="text-green-600 font-semibold">{formatPrice(booking.depositDueCents)}</span> · Bal: {formatPrice(booking.balanceDueCents ?? booking.totalPriceCents - booking.depositDueCents)})
+            </span>
+          )}
           <span className="text-xs text-muted-foreground font-mono">
             {booking.referenceCode}
           </span>

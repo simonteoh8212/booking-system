@@ -64,7 +64,18 @@ export default async function BookingsPage() {
                   <TableCell className="whitespace-nowrap">
                     {format(new Date(b.startDatetime), "d MMM yyyy, h:mm a")}
                   </TableCell>
-                  <TableCell>{formatPrice(b.totalPriceCents)}</TableCell>
+                  <TableCell>
+                    <p className="font-medium">{formatPrice(b.totalPriceCents)}</p>
+                    {b.depositDueCents != null &&
+                    b.depositDueCents > 0 &&
+                    b.depositDueCents < b.totalPriceCents ? (
+                      <p className="text-[11px] text-muted-foreground whitespace-nowrap leading-tight mt-0.5">
+                        Deposit: <span className="text-green-600 font-semibold">{formatPrice(b.depositDueCents)}</span>
+                        <br />
+                        Bal: {formatPrice(b.balanceDueCents ?? b.totalPriceCents - b.depositDueCents)}
+                      </p>
+                    ) : null}
+                  </TableCell>
                   <TableCell className="max-w-[200px] text-xs text-muted-foreground">
                     {b.notes ? (
                       <span className="line-clamp-2" title={b.notes}>

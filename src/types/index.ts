@@ -35,6 +35,10 @@ export interface BookingConfirmation {
   endDatetime: string;   // ISO
   customerName: string;
   totalPriceCents: number;
+  depositDueCents?: number | null;
+  balanceDueCents?: number | null;
+  paymentQrDataUrl?: string | null;
+  recipientName?: string | null;
   whatsappUrl: string;
   holdExpiresAt?: string; // ISO
 }
@@ -46,6 +50,8 @@ export interface BookingDto {
   startDatetime: string;
   endDatetime: string;
   totalPriceCents: number;
+  depositDueCents?: number | null;
+  balanceDueCents?: number | null;
   notes: string | null;
   receiptSubmittedAt?: string | null;
   createdAt: string;
@@ -84,7 +90,18 @@ export interface CustomerBookingLookupDto {
   startDatetime: string;
   endDatetime: string;
   totalPriceCents: number;
+  depositDueCents?: number | null;
+  balanceDueCents?: number | null;
   whatsappUrl: string;
+}
+
+export interface DepositSettingDto {
+  isEnabled: boolean;
+  type: "FIXED" | "PERCENTAGE";
+  amountCents: number;
+  percentage: number;
+  duitnowPayload: string | null;
+  recipientName: string | null;
 }
 
 // ----------------------------------------------------------------

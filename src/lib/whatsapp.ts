@@ -8,6 +8,8 @@ export interface WhatsAppBookingDetails {
   startDatetime: Date;
   customerName: string;
   totalPriceCents: number;
+  depositDueCents?: number | null;
+  balanceDueCents?: number | null;
 }
 
 /**
@@ -22,8 +24,15 @@ export function formatPrice(cents: number): string {
  * The message prompts the customer to attach their payment screenshot.
  */
 export function buildWhatsAppUrl(details: WhatsAppBookingDetails): string {
-  const { referenceCode, serviceName, startDatetime, customerName, totalPriceCents } =
-    details;
+  const {
+    referenceCode,
+    serviceName,
+    startDatetime,
+    customerName,
+    totalPriceCents,
+    depositDueCents,
+    balanceDueCents,
+  } = details;
 
   const formattedDate = new Intl.DateTimeFormat("en-US", {
     timeZone: "Asia/Kuala_Lumpur",
@@ -41,6 +50,19 @@ export function buildWhatsAppUrl(details: WhatsAppBookingDetails): string {
   }).format(startDatetime);
   const formattedPrice = formatPrice(totalPriceCents);
 
+  const hasDeposit =
+    depositDueCents != null &&
+    depositDueCents > 0 &&
+    depositDueCents < totalPriceCents;
+
+  const paymentBreakdown = hasDeposit
+    ? [
+        `💰 *Total Price:* ${formattedPrice}`,
+        `💵 *Deposit Required:* ${formatPrice(depositDueCents)}`,
+        `🏷️ *Balance at Salon:* ${formatPrice(balanceDueCents ?? totalPriceCents - depositDueCents)}`,
+      ]
+    : [`💰 *Total Amount:* ${formattedPrice}`];
+
   const message = [
     `Hi! I'd like to confirm my appointment booking.`,
     ``,
@@ -49,7 +71,7 @@ export function buildWhatsAppUrl(details: WhatsAppBookingDetails): string {
     `💆 *Service:* ${serviceName}`,
     `📅 *Date:* ${formattedDate}`,
     `🕐 *Time:* ${formattedTime}`,
-    `💰 *Amount:* ${formattedPrice}`,
+    ...paymentBreakdown,
     ``,
     `Please find attached my payment receipt/screenshot. Kindly confirm my appointment. Thank you! 🙏`,
   ].join("\n");

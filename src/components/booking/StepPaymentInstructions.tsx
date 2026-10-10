@@ -188,11 +188,43 @@ export function StepPaymentInstructions() {
                   {format(new Date(selectedSlotStart), "d MMM yyyy, h:mm a")}
                 </span>
               </div>
-              <Separator className="bg-primary/20" />
-              <div className="flex justify-between font-bold text-base">
-                <span>Total Due</span>
-                <span className="text-primary">{formatPrice(selectedService.priceCents)}</span>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Total Service Fee</span>
+                <span className="font-medium">{formatPrice(selectedService.priceCents)}</span>
               </div>
+
+              {pendingHold?.depositDueCents != null &&
+              pendingHold.depositDueCents > 0 &&
+              pendingHold.depositDueCents < selectedService.priceCents ? (
+                <>
+                  <Separator className="bg-primary/20" />
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="font-semibold text-foreground flex items-center gap-1.5">
+                      Deposit Due Now
+                      <span className="text-[10px] bg-primary/15 text-primary px-1.5 py-0.5 rounded font-mono font-bold">
+                        Pre-filled on QR
+                      </span>
+                    </span>
+                    <span className="font-bold text-primary text-base">
+                      {formatPrice(pendingHold.depositDueCents)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-xs text-muted-foreground">
+                    <span>Balance at Salon</span>
+                    <span className="font-semibold">
+                      {formatPrice(pendingHold.balanceDueCents ?? selectedService.priceCents - pendingHold.depositDueCents)}
+                    </span>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <Separator className="bg-primary/20" />
+                  <div className="flex justify-between font-bold text-base">
+                    <span>Total Due Now</span>
+                    <span className="text-primary">{formatPrice(selectedService.priceCents)}</span>
+                  </div>
+                </>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -201,15 +233,26 @@ export function StepPaymentInstructions() {
       {/* Payment Instructions */}
       <Card>
         <CardContent className="p-5 space-y-4">
-          <div className="flex items-center gap-2">
-            <QrCode className="h-5 w-5 text-primary" />
-            <h3 className="font-semibold">How to Pay</h3>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <QrCode className="h-5 w-5 text-primary" />
+              <h3 className="font-semibold">How to Pay</h3>
+            </div>
+            {pendingHold?.recipientName && (
+              <span className="text-xs text-muted-foreground font-medium">
+                Payee: <strong className="text-foreground">{pendingHold.recipientName}</strong>
+              </span>
+            )}
           </div>
 
           <ol className="space-y-3 text-sm text-muted-foreground list-none">
             {[
-              "Scan the QR code below using DuitNow / Touch 'n Go eWallet or your banking app.",
-              `Transfer the exact amount of ${selectedService ? formatPrice(selectedService.priceCents) : ""} to complete your booking.`,
+              "Scan the DuitNow QR code below using Touch 'n Go eWallet, MAE, or any banking app.",
+              pendingHold?.depositDueCents != null &&
+              pendingHold.depositDueCents > 0 &&
+              pendingHold.depositDueCents < (selectedService?.priceCents ?? 0)
+                ? `Transfer the exact deposit of ${formatPrice(pendingHold.depositDueCents)} (amount is pre-filled automatically).`
+                : `Transfer the exact amount of ${selectedService ? formatPrice(selectedService.priceCents) : ""} to complete your booking.`,
               "📸 Take a screenshot of your successful payment receipt.",
               "Click 'I've Paid — Send Receipt via WhatsApp' below to lock your booking permanently.",
             ].map((step, i) => (
@@ -223,8 +266,23 @@ export function StepPaymentInstructions() {
           </ol>
 
           {/* QR Code */}
-          <div className="flex justify-center">
-            {PAYMENT_QR_URL ? (
+          <div className="flex flex-col items-center justify-center gap-2">
+            {pendingHold?.paymentQrDataUrl ? (
+              // Dynamic DuitNow QR generated on the fly with pre-filled amount
+              <div className="p-3 bg-white rounded-2xl border shadow-sm flex flex-col items-center">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={pendingHold.paymentQrDataUrl}
+                  alt="Dynamic DuitNow QR Code"
+                  className="w-56 h-56 rounded-lg object-contain"
+                />
+                <div className="mt-2 text-center">
+                  <span className="inline-block text-[11px] font-bold text-gray-800 bg-gray-100 px-2 py-0.5 rounded">
+                    DuitNow National QR · Locked Amount
+                  </span>
+                </div>
+              </div>
+            ) : PAYMENT_QR_URL ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={PAYMENT_QR_URL}
@@ -235,10 +293,7 @@ export function StepPaymentInstructions() {
               <div className="w-48 h-48 rounded-xl border-2 border-dashed border-border flex flex-col items-center justify-center text-muted-foreground gap-2">
                 <QrCode className="h-12 w-12 opacity-30" />
                 <p className="text-xs text-center px-2">
-                  Add your DuitNow / TnG QR code via{" "}
-                  <code className="bg-muted px-1 rounded text-[10px]">
-                    NEXT_PUBLIC_PAYMENT_QR_URL
-                  </code>
+                  DuitNow QR not yet configured in Admin Settings.
                 </p>
               </div>
             )}

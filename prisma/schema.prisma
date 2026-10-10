@@ -89,6 +89,8 @@ model Booking {
   startDatetime   DateTime
   endDatetime     DateTime
   totalPriceCents Int
+  depositDueCents Int?
+  balanceDueCents Int?
   status          BookingStatus @default(PENDING)
   notes           String?
   receiptSubmittedAt DateTime?
@@ -114,3 +116,20 @@ model AdminUser {
 
   @@map("admin_users")
 }
+
+// ---------------------------------------------------------------------------
+// Deposit & DuitNow QR settings (single-row configuration)
+// ---------------------------------------------------------------------------
+model DepositSetting {
+  id             String   @id @default("default")
+  isEnabled      Boolean  @default(false)
+  type           String   @default("FIXED") // "FIXED" or "PERCENTAGE"
+  amountCents    Int      @default(1000)   // e.g. 1000 = RM10.00
+  percentage     Int      @default(20)     // e.g. 20 = 20%
+  duitnowPayload String?  @db.Text
+  recipientName  String?
+  updatedAt      DateTime @updatedAt
+
+  @@map("deposit_settings")
+}
+
