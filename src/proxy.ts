@@ -13,6 +13,18 @@ const AUTH_ROUTES = ["/admin/login"];
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
+  const isInternalMode =
+    (process.env.NEXT_PUBLIC_APP_MODE || process.env.APP_MODE || "")
+      .toLowerCase()
+      .trim() === "internal";
+
+  // In internal mode, public pages (root / and /check-booking) redirect directly to /admin
+  if (isInternalMode && (pathname === "/" || pathname === "/check-booking")) {
+    const adminUrl = request.nextUrl.clone();
+    adminUrl.pathname = "/admin";
+    return NextResponse.redirect(adminUrl);
+  }
+
   const isProtected = PROTECTED_PREFIXES.some(
     (prefix) => pathname.startsWith(prefix) && !AUTH_ROUTES.includes(pathname)
   );
@@ -49,5 +61,5 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/admin/:path*"],
+  matcher: ["/", "/check-booking", "/admin/:path*"],
 };

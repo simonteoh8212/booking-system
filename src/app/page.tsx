@@ -8,6 +8,8 @@ import { CustomerHeader } from "@/components/booking/CustomerHeader";
 import { CalendarDays } from "lucide-react";
 
 import { connection } from "next/server";
+import { redirect } from "next/navigation";
+import { isInternalAppMode } from "@/lib/utils";
 
 export const metadata: Metadata = {
   title: "Book an Appointment",
@@ -15,6 +17,10 @@ export const metadata: Metadata = {
 };
 
 export default async function BookingPage() {
+  if (isInternalAppMode()) {
+    redirect("/admin");
+  }
+
   await connection();
   const [servicesResult, depositResult] = await Promise.all([
     getActiveServices(),

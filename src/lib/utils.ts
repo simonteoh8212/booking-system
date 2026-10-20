@@ -109,3 +109,19 @@ export function normalizePhoneNumber(raw: string): string {
   }
   return digits;
 }
+
+/**
+ * Check if the application is running in "internal" mode (staff/desk only).
+ * When internal mode is active, customer-facing root pages redirect to /admin.
+ * Controlled by NEXT_PUBLIC_APP_MODE="internal" or APP_MODE="internal".
+ */
+export function isInternalAppMode(): boolean {
+  const mode = (
+    process.env.NEXT_PUBLIC_APP_MODE ||
+    process.env.APP_MODE ||
+    ""
+  )
+    .toLowerCase()
+    .trim();
+  return mode === "internal";
+}

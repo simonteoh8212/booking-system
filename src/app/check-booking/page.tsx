@@ -45,6 +45,11 @@ function CheckBookingContent() {
   const businessName = process.env.NEXT_PUBLIC_BUSINESS_NAME ?? "Our Salon";
 
   useEffect(() => {
+    if (process.env.NEXT_PUBLIC_APP_MODE === "internal") {
+      window.location.replace("/admin");
+      return;
+    }
+
     getDepositSetting().then((res) => {
       if (res.success && res.data.currencySymbol) {
         setCurrencySymbol(res.data.currencySymbol);
