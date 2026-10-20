@@ -1,6 +1,8 @@
 "use client";
 
+import { useEffect } from "react";
 import { useBookingStore } from "@/stores/bookingStore";
+import { useCustomerLanguage } from "./CustomerLanguageContext";
 import { StepServiceSelect } from "./StepServiceSelect";
 import { StepDateTimePicker } from "./StepDateTimePicker";
 import { StepCustomerForm } from "./StepCustomerForm";
@@ -9,19 +11,34 @@ import { BookingConfirmation } from "./BookingConfirmation";
 import { cn } from "@/lib/utils";
 import type { ServiceDto } from "@/types";
 
-const STEPS = [
-  { label: "Service" },
-  { label: "Date & Time" },
-  { label: "Details" },
-  { label: "Payment" },
-];
-
 interface BookingFunnelProps {
   services: ServiceDto[];
+  currencySymbol?: string;
 }
 
-export function BookingFunnel({ services }: BookingFunnelProps) {
-  const { currentStep, confirmation } = useBookingStore();
+export function BookingFunnel({
+  services,
+  currencySymbol = "RM",
+}: BookingFunnelProps) {
+  const { currentStep, confirmation, setCurrencySymbol } = useBookingStore();
+  const { language, t } = useCustomerLanguage();
+
+  // Keep currencySymbol in sync with server setting
+  useEffect(() => {
+    if (currencySymbol) {
+      setCurrencySymbol(currencySymbol);
+      try {
+        localStorage.setItem("app_currency_symbol", currencySymbol);
+      } catch {}
+    }
+  }, [currencySymbol, setCurrencySymbol]);
+
+  const steps = [
+    { label: t.steps.step1[language] },
+    { label: t.steps.step2[language] },
+    { label: t.steps.step3[language] },
+    { label: t.steps.step4[language] },
+  ];
 
   // If we have a confirmation, show the success screen (step 5)
   if (confirmation) {
@@ -33,16 +50,16 @@ export function BookingFunnel({ services }: BookingFunnelProps) {
   }
 
   return (
-    <div className="max-w-md mx-auto px-4 pb-16 pt-6">
+    <div className="max-w-md mx-auto px-4 pb-32 pt-6">
       {/* Step indicator */}
-      <div className="flex items-center justify-between mb-8">
-        {STEPS.map((step, i) => {
+      <div className="flex items-center justify-between mb-8 select-none">
+        {steps.map((step, i) => {
           const stepNum = i + 1;
           const isActive = stepNum === currentStep;
           const isCompleted = stepNum < currentStep;
 
           return (
-            <div key={step.label} className="flex items-center">
+            <div key={i} className="flex items-center">
               <div className="flex flex-col items-center gap-1">
                 <div
                   className={cn(
@@ -59,13 +76,13 @@ export function BookingFunnel({ services }: BookingFunnelProps) {
                 <span
                   className={cn(
                     "text-[10px] font-medium hidden sm:block",
-                    isActive ? "text-primary" : "text-muted-foreground"
+                    isActive ? "text-primary font-bold" : "text-muted-foreground"
                   )}
                 >
                   {step.label}
                 </span>
               </div>
-              {i < STEPS.length - 1 && (
+              {i < steps.length - 1 && (
                 <div
                   className={cn(
                     "flex-1 h-0.5 mx-2 rounded transition-all",

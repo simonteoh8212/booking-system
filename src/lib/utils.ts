@@ -33,7 +33,19 @@ export function generateReferenceCode(): string {
  * Supports RM (Malaysia) or $ (Australia).
  */
 export function formatPrice(cents: number, overrideSymbol?: string): string {
-  const sym = overrideSymbol ?? process.env.NEXT_PUBLIC_CURRENCY_SYMBOL ?? "RM";
+  let sym = overrideSymbol;
+  if (!sym && typeof window !== "undefined") {
+    try {
+      const stored = localStorage.getItem("app_currency_symbol");
+      if (stored === "$" || stored === "RM" || stored === "AUD" || stored === "MYR") {
+        sym = stored === "AUD" ? "$" : stored === "MYR" ? "RM" : stored;
+      }
+    } catch {}
+  }
+
+  if (!sym) {
+    sym = process.env.NEXT_PUBLIC_CURRENCY_SYMBOL ?? "RM";
+  }
 
   const formatted = (cents / 100).toFixed(2);
   if (sym === "$" || sym === "AUD" || sym === "A$") {

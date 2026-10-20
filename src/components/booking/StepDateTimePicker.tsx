@@ -11,6 +11,7 @@ import { format, addDays } from "date-fns";
 import { ArrowLeft, ArrowRight, CalendarIcon, Clock, Loader2 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { TimeSlot } from "@/types";
+import { useCustomerLanguage } from "./CustomerLanguageContext";
 
 export function StepDateTimePicker() {
   const {
@@ -22,6 +23,7 @@ export function StepDateTimePicker() {
     nextStep,
     prevStep,
   } = useBookingStore();
+  const { language, t } = useCustomerLanguage();
 
   const [slots, setSlots] = useState<TimeSlot[]>([]);
   const [isPending, startTransition] = useTransition();
@@ -59,11 +61,14 @@ export function StepDateTimePicker() {
       <div className="text-center space-y-1">
         <div className="flex items-center justify-center gap-2 text-primary mb-2">
           <CalendarIcon className="h-5 w-5" />
-          <span className="text-sm font-medium uppercase tracking-wider">Step 2 of 4</span>
+          <span className="text-sm font-medium uppercase tracking-wider">
+            {language === "zh" ? "第 2 步 / 共 4 步" : "Step 2 of 4"}
+          </span>
         </div>
-        <h2 className="text-2xl font-bold">Pick a Date & Time</h2>
+        <h2 className="text-2xl font-bold">{t.step2.title[language]}</h2>
         <p className="text-muted-foreground">
-          Showing slots for: <strong>{selectedService?.name}</strong>
+          {language === "zh" ? "已选项目：" : "Showing slots for: "}
+          <strong>{selectedService?.name}</strong>
         </p>
       </div>
 
@@ -86,7 +91,9 @@ export function StepDateTimePicker() {
           <div className="flex items-center gap-2">
             <Clock className="h-4 w-4 text-muted-foreground" />
             <h3 className="font-semibold text-sm">
-              Available times for {format(selectedDate, "EEEE, d MMMM")}
+              {language === "zh"
+                ? `${format(selectedDate, "M月d日 (EEEE)")} 可用时段`
+                : `Available times for ${format(selectedDate, "EEEE, d MMMM")}`}
             </h3>
           </div>
 
@@ -94,7 +101,7 @@ export function StepDateTimePicker() {
             <div className="space-y-2.5">
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
-                <span>Loading available slots…</span>
+                <span>{language === "zh" ? "正在查询可用时段…" : "Loading available slots…"}</span>
               </div>
               <div className="grid grid-cols-3 gap-2">
                 {Array.from({ length: 6 }).map((_, i) => (
@@ -107,7 +114,7 @@ export function StepDateTimePicker() {
           ) : slots.length === 0 ? (
             <div className="text-center py-8">
               <p className="text-muted-foreground text-sm">
-                No available slots on this day. Please try another date.
+                {t.step2.noSlots[language]}
               </p>
             </div>
           ) : (
@@ -137,20 +144,38 @@ export function StepDateTimePicker() {
         </div>
       )}
 
-      {/* Navigation */}
-      <div className="flex gap-3">
-        <Button variant="outline" onClick={prevStep} className="flex-1">
-          <ArrowLeft className="h-4 w-4 mr-2" />
-          Back
-        </Button>
-        <Button
-          onClick={nextStep}
-          disabled={!canContinue}
-          className="flex-1"
-        >
-          Continue
-          <ArrowRight className="h-4 w-4 ml-2" />
-        </Button>
+      {/* Floating Navigation Bar (like Desk Count Sales) */}
+      <div className="fixed bottom-3 inset-x-0 z-30 max-w-md mx-auto px-4 pointer-events-none">
+        <div className="p-3 sm:p-3.5 rounded-2xl border border-border/80 bg-card/95 backdrop-blur-md shadow-lg flex flex-col gap-2 pointer-events-auto">
+          {selectedSlotStart && (
+            <div className="flex items-center justify-between text-xs px-1 text-muted-foreground font-medium">
+              <span>{language === "zh" ? "已选时段" : "Selected slot"}</span>
+              <span className="font-bold text-foreground">
+                {format(new Date(selectedSlotStart), "h:mm a")}
+              </span>
+            </div>
+          )}
+          <div className="flex gap-3">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={prevStep}
+              className="flex-1 h-12 text-sm sm:text-base font-bold rounded-xl cursor-pointer border-border/80 bg-card hover:bg-muted"
+            >
+              <ArrowLeft className="h-4 w-4 mr-1.5" />
+              {t.step2.back[language]}
+            </Button>
+            <Button
+              type="button"
+              onClick={nextStep}
+              disabled={!canContinue}
+              className="flex-1 h-12 text-sm sm:text-base font-bold rounded-xl shadow-xs cursor-pointer"
+            >
+              {t.step2.continue[language]}
+              <ArrowRight className="h-4 w-4 ml-1.5" />
+            </Button>
+          </div>
+        </div>
       </div>
     </div>
   );

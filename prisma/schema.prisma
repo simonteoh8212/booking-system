@@ -146,6 +146,7 @@ model DepositSetting {
   amountCents    Int      @default(1000)   // e.g. 1000 = RM10.00
   percentage     Int      @default(20)     // e.g. 20 = 20%
   duitnowPayload String?  @db.Text
+  qrImageUrl     String?  @db.Text // Exact uploaded TNG/DuitNow QR screenshot from merchant app
   recipientName  String?
   currency       String   @default("MYR")
   currencySymbol String   @default("RM")
@@ -153,6 +154,22 @@ model DepositSetting {
   updatedAt      DateTime @updatedAt
 
   @@map("deposit_settings")
+}
+
+// ---------------------------------------------------------------------------
+// Deposit-exempt customers (regular/VIP customers who don't need to pay deposit)
+// ---------------------------------------------------------------------------
+model DepositExemptCustomer {
+  id          String   @id @default(cuid())
+  phoneNumber String   @unique // Normalized e.g. "0123456789"
+  name        String?  // Optional name e.g. "Sarah Tan"
+  note        String?  // Optional note e.g. "VIP regular since 2023"
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([phoneNumber])
+  @@map("deposit_exempt_customers")
 }
 
 // ---------------------------------------------------------------------------

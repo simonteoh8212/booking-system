@@ -20,6 +20,7 @@ import type { ServiceDto } from "@/types";
 
 interface ServiceManagerProps {
   initialServices: ServiceDto[];
+  currencySymbol?: string;
 }
 
 const EMPTY_FORM = {
@@ -31,9 +32,12 @@ const EMPTY_FORM = {
   isActive: true,
 };
 
-export function ServiceManager({ initialServices }: ServiceManagerProps) {
+export function ServiceManager({
+  initialServices,
+  currencySymbol: initialCurrencySymbol = "RM",
+}: ServiceManagerProps) {
   const [services, setServices] = useState<ServiceDto[]>(initialServices);
-  const [currencySymbol, setCurrencySymbol] = useState("RM");
+  const [currencySymbol, setCurrencySymbol] = useState(initialCurrencySymbol);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<ServiceDto | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);

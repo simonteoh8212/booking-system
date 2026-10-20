@@ -3,6 +3,7 @@
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
 import { cn, formatPrice } from "@/lib/utils";
+import { useCustomerLanguage } from "./CustomerLanguageContext";
 import type { ServiceDto } from "@/types";
 import { Clock, CheckCircle2 } from "lucide-react";
 
@@ -10,30 +11,38 @@ interface ServiceCardProps {
   service: ServiceDto;
   selected: boolean;
   onSelect: (service: ServiceDto) => void;
+  currencySymbol?: string;
 }
 
-export function ServiceCard({ service, selected, onSelect }: ServiceCardProps) {
+export function ServiceCard({
+  service,
+  selected,
+  onSelect,
+  currencySymbol = "RM",
+}: ServiceCardProps) {
+  const { language, t } = useCustomerLanguage();
+
   return (
     <Card
       onClick={() => onSelect(service)}
       className={cn(
-        "relative cursor-pointer transition-all duration-200 hover:shadow-lg hover:-translate-y-0.5 border-2",
+        "relative cursor-pointer transition-all duration-200 hover:shadow-lg hover:-translate-y-0.5 border-2 rounded-2xl",
         selected
           ? "border-primary bg-primary/5 shadow-md"
-          : "border-border hover:border-primary/40"
+          : "border-border hover:border-primary/40 bg-card"
       )}
     >
       {selected && (
-        <div className="absolute top-3 right-3">
+        <div className="absolute top-3.5 right-3.5">
           <CheckCircle2 className="h-5 w-5 text-primary fill-primary/20" />
         </div>
       )}
 
       <CardHeader className="pb-2">
         <div className="flex items-start justify-between gap-2 pr-7">
-          <h3 className="font-semibold text-base leading-tight">{service.name}</h3>
+          <h3 className="font-bold text-base leading-tight text-foreground">{service.name}</h3>
           {service.category && (
-            <Badge variant="secondary" className="shrink-0 text-xs">
+            <Badge variant="secondary" className="shrink-0 text-xs font-semibold">
               {service.category}
             </Badge>
           )}
@@ -49,12 +58,14 @@ export function ServiceCard({ service, selected, onSelect }: ServiceCardProps) {
       </CardContent>
 
       <CardFooter className="pt-0 flex items-center justify-between">
-        <div className="flex items-center gap-1 text-sm text-muted-foreground">
+        <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium">
           <Clock className="h-3.5 w-3.5" />
-          <span>{service.durationMinutes} min</span>
+          <span>
+            {service.durationMinutes} {t.step1.minUnit[language]}
+          </span>
         </div>
-        <span className="font-bold text-primary text-lg">
-          {formatPrice(service.priceCents)}
+        <span className="font-black text-primary text-lg tabular-nums">
+          {formatPrice(service.priceCents, currencySymbol)}
         </span>
       </CardFooter>
     </Card>

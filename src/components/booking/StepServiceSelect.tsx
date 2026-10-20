@@ -5,6 +5,7 @@ import { ServiceCard } from "./ServiceCard";
 import type { ServiceDto } from "@/types";
 import { Button } from "@/components/ui/button";
 import { ArrowRight, Sparkles } from "lucide-react";
+import { useCustomerLanguage } from "./CustomerLanguageContext";
 
 interface StepServiceSelectProps {
   services: ServiceDto[];
@@ -22,7 +23,8 @@ function groupByCategory(services: ServiceDto[]) {
 }
 
 export function StepServiceSelect({ services }: StepServiceSelectProps) {
-  const { selectedService, selectService, nextStep } = useBookingStore();
+  const { selectedService, selectService, nextStep, currencySymbol } = useBookingStore();
+  const { language, t } = useCustomerLanguage();
   const grouped = groupByCategory(services);
 
   return (
@@ -30,10 +32,12 @@ export function StepServiceSelect({ services }: StepServiceSelectProps) {
       <div className="text-center space-y-1">
         <div className="flex items-center justify-center gap-2 text-primary mb-2">
           <Sparkles className="h-5 w-5" />
-          <span className="text-sm font-medium uppercase tracking-wider">Step 1 of 4</span>
+          <span className="text-sm font-medium uppercase tracking-wider">
+            {language === "zh" ? "第 1 步 / 共 4 步" : "Step 1 of 4"}
+          </span>
         </div>
-        <h2 className="text-2xl font-bold">Choose Your Service</h2>
-        <p className="text-muted-foreground">Select the service you&apos;d like to book</p>
+        <h2 className="text-2xl font-bold">{t.step1.title[language]}</h2>
+        <p className="text-muted-foreground">{t.step1.subtitle[language]}</p>
       </div>
 
       <div className="space-y-6">
@@ -51,6 +55,7 @@ export function StepServiceSelect({ services }: StepServiceSelectProps) {
                   service={service}
                   selected={selectedService?.id === service.id}
                   onSelect={selectService}
+                  currencySymbol={currencySymbol}
                 />
               ))}
             </div>
@@ -58,15 +63,22 @@ export function StepServiceSelect({ services }: StepServiceSelectProps) {
         ))}
       </div>
 
-      <Button
-        onClick={nextStep}
-        disabled={!selectedService}
-        className="w-full h-12 text-base"
-        size="lg"
-      >
-        Continue
-        <ArrowRight className="h-4 w-4 ml-2" />
-      </Button>
+      {/* Floating Continue Bar (like Desk Count Sales) */}
+      <div className="fixed bottom-3 inset-x-0 z-30 max-w-md mx-auto px-4 pointer-events-none">
+        <div className="p-3 sm:p-3.5 rounded-2xl border border-border/80 bg-card/95 backdrop-blur-md shadow-lg pointer-events-auto">
+          <Button
+            type="button"
+            onClick={nextStep}
+            disabled={!selectedService}
+            className="w-full h-12 text-base font-bold rounded-xl shadow-xs cursor-pointer"
+            size="lg"
+          >
+            {t.step2.continue[language]}
+            <ArrowRight className="h-4 w-4 ml-2" />
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }
+

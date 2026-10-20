@@ -10,6 +10,8 @@ export interface WhatsAppBookingDetails {
   totalPriceCents: number;
   depositDueCents?: number | null;
   balanceDueCents?: number | null;
+  isDepositExempt?: boolean;
+  currencySymbol?: string;
 }
 
 /**
@@ -27,7 +29,7 @@ export function formatPrice(cents: number, overrideSymbol?: string): string {
 
 /**
  * Build a pre-filled WhatsApp wa.me URL with appointment details.
- * The message prompts the customer to attach their payment screenshot.
+ * The message prompts the customer to attach their payment screenshot or notes deposit exemption.
  */
 export function buildWhatsAppUrl(details: WhatsAppBookingDetails): string {
   const {
@@ -38,6 +40,8 @@ export function buildWhatsAppUrl(details: WhatsAppBookingDetails): string {
     totalPriceCents,
     depositDueCents,
     balanceDueCents,
+    isDepositExempt,
+    currencySymbol,
   } = details;
 
   const formattedDate = new Intl.DateTimeFormat("en-US", {
@@ -54,20 +58,31 @@ export function buildWhatsAppUrl(details: WhatsAppBookingDetails): string {
     minute: "2-digit",
     hour12: true,
   }).format(startDatetime);
-  const formattedPrice = formatPrice(totalPriceCents);
+  const formattedPrice = formatPrice(totalPriceCents, currencySymbol);
 
   const hasDeposit =
+    !isDepositExempt &&
     depositDueCents != null &&
     depositDueCents > 0 &&
     depositDueCents < totalPriceCents;
 
-  const paymentBreakdown = hasDeposit
+  const paymentBreakdown = isDepositExempt
     ? [
         `💰 *Total Price:* ${formattedPrice}`,
-        `💵 *Deposit Required:* ${formatPrice(depositDueCents)}`,
-        `🏷️ *Balance at Salon:* ${formatPrice(balanceDueCents ?? totalPriceCents - depositDueCents)}`,
+        `🌟 *Deposit Status:* Waived (Regular Customer VIP)`,
+        `🏷️ *Payment at Salon:* ${formattedPrice} (Pay upon arrival)`,
+      ]
+    : hasDeposit
+    ? [
+        `💰 *Total Price:* ${formattedPrice}`,
+        `💵 *Deposit Required:* ${formatPrice(depositDueCents, currencySymbol)}`,
+        `🏷️ *Balance at Salon:* ${formatPrice(balanceDueCents ?? totalPriceCents - depositDueCents, currencySymbol)}`,
       ]
     : [`💰 *Total Amount:* ${formattedPrice}`];
+
+  const closingMessage = isDepositExempt
+    ? `I am a regular customer with deposit waived. Looking forward to seeing you! Thank you! 🙏`
+    : `Please find attached my payment receipt/screenshot. Kindly confirm my appointment. Thank you! 🙏`;
 
   const message = [
     `Hi! I'd like to confirm my appointment booking.`,
@@ -79,7 +94,7 @@ export function buildWhatsAppUrl(details: WhatsAppBookingDetails): string {
     `🕐 *Time:* ${formattedTime}`,
     ...paymentBreakdown,
     ``,
-    `Please find attached my payment receipt/screenshot. Kindly confirm my appointment. Thank you! 🙏`,
+    closingMessage,
   ].join("\n");
 
   const phone = MERCHANT_WHATSAPP.replace(/\D/g, "");

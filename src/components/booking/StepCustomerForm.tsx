@@ -12,6 +12,7 @@ import { formatPrice } from "@/lib/utils";
 import { format } from "date-fns";
 import { ArrowLeft, ArrowRight, User, Loader2, AlertCircle } from "lucide-react";
 import { useState, useTransition } from "react";
+import { useCustomerLanguage } from "./CustomerLanguageContext";
 
 export function StepCustomerForm() {
   const {
@@ -22,7 +23,9 @@ export function StepCustomerForm() {
     setPendingHold,
     nextStep,
     prevStep,
+    currencySymbol,
   } = useBookingStore();
+  const { language, t } = useCustomerLanguage();
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [holdError, setHoldError] = useState<string | null>(null);
@@ -30,11 +33,14 @@ export function StepCustomerForm() {
 
   function validate() {
     const newErrors: Record<string, string> = {};
-    if (!customerDetails.name.trim()) newErrors.name = "Name is required.";
-    if (!customerDetails.phoneNumber.trim()) {
-      newErrors.phoneNumber = "WhatsApp number is required.";
-    } else if (!/^(\+?60|0)[1-9]\d{7,9}$/.test(customerDetails.phoneNumber.replace(/\s/g, ""))) {
-      newErrors.phoneNumber = "Enter a valid Malaysian phone number.";
+    if (!customerDetails.name.trim()) {
+      newErrors.name = language === "zh" ? "请输入您的姓名或称呼" : "Name is required.";
+    }
+    const cleanPhone = customerDetails.phoneNumber.replace(/[\s-]/g, "");
+    if (!cleanPhone) {
+      newErrors.phoneNumber = language === "zh" ? "请输入 WhatsApp 手机号码" : "WhatsApp number is required.";
+    } else if (cleanPhone.length < 8) {
+      newErrors.phoneNumber = language === "zh" ? "请输入有效的手机号码" : "Enter a valid phone number.";
     }
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -49,7 +55,7 @@ export function StepCustomerForm() {
         serviceId: selectedService.id,
         startDatetimeIso: selectedSlotStart,
         customerName: customerDetails.name,
-        phoneNumber: customerDetails.phoneNumber.replace(/\s/g, ""),
+        phoneNumber: customerDetails.phoneNumber.replace(/[\s-]/g, ""),
         notes: customerDetails.notes || undefined,
       });
 
@@ -67,37 +73,43 @@ export function StepCustomerForm() {
       <div className="text-center space-y-1">
         <div className="flex items-center justify-center gap-2 text-primary mb-2">
           <User className="h-5 w-5" />
-          <span className="text-sm font-medium uppercase tracking-wider">Step 3 of 4</span>
+          <span className="text-sm font-medium uppercase tracking-wider">
+            {language === "zh" ? "第 3 步 / 共 4 步" : "Step 3 of 4"}
+          </span>
         </div>
-        <h2 className="text-2xl font-bold">Your Details</h2>
-        <p className="text-muted-foreground">We&apos;ll use this to confirm your appointment</p>
+        <h2 className="text-2xl font-bold">{t.step3.title[language]}</h2>
+        <p className="text-muted-foreground">{t.step3.subtitle[language]}</p>
       </div>
 
       {/* Booking Summary */}
       {selectedService && selectedSlotStart && (
         <Card className="bg-primary/5 border-primary/20">
           <CardContent className="p-4 space-y-2">
-            <h4 className="text-sm font-semibold text-primary">Booking Summary</h4>
+            <h4 className="text-sm font-semibold text-primary">{t.step3.summary[language]}</h4>
             <Separator className="bg-primary/20" />
             <div className="space-y-1 text-sm">
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Service</span>
+                <span className="text-muted-foreground">{t.step3.service[language]}</span>
                 <span className="font-medium">{selectedService.name}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Duration</span>
-                <span className="font-medium">{selectedService.durationMinutes} min</span>
+                <span className="text-muted-foreground">{t.step3.duration[language]}</span>
+                <span className="font-medium">
+                  {selectedService.durationMinutes} {t.step1.minUnit[language]}
+                </span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Date & Time</span>
+                <span className="text-muted-foreground">{t.step3.datetime[language]}</span>
                 <span className="font-medium text-right">
                   {format(new Date(selectedSlotStart), "d MMM yyyy, h:mm a")}
                 </span>
               </div>
               <Separator className="bg-primary/20" />
               <div className="flex justify-between font-bold text-base">
-                <span>Total</span>
-                <span className="text-primary">{formatPrice(selectedService.priceCents)}</span>
+                <span>{t.step3.total[language]}</span>
+                <span className="text-primary font-black tabular-nums">
+                  {formatPrice(selectedService.priceCents, currencySymbol)}
+                </span>
               </div>
             </div>
           </CardContent>
@@ -107,10 +119,10 @@ export function StepCustomerForm() {
       {/* Form */}
       <div className="space-y-4">
         <div className="space-y-2">
-          <Label htmlFor="name">Full Name</Label>
+          <Label htmlFor="name">{t.step3.fullName[language]}</Label>
           <Input
             id="name"
-            placeholder="Your full name"
+            placeholder={t.step3.fullNamePlaceholder[language]}
             value={customerDetails.name}
             onChange={(e) => updateCustomerDetails({ name: e.target.value })}
             className={errors.name ? "border-destructive" : ""}
@@ -121,11 +133,11 @@ export function StepCustomerForm() {
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="phone">WhatsApp Number</Label>
+          <Label htmlFor="phone">{t.step3.phone[language]}</Label>
           <Input
             id="phone"
             type="tel"
-            placeholder="e.g. 0123456789"
+            placeholder={t.step3.phonePlaceholder[language]}
             value={customerDetails.phoneNumber}
             onChange={(e) => updateCustomerDetails({ phoneNumber: e.target.value })}
             className={errors.phoneNumber ? "border-destructive" : ""}
@@ -134,16 +146,16 @@ export function StepCustomerForm() {
             <p className="text-xs text-destructive">{errors.phoneNumber}</p>
           ) : (
             <p className="text-xs text-muted-foreground">
-              We&apos;ll send the confirmation via WhatsApp.
+              {t.step3.phoneNotice[language]}
             </p>
           )}
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="notes">Notes (optional)</Label>
+          <Label htmlFor="notes">{t.step3.notes[language]}</Label>
           <Textarea
             id="notes"
-            placeholder="Any special requests or notes for the therapist…"
+            placeholder={t.step3.notesPlaceholder[language]}
             value={customerDetails.notes}
             onChange={(e) => updateCustomerDetails({ notes: e.target.value })}
             rows={3}
@@ -161,25 +173,38 @@ export function StepCustomerForm() {
         </div>
       )}
 
-      {/* Navigation */}
-      <div className="flex gap-3">
-        <Button variant="outline" onClick={prevStep} disabled={isPending} className="flex-1">
-          <ArrowLeft className="h-4 w-4 mr-2" />
-          Back
-        </Button>
-        <Button onClick={handleContinue} disabled={isPending} className="flex-1">
-          {isPending ? (
-            <>
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              Holding slot…
-            </>
-          ) : (
-            <>
-              Hold Slot & Pay
-              <ArrowRight className="h-4 w-4 ml-2" />
-            </>
-          )}
-        </Button>
+      {/* Floating Navigation Bar (like Desk Count Sales) */}
+      <div className="fixed bottom-3 inset-x-0 z-30 max-w-md mx-auto px-4 pointer-events-none">
+        <div className="p-3 sm:p-3.5 rounded-2xl border border-border/80 bg-card/95 backdrop-blur-md shadow-lg flex gap-3 pointer-events-auto">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={prevStep}
+            disabled={isPending}
+            className="flex-1 h-12 text-sm sm:text-base font-bold rounded-xl cursor-pointer border-border/80 bg-card hover:bg-muted"
+          >
+            <ArrowLeft className="h-4 w-4 mr-1.5" />
+            {t.step3.back[language]}
+          </Button>
+          <Button
+            type="button"
+            onClick={handleContinue}
+            disabled={isPending}
+            className="flex-1 h-12 text-sm sm:text-base font-bold rounded-xl shadow-xs cursor-pointer"
+          >
+            {isPending ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                {t.step3.holding[language]}
+              </>
+            ) : (
+              <>
+                {t.step3.holdSlotAndPay[language]}
+                <ArrowRight className="h-4 w-4 ml-1.5" />
+              </>
+            )}
+          </Button>
+        </div>
       </div>
     </div>
   );

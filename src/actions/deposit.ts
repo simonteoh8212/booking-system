@@ -16,6 +16,7 @@ const DEFAULT_SETTING: DepositSettingDto = {
   amountCents: 1000, // RM10.00 or $10.00
   percentage: 20,    // 20%
   duitnowPayload: DEFAULT_DUITNOW_PAYLOAD,
+  qrImageUrl: null,
   recipientName: "TEOH CHUN SEONG",
   currency: process.env.NEXT_PUBLIC_CURRENCY_CODE || "MYR",
   currencySymbol: process.env.NEXT_PUBLIC_CURRENCY_SYMBOL || "RM",
@@ -27,13 +28,16 @@ const DEFAULT_SETTING: DepositSettingDto = {
  */
 export async function getDepositSetting(): Promise<ActionResult<DepositSettingDto>> {
   try {
-    const setting = await prisma.depositSetting.findUnique({
-      where: { id: "default" },
-    });
+    const setting = await prisma.depositSetting.findFirst();
 
     if (!setting) {
       return { success: true, data: DEFAULT_SETTING };
     }
+
+    const currency = setting.currency || process.env.NEXT_PUBLIC_CURRENCY_CODE || "MYR";
+    const currencySymbol =
+      setting.currencySymbol ||
+      (currency === "AUD" ? "$" : (process.env.NEXT_PUBLIC_CURRENCY_SYMBOL || "RM"));
 
     return {
       success: true,
@@ -43,9 +47,10 @@ export async function getDepositSetting(): Promise<ActionResult<DepositSettingDt
         amountCents: setting.amountCents,
         percentage: setting.percentage,
         duitnowPayload: setting.duitnowPayload ?? DEFAULT_DUITNOW_PAYLOAD,
+        qrImageUrl: setting.qrImageUrl ?? null,
         recipientName: setting.recipientName ?? "TEOH CHUN SEONG",
-        currency: setting.currency || process.env.NEXT_PUBLIC_CURRENCY_CODE || "MYR",
-        currencySymbol: setting.currencySymbol || process.env.NEXT_PUBLIC_CURRENCY_SYMBOL || "RM",
+        currency,
+        currencySymbol,
         deskLanguage: (setting.deskLanguage as DeskLanguageMode) || "BILINGUAL_ZH_FIRST",
       },
     };
@@ -76,14 +81,19 @@ export async function updateDepositSetting(
     const currencySymbol = currency === "AUD" ? "$" : (input.currencySymbol || "RM");
     const deskLanguage = input.deskLanguage || "BILINGUAL_ZH_FIRST";
 
+    // Find primary row or fallback to 'default'
+    const existing = await prisma.depositSetting.findFirst();
+    const primaryId = existing?.id || "default";
+
     const updated = await prisma.depositSetting.upsert({
-      where: { id: "default" },
+      where: { id: primaryId },
       update: {
         isEnabled: input.isEnabled !== undefined ? Boolean(input.isEnabled) : false,
         type: input.type === "PERCENTAGE" ? "PERCENTAGE" : "FIXED",
         amountCents: Math.max(100, Math.round(Number(input.amountCents ?? 1000))),
         percentage: Math.min(100, Math.max(1, Math.round(Number(input.percentage ?? 20)))),
         duitnowPayload: rawPayload,
+        qrImageUrl: input.qrImageUrl !== undefined ? input.qrImageUrl : undefined,
         recipientName: recipientName ?? "Merchant",
         currency,
         currencySymbol,
@@ -96,6 +106,7 @@ export async function updateDepositSetting(
         amountCents: Math.max(100, Math.round(Number(input.amountCents ?? 1000))),
         percentage: Math.min(100, Math.max(1, Math.round(Number(input.percentage ?? 20)))),
         duitnowPayload: rawPayload,
+        qrImageUrl: input.qrImageUrl ?? null,
         recipientName: recipientName ?? "Merchant",
         currency,
         currencySymbol,
@@ -104,10 +115,13 @@ export async function updateDepositSetting(
     });
 
     revalidatePath("/admin/settings");
+    revalidatePath("/admin/services");
+    revalidatePath("/admin/bookings");
     revalidatePath("/admin");
     revalidatePath("/admin/desk", "page");
     revalidatePath("/admin/desk");
     revalidatePath("/");
+    revalidatePath("/check-booking");
 
     return {
       success: true,
@@ -117,6 +131,7 @@ export async function updateDepositSetting(
         amountCents: updated.amountCents,
         percentage: updated.percentage,
         duitnowPayload: updated.duitnowPayload,
+        qrImageUrl: updated.qrImageUrl,
         recipientName: updated.recipientName,
         currency: updated.currency,
         currencySymbol: updated.currencySymbol,
@@ -168,8 +183,11 @@ export async function updateDeskCurrencySetting(
 ): Promise<ActionResult<{ currency: string; currencySymbol: string }>> {
   await requireAdmin();
   try {
+    const existing = await prisma.depositSetting.findFirst();
+    const primaryId = existing?.id || "default";
+
     const updated = await prisma.depositSetting.upsert({
-      where: { id: "default" },
+      where: { id: primaryId },
       update: { currency, currencySymbol },
       create: {
         id: "default",
@@ -181,7 +199,11 @@ export async function updateDeskCurrencySetting(
     revalidatePath("/admin/desk", "page");
     revalidatePath("/admin/desk");
     revalidatePath("/admin/settings");
+    revalidatePath("/admin/services");
+    revalidatePath("/admin/bookings");
     revalidatePath("/admin");
+    revalidatePath("/");
+    revalidatePath("/check-booking");
 
     return {
       success: true,

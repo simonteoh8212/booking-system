@@ -32,6 +32,9 @@ interface BookingState {
   pendingHold: BookingConfirmation | null;
   confirmation: BookingConfirmation | null;
 
+  // Currency
+  currencySymbol: string;
+
   // Loading/error feedback
   isSubmitting: boolean;
   submitError: string | null;
@@ -45,6 +48,9 @@ interface BookingActions {
   goToStep: (step: BookingStep) => void;
   nextStep: () => void;
   prevStep: () => void;
+
+  // Currency
+  setCurrencySymbol: (sym: string) => void;
 
   // Step 1
   selectService: (service: ServiceDto) => void;
@@ -84,6 +90,7 @@ const initialState: BookingState = {
   },
   pendingHold: null,
   confirmation: null,
+  currencySymbol: "RM",
   isSubmitting: false,
   submitError: null,
 };
@@ -95,6 +102,8 @@ export const useBookingStore = create<BookingState & BookingActions>()(
   devtools(
     (set, get) => ({
       ...initialState,
+
+      setCurrencySymbol: (currencySymbol) => set({ currencySymbol }),
 
       goToStep: (step) => set({ currentStep: step }),
 

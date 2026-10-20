@@ -172,15 +172,25 @@ export async function createBookingHold(
     const startDatetime = new Date(startDatetimeIso);
     const endDatetime = addMinutes(startDatetime, service.durationMinutes);
 
-    // Check deposit configuration
-    const depositSetting = await prisma.depositSetting.findUnique({
-      where: { id: "default" },
-    });
+    // Check deposit configuration & regular customer exemption
+    const cleanPhone = phoneNumber.replace(/\D/g, "");
+    const normalizedPhone = cleanPhone.startsWith("60") && cleanPhone.length >= 11
+      ? "0" + cleanPhone.slice(2)
+      : cleanPhone;
+
+    const [depositSetting, exemptCustomer] = await Promise.all([
+      prisma.depositSetting.findFirst(),
+      prisma.depositExemptCustomer.findFirst({
+        where: { phoneNumber: normalizedPhone, isActive: true },
+      }),
+    ]);
+
+    const isDepositExempt = Boolean(exemptCustomer);
 
     let depositDueCents: number | null = null;
     let balanceDueCents: number | null = null;
 
-    if (depositSetting?.isEnabled) {
+    if (depositSetting && depositSetting.isEnabled && !isDepositExempt) {
       if (depositSetting.type === "PERCENTAGE") {
         depositDueCents = Math.round((service.priceCents * depositSetting.percentage) / 100);
       } else {
@@ -188,6 +198,9 @@ export async function createBookingHold(
       }
       depositDueCents = Math.max(100, depositDueCents);
       balanceDueCents = Math.max(0, service.priceCents - depositDueCents);
+    } else if (isDepositExempt) {
+      depositDueCents = 0;
+      balanceDueCents = service.priceCents;
     }
 
     // Re-validate slot availability inside transaction to prevent race conditions
@@ -308,6 +321,7 @@ export async function createBookingHold(
       totalPriceCents: result.booking.totalPriceCents,
       depositDueCents: result.booking.depositDueCents,
       balanceDueCents: result.booking.balanceDueCents,
+      isDepositExempt,
     });
 
     const confirmation: BookingConfirmation = {
@@ -320,9 +334,11 @@ export async function createBookingHold(
       depositDueCents: result.booking.depositDueCents,
       balanceDueCents: result.booking.balanceDueCents,
       paymentQrDataUrl,
+      qrImageUrl: depositSetting?.qrImageUrl || null,
       recipientName: depositSetting?.recipientName || "Merchant",
       whatsappUrl,
       holdExpiresAt: holdExpiresAt.toISOString(),
+      isDepositExempt,
     };
 
     return { success: true, data: confirmation };
@@ -390,6 +406,7 @@ export async function confirmBookingReceipt(
     // Invalidate any existing cached status for this booking
     invalidateBookingCache(updated.referenceCode, updated.customer.phoneNumber);
 
+    const isExempt = updated.depositDueCents === 0;
     const whatsappUrl = buildWhatsAppUrl({
       referenceCode: updated.referenceCode,
       serviceName: updated.service.name,
@@ -398,6 +415,7 @@ export async function confirmBookingReceipt(
       totalPriceCents: updated.totalPriceCents,
       depositDueCents: updated.depositDueCents,
       balanceDueCents: updated.balanceDueCents,
+      isDepositExempt: isExempt,
     });
 
     return {
@@ -412,6 +430,7 @@ export async function confirmBookingReceipt(
         depositDueCents: updated.depositDueCents,
         balanceDueCents: updated.balanceDueCents,
         whatsappUrl,
+        isDepositExempt: isExempt,
       },
     };
   } catch (error) {

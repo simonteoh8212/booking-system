@@ -38,9 +38,11 @@ export interface BookingConfirmation {
   depositDueCents?: number | null;
   balanceDueCents?: number | null;
   paymentQrDataUrl?: string | null;
+  qrImageUrl?: string | null;
   recipientName?: string | null;
   whatsappUrl: string;
   holdExpiresAt?: string; // ISO
+  isDepositExempt?: boolean;
 }
 
 export interface BookingDto {
@@ -101,10 +103,21 @@ export interface DepositSettingDto {
   amountCents: number;
   percentage: number;
   duitnowPayload: string | null;
+  qrImageUrl?: string | null;
   recipientName: string | null;
   currency: string;
   currencySymbol: string;
   deskLanguage?: DeskLanguageMode;
+}
+
+export interface DepositExemptCustomerDto {
+  id: string;
+  phoneNumber: string;
+  name: string | null;
+  note: string | null;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export type DeskLanguageMode =

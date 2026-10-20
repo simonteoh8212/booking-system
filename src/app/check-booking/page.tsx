@@ -4,6 +4,7 @@ import { useState, useEffect, useTransition, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { lookupBookingStatus } from "@/actions/booking";
+import { getDepositSetting } from "@/actions/deposit";
 import { getOperatingHoursInfo } from "@/lib/operating-hours";
 import { formatPrice } from "@/lib/utils";
 import { format } from "date-fns";
@@ -37,10 +38,22 @@ function CheckBookingContent() {
   const [booking, setBooking] = useState<CustomerBookingLookupDto | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [currencySymbol, setCurrencySymbol] = useState("RM");
   const [isPending, startTransition] = useTransition();
 
   const operatingHours = getOperatingHoursInfo();
   const businessName = process.env.NEXT_PUBLIC_BUSINESS_NAME ?? "Our Salon";
+
+  useEffect(() => {
+    getDepositSetting().then((res) => {
+      if (res.success && res.data.currencySymbol) {
+        setCurrencySymbol(res.data.currencySymbol);
+        try {
+          localStorage.setItem("app_currency_symbol", res.data.currencySymbol);
+        } catch {}
+      }
+    });
+  }, []);
 
   function performSearch(searchQuery: string) {
     if (!searchQuery.trim() || isCooldown) return;
@@ -289,7 +302,9 @@ function CheckBookingContent() {
                   <Separator />
                   <div className="flex justify-between font-bold text-base">
                     <span>Total Service Fee</span>
-                    <span className="text-primary">{formatPrice(booking.totalPriceCents)}</span>
+                    <span className="text-primary tabular-nums">
+                      {formatPrice(booking.totalPriceCents, currencySymbol)}
+                    </span>
                   </div>
 
                   {booking.depositDueCents != null &&
@@ -298,16 +313,17 @@ function CheckBookingContent() {
                     <>
                       <div className="flex justify-between text-xs text-muted-foreground pt-0.5">
                         <span>Deposit Paid</span>
-                        <span className="font-semibold text-green-600">
-                          {formatPrice(booking.depositDueCents)}
+                        <span className="font-semibold text-green-600 tabular-nums">
+                          {formatPrice(booking.depositDueCents, currencySymbol)}
                         </span>
                       </div>
                       <div className="flex justify-between text-xs text-muted-foreground">
                         <span>Balance Payable at Salon</span>
-                        <span className="font-semibold text-foreground">
+                        <span className="font-semibold text-foreground tabular-nums">
                           {formatPrice(
                             booking.balanceDueCents ??
-                              booking.totalPriceCents - booking.depositDueCents
+                              booking.totalPriceCents - booking.depositDueCents,
+                            currencySymbol
                           )}
                         </span>
                       </div>

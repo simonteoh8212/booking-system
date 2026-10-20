@@ -47,6 +47,9 @@ export function DepositSettingsForm({ initialSetting }: DepositSettingsFormProps
   const [duitnowPayload, setDuitnowPayload] = useState(
     initialSetting.duitnowPayload || DEFAULT_DUITNOW_PAYLOAD
   );
+  const [qrImageUrl, setQrImageUrl] = useState<string | null>(
+    initialSetting.qrImageUrl || null
+  );
   const [recipientName, setRecipientName] = useState(
     initialSetting.recipientName || "TEOH CHUN SEONG"
   );
@@ -108,15 +111,35 @@ export function DepositSettingsForm({ initialSetting }: DepositSettingsFormProps
       const img = new Image();
       img.onload = () => {
         try {
+          // Scale to max 1000px dimension to optimize storage while keeping extreme clarity
+          const maxDim = 1000;
+          let width = img.width;
+          let height = img.height;
+          if (width > maxDim || height > maxDim) {
+            if (width > height) {
+              height = Math.round((height * maxDim) / width);
+              width = maxDim;
+            } else {
+              width = Math.round((width * maxDim) / height);
+              height = maxDim;
+            }
+          }
+
           const canvas = document.createElement("canvas");
-          canvas.width = img.width;
-          canvas.height = img.height;
+          canvas.width = width;
+          canvas.height = height;
           const ctx = canvas.getContext("2d");
           if (!ctx) {
             throw new Error("Canvas context not available");
           }
-          ctx.drawImage(img, 0, 0);
-          const imageData = ctx.getImageData(0, 0, img.width, img.height);
+          ctx.drawImage(img, 0, 0, width, height);
+
+          // Generate clean, compressed exact image data URL
+          const exactDataUrl = canvas.toDataURL("image/jpeg", 0.9);
+          setQrImageUrl(exactDataUrl);
+
+          // Also try scanning with jsQR for recipient name/payload convenience
+          const imageData = ctx.getImageData(0, 0, width, height);
           const code = jsQR(imageData.data, imageData.width, imageData.height);
 
           if (code && code.data) {
@@ -127,19 +150,20 @@ export function DepositSettingsForm({ initialSetting }: DepositSettingsFormProps
               setRecipientName(check.recipientName);
               setStatusMessage({
                 type: "success",
-                text: `QR code successfully scanned! Recipient detected: ${check.recipientName}`,
+                text: `✅ TNG DuitNow QR image saved! Account recipient detected: ${check.recipientName}. Click Save to apply.`,
               });
             } else {
               setDuitnowPayload(raw);
               setStatusMessage({
                 type: "success",
-                text: "QR code data extracted. Please verify the recipient details.",
+                text: "✅ TNG DuitNow QR image saved! Exact image will be displayed to customers. Click Save to apply.",
               });
             }
           } else {
+            // Even if jsQR cannot decode (common with styled TNG screenshots), we STILL save the exact image!
             setStatusMessage({
-              type: "error",
-              text: "Could not detect a valid DuitNow QR in that image. Try a clearer screenshot or paste the string directly.",
+              type: "success",
+              text: "✅ Official TNG DuitNow QR image uploaded successfully! This exact image will be shown to customers. Click Save to apply.",
             });
           }
         } catch (err) {
@@ -176,6 +200,7 @@ export function DepositSettingsForm({ initialSetting }: DepositSettingsFormProps
         amountCents,
         percentage: parsedPercentage,
         duitnowPayload,
+        qrImageUrl,
         recipientName,
         currency,
         currencySymbol,
@@ -493,41 +518,97 @@ export function DepositSettingsForm({ initialSetting }: DepositSettingsFormProps
               </div>
             </div>
 
-            {/* Upload Client QR Image */}
-            <div className="space-y-2">
-              <Label className="text-xs">Quick Setup: Upload QR Code Image</Label>
-              <div className="flex gap-2">
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  onChange={handleImageUpload}
-                  className="hidden"
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={isScanningQr}
-                  className="w-full gap-2 text-xs"
-                >
-                  {isScanningQr ? (
-                    <>
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      Scanning QR Image…
-                    </>
-                  ) : (
-                    <>
-                      <Upload className="h-3.5 w-3.5" />
-                      Upload Client&apos;s DuitNow QR Screenshot
-                    </>
-                  )}
-                </Button>
+            {/* Uploaded Exact TNG DuitNow QR Image Display */}
+            {qrImageUrl ? (
+              <div className="p-4 rounded-2xl border-2 border-emerald-500/40 bg-emerald-500/5 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                    <span className="text-xs font-bold text-foreground">
+                      Official TNG DuitNow QR Image (Exact Customer View)
+                    </span>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setQrImageUrl(null);
+                      setStatusMessage({
+                        type: "success",
+                        text: "Uploaded QR image removed. Click Save to apply.",
+                      });
+                    }}
+                    className="h-7 px-2.5 text-xs text-destructive hover:bg-destructive/10 cursor-pointer"
+                  >
+                    Remove Image
+                  </Button>
+                </div>
+
+                <div className="flex justify-center p-2 bg-white rounded-xl border shadow-xs max-w-xs mx-auto">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={qrImageUrl}
+                    alt="Uploaded Official TNG QR"
+                    className="max-h-60 w-auto object-contain rounded-lg"
+                  />
+                </div>
+                <div className="flex items-center justify-between pt-1">
+                  <p className="text-[11px] text-emerald-700 dark:text-emerald-300 font-medium">
+                    ✓ This exact downloaded image is displayed to customers at checkout.
+                  </p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={isScanningQr}
+                    className="h-8 text-xs font-bold gap-1.5 cursor-pointer"
+                  >
+                    <Upload className="h-3 w-3" />
+                    Replace Image
+                  </Button>
+                </div>
               </div>
-              <p className="text-[11px] text-muted-foreground">
-                Upload your client&apos;s personal or merchant DuitNow QR screenshot to automatically extract their account details.
-              </p>
-            </div>
+            ) : (
+              /* Upload Client QR Image */
+              <div className="space-y-2">
+                <Label className="text-xs font-semibold">
+                  Upload Downloaded TNG / DuitNow QR Image / 上传TNG收款二维码
+                </Label>
+                <div className="flex gap-2">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleImageUpload}
+                    className="hidden"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={isScanningQr}
+                    className="w-full gap-2 text-xs h-11 rounded-xl font-bold border-2 hover:bg-muted cursor-pointer"
+                  >
+                    {isScanningQr ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Processing Image…
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="h-4 w-4 text-primary" />
+                        Upload Downloaded TNG DuitNow QR Image / 上传TNG下载的二维码
+                      </>
+                    )}
+                  </Button>
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  Upload the QR code image downloaded from your Touch &apos;n Go (TNG) eWallet app. The exact image will be displayed directly to customers during online booking deposit payment.
+                </p>
+              </div>
+            )}
 
             {/* Raw Payload Textarea */}
             <div className="space-y-2">
