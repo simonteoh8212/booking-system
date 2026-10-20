@@ -16,6 +16,7 @@ export async function proxy(request: NextRequest) {
   const isInternalMode =
     (process.env.NEXT_PUBLIC_APP_MODE || process.env.APP_MODE || "")
       .toLowerCase()
+      .replace(/['"]/g, "")
       .trim() === "internal";
 
   // In internal mode, public pages (root / and /check-booking) redirect directly to /admin

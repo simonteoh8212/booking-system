@@ -11,6 +11,8 @@ import { connection } from "next/server";
 import { redirect } from "next/navigation";
 import { isInternalAppMode } from "@/lib/utils";
 
+export const dynamic = "force-dynamic";
+
 export const metadata: Metadata = {
   title: "Book an Appointment",
   description: "Choose a service and book your appointment online in minutes.",

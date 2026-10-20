@@ -122,6 +122,7 @@ export function isInternalAppMode(): boolean {
     ""
   )
     .toLowerCase()
+    .replace(/['"]/g, "")
     .trim();
   return mode === "internal";
 }
