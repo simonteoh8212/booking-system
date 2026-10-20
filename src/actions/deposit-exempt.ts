@@ -3,19 +3,8 @@
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "./auth";
 import { revalidatePath } from "next/cache";
+import { normalizePhoneNumber } from "@/lib/utils";
 import type { ActionResult, DepositExemptCustomerDto } from "@/types";
-
-/**
- * Standardize phone numbers to match consistently across customer input formats.
- * e.g. "+60 12-345 6789", "60123456789", "0123456789" -> "0123456789"
- */
-export function normalizePhoneNumber(raw: string): string {
-  const digits = raw.replace(/\D/g, "");
-  if (digits.startsWith("60") && digits.length >= 11) {
-    return "0" + digits.slice(2);
-  }
-  return digits;
-}
 
 /**
  * Fetch all deposit-exempt regular customers (Admin only).

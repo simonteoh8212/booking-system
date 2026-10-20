@@ -97,3 +97,15 @@ export function roundUpToInterval(date: Date, intervalMinutes: number): Date {
   const ms = intervalMinutes * 60 * 1000;
   return new Date(Math.ceil(date.getTime() / ms) * ms);
 }
+
+/**
+ * Standardize phone numbers to match consistently across customer input formats.
+ * e.g. "+60 12-345 6789", "60123456789", "0123456789" -> "0123456789"
+ */
+export function normalizePhoneNumber(raw: string): string {
+  const digits = raw.replace(/\D/g, "");
+  if (digits.startsWith("60") && digits.length >= 11) {
+    return "0" + digits.slice(2);
+  }
+  return digits;
+}

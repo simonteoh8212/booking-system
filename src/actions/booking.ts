@@ -5,6 +5,7 @@ import {
   generateReferenceCode,
   toBusinessDateString,
   createBusinessDateTime,
+  normalizePhoneNumber,
 } from "@/lib/utils";
 import { buildWhatsAppUrl } from "@/lib/whatsapp";
 import { headers } from "next/headers";
@@ -173,10 +174,7 @@ export async function createBookingHold(
     const endDatetime = addMinutes(startDatetime, service.durationMinutes);
 
     // Check deposit configuration & regular customer exemption
-    const cleanPhone = phoneNumber.replace(/\D/g, "");
-    const normalizedPhone = cleanPhone.startsWith("60") && cleanPhone.length >= 11
-      ? "0" + cleanPhone.slice(2)
-      : cleanPhone;
+    const normalizedPhone = normalizePhoneNumber(phoneNumber);
 
     const [depositSetting, exemptCustomer] = await Promise.all([
       prisma.depositSetting.findFirst(),
