@@ -6,7 +6,7 @@
     "dev": "next dev",
     "build": "prisma generate && next build",
     "build:cloudflare": "prisma generate && opennextjs-cloudflare build",
-    "deploy:cloudflare": "opennextjs-cloudflare deploy",
+    "deploy:cloudflare": "wrangler deploy",
     "postinstall": "prisma generate",
     "start": "next start",
     "lint": "eslint",
@@ -32,7 +32,7 @@
     "jpeg-js": "^0.4.4",
     "jsqr": "^1.4.0",
     "lucide-react": "^1.52.0",
-    "next": "16.4.0",
+    "next": "16.4.2",
     "qrcode": "^1.5.4",
     "react": "19.3.0",
     "react-day-picker": "^10.0.2",
@@ -42,6 +42,7 @@
     "zustand": "^5.0.15"
   },
   "devDependencies": {
+    "@opennextjs/cloudflare": "^1.20.12",
     "@prisma/client": "^5.22.0",
     "@tailwindcss/turbopack": "^4",
     "@types/node": "^20",
@@ -49,12 +50,13 @@
     "@types/react-dom": "^19",
     "clsx": "^2.1.1",
     "eslint": "^9",
-    "eslint-config-next": "16.4.0",
+    "eslint-config-next": "16.4.2",
     "prisma": "^5.22.0",
     "tailwind-merge": "^3.7.0",
     "tailwindcss": "^4",
     "ts-node": "^10.9.2",
     "tsx": "^4.23.15",
-    "typescript": "^5"
+    "typescript": "^5",
+    "wrangler": "^4.151.2"
   }
 }
