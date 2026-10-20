@@ -31,9 +31,13 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html
+      lang="en"
+      className={`${plusJakartaSans.variable} ${geistMono.variable}`}
+      suppressHydrationWarning
+    >
       <body
-        className={`${plusJakartaSans.variable} ${geistMono.variable} antialiased min-h-screen bg-background font-sans`}
+        className={`${plusJakartaSans.className} antialiased min-h-screen bg-background font-sans`}
       >
         <NavigationProgressBar />
         {children}
