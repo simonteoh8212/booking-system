@@ -112,7 +112,7 @@ export function normalizePhoneNumber(raw: string): string {
 
 /**
  * Check if the application is running in "internal" mode (staff/desk only).
- * When internal mode is active, customer-facing root pages redirect to /admin.
+ * When internal mode is active, customer-facing root pages redirect to /admin/desk.
  * Controlled by NEXT_PUBLIC_APP_MODE="internal" or APP_MODE="internal".
  */
 export function isInternalAppMode(): boolean {

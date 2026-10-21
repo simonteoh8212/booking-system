@@ -9,10 +9,17 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { CalendarDays, Loader2, Lock, User, KeyRound } from "lucide-react";
+import { isInternalAppMode } from "@/lib/utils";
 
 function LoginContent() {
   const searchParams = useSearchParams();
-  const fromUrl = searchParams.get("from") || "/admin/desk";
+  const rawFrom = searchParams.get("from");
+  const isInternal = isInternalAppMode();
+
+  // In internal mode, default straight to /admin/desk
+  const fromUrl = isInternal
+    ? (rawFrom && rawFrom !== "/admin" && rawFrom !== "/" ? rawFrom : "/admin/desk")
+    : (rawFrom || "/admin/desk");
 
   const [mode, setMode] = useState<"pin" | "password">("pin");
   const [form, setForm] = useState({ username: "", password: "" });

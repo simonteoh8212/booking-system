@@ -46,7 +46,7 @@ function CheckBookingContent() {
 
   useEffect(() => {
     if (process.env.NEXT_PUBLIC_APP_MODE === "internal") {
-      window.location.replace("/admin");
+      window.location.replace("/admin/desk");
       return;
     }
 

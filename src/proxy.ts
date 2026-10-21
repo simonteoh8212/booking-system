@@ -19,11 +19,11 @@ export async function proxy(request: NextRequest) {
       .replace(/['"]/g, "")
       .trim() === "internal";
 
-  // In internal mode, public pages (root / and /check-booking) redirect directly to /admin
+  // In internal mode, public pages (root / and /check-booking) redirect directly to /admin/desk
   if (isInternalMode && (pathname === "/" || pathname === "/check-booking")) {
-    const adminUrl = request.nextUrl.clone();
-    adminUrl.pathname = "/admin";
-    return NextResponse.redirect(adminUrl);
+    const deskUrl = request.nextUrl.clone();
+    deskUrl.pathname = "/admin/desk";
+    return NextResponse.redirect(deskUrl);
   }
 
   const isProtected = PROTECTED_PREFIXES.some(
@@ -53,9 +53,9 @@ export async function proxy(request: NextRequest) {
 
   // Redirect authenticated admins away from the login page
   if (isAuthRoute && isAuthenticated) {
-    const dashboardUrl = request.nextUrl.clone();
-    dashboardUrl.pathname = "/admin";
-    return NextResponse.redirect(dashboardUrl);
+    const targetUrl = request.nextUrl.clone();
+    targetUrl.pathname = isInternalMode ? "/admin/desk" : "/admin";
+    return NextResponse.redirect(targetUrl);
   }
 
   return NextResponse.next();
