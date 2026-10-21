@@ -770,18 +770,20 @@ export function DeskHub({
             : "grid grid-cols-1 max-w-2xl mx-auto gap-4 sm:gap-5"
         }
       >
-        {/* Card: Count Sales (Immediate 1-tap on mobile) */}
+        {/* Card: Count Sales (Clean Card with Explicit Solid Action Pill - Option 2) */}
         <button
           type="button"
           onClick={() => setView("COUNT_SALES")}
-          className="order-1 md:order-2 group relative h-40 sm:h-48 p-5 sm:p-6 rounded-2xl border-2 border-emerald-600/50 hover:border-emerald-600 bg-card hover:bg-muted/10 shadow-xs hover:shadow-md active:scale-[0.99] transition-all text-left flex flex-col justify-between cursor-pointer"
+          className="order-1 md:order-2 group relative h-40 sm:h-48 p-5 sm:p-6 rounded-3xl border-2 border-emerald-600/40 hover:border-emerald-600 bg-card hover:bg-muted/30 shadow-xs hover:shadow-md active:scale-[0.99] transition-all text-left flex flex-col justify-between cursor-pointer"
         >
           <div className="flex items-start justify-between">
-            <div className="w-12 sm:w-14 h-12 sm:h-14 rounded-2xl bg-emerald-600 text-white flex items-center justify-center shadow-xs">
+            <div className="w-12 sm:w-14 h-12 sm:h-14 rounded-2xl bg-emerald-600/10 text-emerald-600 flex items-center justify-center border border-emerald-600/20 shadow-xs group-hover:bg-emerald-600 group-hover:text-white transition-all">
               <Receipt className="h-6 sm:h-7 w-6 sm:w-7" />
             </div>
-            <span className="w-9 h-9 rounded-xl bg-muted/50 text-muted-foreground group-hover:text-foreground flex items-center justify-center group-hover:translate-x-1 transition-all">
-              <ArrowRight className="h-4 w-4" />
+            {/* High-contrast solid emerald action pill */}
+            <span className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-600 text-white text-xs sm:text-sm font-bold shadow-xs group-hover:bg-emerald-700 transition-all">
+              <span>{resolveDeskText({ zh: "立即开单", en: "Start Sale" }, languageMode).primary}</span>
+              <ArrowRight className="h-3.5 w-3.5 group-hover:translate-x-1 transition-transform" />
             </span>
           </div>
 
@@ -793,7 +795,7 @@ export function DeskHub({
               primaryClass="text-2xl sm:text-3xl font-black text-foreground tracking-tight"
               secondaryClass="text-sm font-semibold text-muted-foreground"
             />
-            <p className="text-xs text-muted-foreground font-normal pt-0.5">
+            <p className="text-xs text-muted-foreground font-normal pt-0.5 line-clamp-1 sm:line-clamp-none">
               {resolveDeskText(DESK_DICT.hubCards.countSalesSub, languageMode).primary}
             </p>
           </div>
@@ -804,14 +806,15 @@ export function DeskHub({
           <button
             type="button"
             onClick={() => setView("APPOINTMENTS")}
-            className="order-2 md:order-1 group relative h-40 sm:h-48 p-5 sm:p-6 rounded-2xl border border-border/80 bg-card hover:border-foreground/30 shadow-xs hover:shadow-md active:scale-[0.99] transition-all text-left flex flex-col justify-between cursor-pointer"
+            className="order-2 md:order-1 group relative h-40 sm:h-48 p-5 sm:p-6 rounded-3xl border-2 border-border/80 bg-card hover:border-foreground/30 shadow-xs hover:shadow-md active:scale-[0.99] transition-all text-left flex flex-col justify-between cursor-pointer"
           >
             <div className="flex items-start justify-between">
               <div className="w-12 sm:w-14 h-12 sm:h-14 rounded-2xl bg-muted/80 text-foreground flex items-center justify-center border border-border/50 group-hover:bg-foreground group-hover:text-background transition-all shadow-xs">
                 <CalendarDays className="h-6 sm:h-7 w-6 sm:w-7" />
               </div>
-              <span className="w-9 h-9 rounded-xl bg-muted/50 text-muted-foreground group-hover:text-foreground flex items-center justify-center group-hover:translate-x-1 transition-all">
-                <ArrowRight className="h-4 w-4" />
+              <span className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-muted text-foreground text-xs sm:text-sm font-bold border border-border/60 group-hover:bg-foreground group-hover:text-background transition-all shadow-xs">
+                <span>{resolveDeskText({ zh: "预约管理", en: "Appointments" }, languageMode).primary}</span>
+                <ArrowRight className="h-3.5 w-3.5 group-hover:translate-x-1 transition-transform" />
               </span>
             </div>
 
@@ -823,7 +826,7 @@ export function DeskHub({
                 primaryClass="text-2xl sm:text-3xl font-extrabold text-foreground tracking-tight"
                 secondaryClass="text-sm font-semibold text-muted-foreground"
               />
-              <p className="text-xs text-muted-foreground/80 font-normal pt-0.5">
+              <p className="text-xs text-muted-foreground/80 font-normal pt-0.5 line-clamp-1 sm:line-clamp-none">
                 {resolveDeskText(DESK_DICT.hubCards.makeAppointmentSub, languageMode).primary}
               </p>
             </div>
