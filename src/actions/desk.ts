@@ -40,6 +40,13 @@ export interface DeskDailySummary {
   currency: string;
   currencySymbol: string;
   deskLanguage: DeskLanguageMode;
+  showTodaySales: boolean;
+  showYesterdaySales: boolean;
+  showMonthlySales: boolean;
+  showServiceBreakdown: boolean;
+  showMakeAppointment: boolean;
+  showWalkIn: boolean;
+  showBookedCheckout: boolean;
   servicesBreakdown: ServiceSalesCount[];
 }
 
@@ -210,6 +217,13 @@ export async function getDeskDailySummary(
         : (process.env.NEXT_PUBLIC_CURRENCY_SYMBOL || "RM"));
     const deskLanguage =
       (depositSetting?.deskLanguage as DeskLanguageMode) || "BILINGUAL_ZH_FIRST";
+    const showTodaySales = depositSetting?.showTodaySales ?? true;
+    const showYesterdaySales = depositSetting?.showYesterdaySales ?? true;
+    const showMonthlySales = depositSetting?.showMonthlySales ?? true;
+    const showServiceBreakdown = depositSetting?.showServiceBreakdown ?? true;
+    const showMakeAppointment = depositSetting?.showMakeAppointment ?? true;
+    const showWalkIn = depositSetting?.showWalkIn ?? true;
+    const showBookedCheckout = depositSetting?.showBookedCheckout ?? true;
 
     return {
       success: true,
@@ -227,6 +241,13 @@ export async function getDeskDailySummary(
         currency,
         currencySymbol,
         deskLanguage,
+        showTodaySales,
+        showYesterdaySales,
+        showMonthlySales,
+        showServiceBreakdown,
+        showMakeAppointment,
+        showWalkIn,
+        showBookedCheckout,
         servicesBreakdown,
       },
     };

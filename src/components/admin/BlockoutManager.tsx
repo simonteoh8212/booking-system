@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import toast from "react-hot-toast";
 import { createTimeBlockout, deleteTimeBlockout } from "@/actions/schedule";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -33,8 +34,10 @@ export function BlockoutManager({ initialBlockouts }: BlockoutManagerProps) {
       if (result.success) {
         setBlockouts((prev) => [...prev, result.data]);
         setForm({ start: "", end: "", reason: "" });
+        toast.success("Time blockout created successfully!");
       } else {
         setError(result.error);
+        toast.error(result.error || "Failed to create blockout.");
       }
     });
   }
@@ -42,7 +45,12 @@ export function BlockoutManager({ initialBlockouts }: BlockoutManagerProps) {
   function handleDelete(id: string) {
     startTransition(async () => {
       const result = await deleteTimeBlockout(id);
-      if (result.success) setBlockouts((prev) => prev.filter((b) => b.id !== id));
+      if (result.success) {
+        setBlockouts((prev) => prev.filter((b) => b.id !== id));
+        toast.success("Time blockout removed.");
+      } else {
+        toast.error(result.error || "Failed to remove blockout.");
+      }
     });
   }
 

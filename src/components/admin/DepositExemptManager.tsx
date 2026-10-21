@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import toast from "react-hot-toast";
 import {
   getDepositExemptCustomers,
   addDepositExemptCustomer,
@@ -53,7 +54,6 @@ export function DepositExemptManager({
   const [newName, setNewName] = useState("");
   const [newNote, setNewNote] = useState("");
   const [actionError, setActionError] = useState<string | null>(null);
-  const [actionSuccess, setActionSuccess] = useState<string | null>(null);
 
   // Search filter
   const [searchQuery, setSearchQuery] = useState("");
@@ -83,7 +83,6 @@ export function DepositExemptManager({
   function handleAddCustomer(e: React.FormEvent) {
     e.preventDefault();
     setActionError(null);
-    setActionSuccess(null);
 
     if (!newPhone.trim()) {
       setActionError("Please enter a phone number.");
@@ -105,8 +104,7 @@ export function DepositExemptManager({
         setNewPhone("");
         setNewName("");
         setNewNote("");
-        setActionSuccess(`Added ${res.data.phoneNumber} to deposit exemption list!`);
-        setTimeout(() => setActionSuccess(null), 3500);
+        toast.success(`Added ${res.data.phoneNumber} to deposit exemption list!`);
 
         // Update verify result if verifying the same number
         if (verifyResult?.normalizedPhone === res.data.phoneNumber) {
@@ -119,6 +117,7 @@ export function DepositExemptManager({
         }
       } else {
         setActionError(res.error);
+        toast.error(res.error || "Failed to add regular customer.");
       }
     });
   }
@@ -133,9 +132,12 @@ export function DepositExemptManager({
       const res = await removeDepositExemptCustomer(id);
       if (res.success) {
         setCustomers((prev) => prev.filter((c) => c.id !== id));
+        toast.success(`Removed ${phone} from exemption list.`);
         if (verifyResult?.customer?.id === id) {
           setVerifyResult(null);
         }
+      } else {
+        toast.error(res.error || "Failed to remove customer.");
       }
     });
   }
@@ -148,6 +150,9 @@ export function DepositExemptManager({
         setCustomers((prev) =>
           prev.map((c) => (c.id === id ? { ...c, isActive: res.data.isActive } : c))
         );
+        toast.success(res.data.isActive ? "Exemption activated." : "Exemption paused.");
+      } else {
+        toast.error(res.error || "Failed to update status.");
       }
     });
   }
@@ -335,9 +340,6 @@ export function DepositExemptManager({
 
           {actionError && (
             <p className="text-xs font-bold text-destructive">{actionError}</p>
-          )}
-          {actionSuccess && (
-            <p className="text-xs font-bold text-emerald-600">{actionSuccess}</p>
           )}
 
           <div className="flex justify-end pt-1">

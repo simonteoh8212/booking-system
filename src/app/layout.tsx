@@ -1,16 +1,21 @@
 import type { Metadata } from "next";
-import { Plus_Jakarta_Sans, Geist_Mono } from "next/font/google";
+import { Manrope, Noto_Sans_SC } from "next/font/google";
 import "./globals.css";
+import { NavigationProgressBar } from "@/components/NavigationProgressBar";
+import { ToastProvider } from "@/components/ToastProvider";
 
-const plusJakartaSans = Plus_Jakarta_Sans({
-  variable: "--font-plus-jakarta-sans",
+const manrope = Manrope({
+  variable: "--font-manrope",
   subsets: ["latin"],
   weight: ["300", "400", "500", "600", "700", "800"],
+  display: "swap",
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const notoSansSC = Noto_Sans_SC({
+  variable: "--font-noto-sans-sc",
+  weight: ["300", "400", "500", "600", "700", "800"],
   subsets: ["latin"],
+  display: "swap",
 });
 
 export const metadata: Metadata = {
@@ -21,10 +26,6 @@ export const metadata: Metadata = {
   description: "Easy online appointment booking for local service businesses.",
 };
 
-import { NavigationProgressBar } from "@/components/NavigationProgressBar";
-
-export const instant = false;
-
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -33,13 +34,14 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${plusJakartaSans.variable} ${geistMono.variable}`}
+      className={`${manrope.variable} ${notoSansSC.variable}`}
       suppressHydrationWarning
     >
       <body
-        className={`${plusJakartaSans.className} antialiased min-h-screen bg-background font-sans`}
+        className={`${manrope.className} antialiased min-h-screen bg-background font-sans`}
       >
         <NavigationProgressBar />
+        <ToastProvider />
         {children}
       </body>
     </html>

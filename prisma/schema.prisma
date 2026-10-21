@@ -6,8 +6,9 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 // ---------------------------------------------------------------------------
@@ -151,6 +152,13 @@ model DepositSetting {
   currency       String   @default("MYR")
   currencySymbol String   @default("RM")
   deskLanguage   String   @default("BILINGUAL_ZH_FIRST")
+  showTodaySales        Boolean  @default(true)
+  showYesterdaySales    Boolean  @default(true)
+  showMonthlySales      Boolean  @default(true)
+  showServiceBreakdown  Boolean  @default(true)
+  showMakeAppointment   Boolean  @default(true)
+  showWalkIn            Boolean  @default(true)
+  showBookedCheckout    Boolean  @default(true)
   updatedAt      DateTime @updatedAt
 
   @@map("deposit_settings")

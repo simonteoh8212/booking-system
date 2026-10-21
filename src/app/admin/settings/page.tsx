@@ -5,6 +5,7 @@ import { getDepositExemptCustomers } from "@/actions/deposit-exempt";
 import { BusinessHoursForm } from "@/components/admin/BusinessHoursForm";
 import { BlockoutManager } from "@/components/admin/BlockoutManager";
 import { DepositSettingsForm } from "@/components/admin/DepositSettingsForm";
+import { DeskScoreboardSettingsForm } from "@/components/admin/DeskScoreboardSettingsForm";
 import { DepositExemptManager } from "@/components/admin/DepositExemptManager";
 import { Separator } from "@/components/ui/separator";
 
@@ -37,6 +38,13 @@ export default async function SettingsPage() {
         currency: "MYR",
         currencySymbol: "RM",
         deskLanguage: "BILINGUAL_ZH_FIRST" as const,
+        showTodaySales: true,
+        showYesterdaySales: true,
+        showMonthlySales: true,
+        showServiceBreakdown: true,
+        showMakeAppointment: true,
+        showWalkIn: true,
+        showBookedCheckout: true,
       };
 
   return (
@@ -47,6 +55,11 @@ export default async function SettingsPage() {
           Configure deposits, regular customer exemptions, business hours, and calendar availability
         </p>
       </div>
+
+      {/* Salon Desk Scoreboard Display Controls */}
+      <section className="space-y-4">
+        <DeskScoreboardSettingsForm initialSetting={depositSetting} />
+      </section>
 
       {/* Deposit & DuitNow QR */}
       <section className="space-y-4">

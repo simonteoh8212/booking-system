@@ -126,3 +126,27 @@ export function isInternalAppMode(): boolean {
     .trim();
   return mode === "internal";
 }
+
+/**
+ * Return a high-resolution photo asset path for common salon services (hair cut, wash, dye).
+ */
+export function getServiceImage(serviceName?: string | null): string | null {
+  if (!serviceName) return null;
+  const lower = serviceName.toLowerCase();
+  if (lower.includes("剪") || lower.includes("cut") || lower.includes("trim") || lower.includes("haircut")) {
+    return "/images/services/haircut.svg";
+  }
+  if (lower.includes("洗") || lower.includes("wash") || lower.includes("shampoo")) {
+    return "/images/services/wash.svg";
+  }
+  if (
+    lower.includes("染") ||
+    lower.includes("color") ||
+    lower.includes("dye") ||
+    lower.includes("highlight") ||
+    lower.includes("bleach")
+  ) {
+    return "/images/services/dye.svg";
+  }
+  return null;
+}

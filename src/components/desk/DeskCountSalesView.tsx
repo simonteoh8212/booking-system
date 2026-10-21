@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useRef } from "react";
 import { recordDeskSale, type DeskAppointmentItem } from "@/actions/desk";
-import { formatPrice } from "@/lib/utils";
+import { formatPrice, getServiceImage } from "@/lib/utils";
+import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -31,7 +32,14 @@ import {
   AlertCircle,
   Receipt,
   User,
+  Scissors,
 } from "lucide-react";
+
+export interface DeskSaleSuccessData {
+  serviceIds: string[];
+  serviceNames: string[];
+  totalCents: number;
+}
 
 interface DeskCountSalesViewProps {
   services: ServiceDto[];
@@ -39,8 +47,10 @@ interface DeskCountSalesViewProps {
   initialAppointmentId?: string;
   currencySymbol?: string;
   languageMode?: DeskLanguageMode;
+  showWalkIn?: boolean;
+  showBookedCheckout?: boolean;
   onBack: () => void;
-  onSuccess: () => void;
+  onSuccess: (data?: DeskSaleSuccessData) => void;
 }
 
 export function DeskCountSalesView({
@@ -49,19 +59,40 @@ export function DeskCountSalesView({
   initialAppointmentId = "",
   currencySymbol = "RM",
   languageMode = "BILINGUAL_ZH_FIRST",
+  showWalkIn = true,
+  showBookedCheckout = true,
   onBack,
   onSuccess,
 }: DeskCountSalesViewProps) {
+  // If both are false due to configuration error, fallback to true so cashier is not blocked
+  const fallbackShowBoth = !showWalkIn && !showBookedCheckout;
+  const canShowWalkIn = fallbackShowBoth || showWalkIn;
+  const canShowBooked = fallbackShowBoth || showBookedCheckout;
+
   // Mode: Appointment vs Walk-in
-  const [sourceType, setSourceType] = useState<"APPOINTMENT" | "WALKIN">(
-    initialAppointmentId ? "APPOINTMENT" : "WALKIN"
-  );
+  const [sourceType, setSourceType] = useState<"APPOINTMENT" | "WALKIN">(() => {
+    if (initialAppointmentId && canShowBooked) return "APPOINTMENT";
+    if (!canShowWalkIn && canShowBooked) return "APPOINTMENT";
+    return "WALKIN";
+  });
   const [selectedAppointmentId, setSelectedAppointmentId] = useState<string>(
     initialAppointmentId
   );
   const [showCustomerDetails, setShowCustomerDetails] = useState(false);
   const [walkinName, setWalkinName] = useState<string>("");
   const [walkinPhone, setWalkinPhone] = useState<string>("");
+
+  // Ref for auto-scrolling to Section 2 (Step 2: Multi-Select Service Grid)
+  const section2Ref = useRef<HTMLDivElement>(null);
+
+  const scrollToSection2 = () => {
+    setTimeout(() => {
+      section2Ref.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }, 120);
+  };
 
   // Default to Hair Cut (剪 / Hair Cut) service for fast 1-tap checkout
   const defaultHairCutId = (() => {
@@ -95,7 +126,7 @@ export function DeskCountSalesView({
     (a) => a.id === selectedAppointmentId
   );
 
-  // Auto-fill service when an appointment is selected
+  // Auto-fill service when an appointment is selected and auto-scroll to section 2
   function handleSelectAppointment(aptId: string) {
     setSelectedAppointmentId(aptId);
     const apt = todayAppointments.find((a) => a.id === aptId);
@@ -105,9 +136,10 @@ export function DeskCountSalesView({
         setSelectedServiceIds([matchedService.id]);
       }
     }
+    scrollToSection2();
   }
 
-  // Toggle service selection in multi-select mode
+  // Toggle service selection in multi-select mode (NO auto-scroll here: section 2 allows multiple choices)
   function toggleService(serviceId: string) {
     setSelectedServiceIds((prev) =>
       prev.includes(serviceId)
@@ -145,8 +177,8 @@ export function DeskCountSalesView({
     if (sourceType === "APPOINTMENT" && !selectedAppointmentId) {
       setErrorMessage(
         languageMode === "ONLY_ZH"
-          ? "请选择一位预约顾客，或切换为“散客开单”"
-          : "Please select an appointment from today's list, or switch to Walk-in."
+          ? (canShowWalkIn ? "请选择一位预约顾客，或切换为“散客开单”" : "请选择一位今日已预约的顾客结账")
+          : (canShowWalkIn ? "Please select an appointment from today's list, or switch to Walk-in." : "Please select an appointment from today's list.")
       );
       return;
     }
@@ -177,7 +209,14 @@ export function DeskCountSalesView({
 
       if (res.success) {
         setIsConfirmOpen(false);
-        onSuccess();
+        const chosenServices = services.filter((s) =>
+          selectedServiceIds.includes(s.id)
+        );
+        onSuccess({
+          serviceIds: selectedServiceIds,
+          serviceNames: chosenServices.map((s) => s.name),
+          totalCents: res.data?.totalCents ?? netPayableCents,
+        });
       } else {
         setErrorMessage(res.error);
         setIsConfirmOpen(false);
@@ -239,73 +278,83 @@ export function DeskCountSalesView({
             primaryClass="text-base sm:text-lg font-bold"
           />
         </Label>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <button
-            type="button"
-            onClick={() => {
-              setSourceType("WALKIN");
-              setSelectedAppointmentId("");
-              if (selectedServiceIds.length === 0 && defaultHairCutId) {
-                setSelectedServiceIds([defaultHairCutId]);
-              }
-            }}
-            className={`h-20 sm:h-22 rounded-2xl p-4 flex items-center gap-4 text-left transition-all cursor-pointer ${
-              sourceType === "WALKIN"
-                ? "border-2 border-foreground bg-muted/40 shadow-xs"
-                : "border border-border/80 bg-card hover:bg-muted/30 text-muted-foreground"
-            }`}
-          >
-            <div
-              className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 transition-colors ${
+        <div className={`grid ${canShowWalkIn && canShowBooked ? "grid-cols-1 sm:grid-cols-2" : "grid-cols-1"} gap-4`}>
+          {canShowWalkIn && (
+            <button
+              type="button"
+              onClick={() => {
+                setSourceType("WALKIN");
+                setSelectedAppointmentId("");
+                if (selectedServiceIds.length === 0 && defaultHairCutId) {
+                  setSelectedServiceIds([defaultHairCutId]);
+                }
+                scrollToSection2();
+              }}
+              className={`h-20 sm:h-22 rounded-2xl p-4 flex items-center gap-4 text-left transition-all cursor-pointer ${
                 sourceType === "WALKIN"
-                  ? "bg-foreground text-background"
-                  : "bg-muted text-muted-foreground"
+                  ? "border-2 border-foreground bg-muted/40 shadow-xs"
+                  : "border border-border/80 bg-card hover:bg-muted/30 text-muted-foreground"
               }`}
             >
-              <UserPlus className="h-6 w-6" />
-            </div>
-            <div>
-              <DeskText
-                text={DESK_DICT.countSalesView.walkinTab}
-                mode={languageMode}
-                layout="stack"
-                primaryClass="text-lg font-bold text-foreground leading-tight"
-                secondaryClass="text-xs text-muted-foreground"
-              />
-            </div>
-          </button>
+              <div
+                className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 transition-colors ${
+                  sourceType === "WALKIN"
+                    ? "bg-foreground text-background"
+                    : "bg-muted text-muted-foreground"
+                }`}
+              >
+                <UserPlus className="h-6 w-6" />
+              </div>
+              <div>
+                <DeskText
+                  text={DESK_DICT.countSalesView.walkinTab}
+                  mode={languageMode}
+                  layout="stack"
+                  primaryClass="text-lg font-bold text-foreground leading-tight"
+                  secondaryClass="text-xs text-muted-foreground"
+                />
+              </div>
+            </button>
+          )}
 
-          <button
-            type="button"
-            onClick={() => setSourceType("APPOINTMENT")}
-            className={`h-20 sm:h-22 rounded-2xl p-4 flex items-center gap-4 text-left transition-all cursor-pointer ${
-              sourceType === "APPOINTMENT"
-                ? "border-2 border-foreground bg-muted/40 shadow-xs"
-                : "border border-border/80 bg-card hover:bg-muted/30 text-muted-foreground"
-            }`}
-          >
-            <div
-              className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 transition-colors ${
+          {canShowBooked && (
+            <button
+              type="button"
+              onClick={() => {
+                setSourceType("APPOINTMENT");
+                if (selectedAppointmentId) {
+                  scrollToSection2();
+                }
+              }}
+              className={`h-20 sm:h-22 rounded-2xl p-4 flex items-center gap-4 text-left transition-all cursor-pointer ${
                 sourceType === "APPOINTMENT"
-                  ? "bg-foreground text-background"
-                  : "bg-muted text-muted-foreground"
+                  ? "border-2 border-foreground bg-muted/40 shadow-xs"
+                  : "border border-border/80 bg-card hover:bg-muted/30 text-muted-foreground"
               }`}
             >
-              <CalendarCheck className="h-6 w-6" />
-            </div>
-            <div>
-              <DeskText
-                text={DESK_DICT.countSalesView.appointmentTab}
-                mode={languageMode}
-                layout="stack"
-                primaryClass="text-lg font-bold text-foreground leading-tight"
-                secondaryClass="text-xs text-muted-foreground"
-              />
-              <span className="text-[11px] text-muted-foreground font-medium">
-                ({pendingAppointments.length} {resolveDeskText(DESK_DICT.breakdown.clientUnit, languageMode).primary})
-              </span>
-            </div>
-          </button>
+              <div
+                className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 transition-colors ${
+                  sourceType === "APPOINTMENT"
+                    ? "bg-foreground text-background"
+                    : "bg-muted text-muted-foreground"
+                }`}
+              >
+                <CalendarCheck className="h-6 w-6" />
+              </div>
+              <div>
+                <DeskText
+                  text={DESK_DICT.countSalesView.appointmentTab}
+                  mode={languageMode}
+                  layout="stack"
+                  primaryClass="text-lg font-bold text-foreground leading-tight"
+                  secondaryClass="text-xs text-muted-foreground"
+                />
+                <span className="text-[11px] text-muted-foreground font-medium">
+                  ({pendingAppointments.length} {resolveDeskText(DESK_DICT.breakdown.clientUnit, languageMode).primary})
+                </span>
+              </div>
+            </button>
+          )}
         </div>
       </div>
 
@@ -319,7 +368,9 @@ export function DeskCountSalesView({
             {pendingAppointments.length === 0 ? (
               <p className="text-sm text-muted-foreground italic py-2">
                 {resolveDeskText(
-                  { zh: "今天暂无等待中的预约，请选择散客开单。", en: "No pending appointments today. Please select Walk-in." },
+                  canShowWalkIn
+                    ? { zh: "今天暂无等待中的预约，请选择散客开单。", en: "No pending appointments today. Please select Walk-in." }
+                    : { zh: "今天暂无等待中的预约。", en: "No pending appointments today." },
                   languageMode
                 ).primary}
               </p>
@@ -456,7 +507,7 @@ export function DeskCountSalesView({
       )}
 
       {/* Step 2: Multi-Select Service Grid */}
-      <div className="space-y-3">
+      <div ref={section2Ref} className="space-y-3 pt-2 scroll-mt-6">
         <div className="flex items-center justify-between">
           <Label className="text-base sm:text-lg font-bold text-foreground">
             <DeskText
@@ -475,33 +526,52 @@ export function DeskCountSalesView({
           {services.map((service) => {
             const isSelected = selectedServiceIds.includes(service.id);
             const svcResolved = resolveServiceName(service.name, languageMode);
+            const svcImage = getServiceImage(service.name);
             return (
               <button
                 key={service.id}
                 type="button"
                 onClick={() => toggleService(service.id)}
-                className={`min-h-[82px] p-4 rounded-2xl text-left flex items-center justify-between gap-3 transition-all cursor-pointer ${
+                className={`min-h-[82px] p-3.5 sm:p-4 rounded-2xl text-left flex items-center justify-between gap-3 transition-all cursor-pointer ${
                   isSelected
                     ? "border-2 border-emerald-600 bg-card shadow-xs"
                     : "border border-border/80 bg-card hover:border-foreground/30 hover:bg-muted/20 shadow-xs"
                 }`}
               >
-                <div className="space-y-0.5 flex-1 min-w-0">
-                  <div className="flex items-center gap-1.5">
-                    {isSelected && (
-                      <CheckCircle2 className="h-4.5 w-4.5 text-emerald-600 shrink-0" />
-                    )}
-                    <DeskText
-                      zh={svcResolved.primary}
-                      en={svcResolved.secondary}
-                      mode={languageMode}
-                      primaryClass="font-bold text-base sm:text-lg leading-tight truncate text-foreground"
-                      secondaryClass="text-xs text-muted-foreground font-medium"
-                    />
+                <div className="flex items-center gap-3 flex-1 min-w-0">
+                  {svcImage ? (
+                    <div className="relative w-16 h-16 sm:w-18 sm:h-18 rounded-2xl overflow-hidden shrink-0 border border-border/60 bg-muted/40 shadow-2xs p-1 flex items-center justify-center">
+                      <Image
+                        src={svcImage}
+                        alt={service.name}
+                        fill
+                        unoptimized
+                        className="object-contain drop-shadow-xs"
+                        sizes="(max-width: 640px) 64px, 72px"
+                      />
+                    </div>
+                  ) : (
+                    <div className="w-16 h-16 sm:w-18 sm:h-18 rounded-2xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                      <Scissors className="h-7 w-7" />
+                    </div>
+                  )}
+                  <div className="space-y-0.5 flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      {isSelected && (
+                        <CheckCircle2 className="h-4.5 w-4.5 text-emerald-600 shrink-0" />
+                      )}
+                      <DeskText
+                        zh={svcResolved.primary}
+                        en={svcResolved.secondary}
+                        mode={languageMode}
+                        primaryClass="font-bold text-base sm:text-lg leading-tight truncate text-foreground"
+                        secondaryClass="text-xs text-muted-foreground font-medium"
+                      />
+                    </div>
+                    <p className="text-xs text-muted-foreground font-normal pl-0.5">
+                      {service.durationMinutes} mins
+                    </p>
                   </div>
-                  <p className="text-xs text-muted-foreground font-normal pl-0.5">
-                    {service.durationMinutes} mins
-                  </p>
                 </div>
                 <div className="text-right shrink-0">
                   <span className="text-base sm:text-lg font-mono font-bold text-foreground">

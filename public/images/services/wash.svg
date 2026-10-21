@@ -1,0 +1,121 @@
+<svg width="512" height="512" viewBox="0 50 420 410" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- Dryer Body Gradients (Modern Matte Obsidian + Rose Gold / Cyan Ring) -->
+    <linearGradient id="dryerBody" x1="120" y1="120" x2="380" y2="280" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#334155" />
+      <stop offset="35%" stop-color="#1E293B" />
+      <stop offset="85%" stop-color="#0F172A" />
+      <stop offset="100%" stop-color="#020617" />
+    </linearGradient>
+    <linearGradient id="accentRing" x1="280" y1="100" x2="330" y2="220" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#38BDF8" />
+      <stop offset="50%" stop-color="#06B6D4" />
+      <stop offset="100%" stop-color="#0284C7" />
+    </linearGradient>
+    <linearGradient id="chromeNozzle" x1="100" y1="150" x2="160" y2="230" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#64748B" />
+      <stop offset="50%" stop-color="#334155" />
+      <stop offset="100%" stop-color="#0F172A" />
+    </linearGradient>
+
+    <!-- Water & Breeze Gradients -->
+    <linearGradient id="waterDroplet" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#E0F2FE" />
+      <stop offset="50%" stop-color="#38BDF8" />
+      <stop offset="100%" stop-color="#0284C7" />
+    </linearGradient>
+    <linearGradient id="windBreeze" x1="140" y1="160" x2="40" y2="240" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#38BDF8" stop-opacity="0.9" />
+      <stop offset="60%" stop-color="#06B6D4" stop-opacity="0.5" />
+      <stop offset="100%" stop-color="#0284C7" stop-opacity="0" />
+    </linearGradient>
+
+    <filter id="shadow3D" x="-10%" y="-10%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="16" stdDeviation="18" flood-color="#0F172A" flood-opacity="0.25" />
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#0F172A" flood-opacity="0.18" />
+    </filter>
+  </defs>
+
+  <g filter="url(#shadow3D)">
+    <!-- HAIR DRYER (Modern Salon Ionic Styling Blower) -->
+    <!-- Handle -->
+    <path d="
+      M265 240
+      L295 410
+      C298 428 285 442 268 442
+      L240 442
+      C224 442 212 428 215 410
+      L235 240 Z
+    " fill="url(#dryerBody)" stroke="#334155" stroke-width="2.5" />
+    <!-- Handle Soft Grip Inlay -->
+    <path d="M242 270 L260 395" stroke="#475569" stroke-width="6" stroke-linecap="round" />
+    <!-- Rocker Switch on Handle -->
+    <rect x="238" y="280" width="10" height="24" rx="4" fill="#020617" stroke="#64748B" stroke-width="1.5" />
+    <circle cx="243" cy="288" r="2.5" fill="#EF4444" />
+    <rect x="242" y="320" width="10" height="20" rx="4" fill="#020617" stroke="#64748B" stroke-width="1.5" />
+
+    <!-- Main Barrel Cylindrical Body -->
+    <rect x="140" y="130" width="220" height="110" rx="45" fill="url(#dryerBody)" stroke="#475569" stroke-width="3" />
+    <!-- Highlight Reflection on Barrel -->
+    <path d="M170 144 L320 144" stroke="#FFFFFF" stroke-opacity="0.55" stroke-width="6" stroke-linecap="round" />
+
+    <!-- Rear Air Intake Filter (Fine Hex/Mesh Grill) -->
+    <ellipse cx="360" cy="185" rx="24" ry="50" fill="#0F172A" stroke="url(#accentRing)" stroke-width="6" />
+    <!-- Filter Mesh Lines -->
+    <path d="
+      M360 140 v90 M352 145 v80 M368 145 v80
+      M344 155 v60 M376 155 v60
+    " stroke="#38BDF8" stroke-width="2.5" stroke-linecap="round" opacity="0.85" />
+
+    <!-- Accent Styling Ring on Barrel -->
+    <rect x="280" y="130" width="14" height="110" fill="url(#accentRing)" />
+
+    <!-- Professional Styling Concentrator Nozzle (Left) -->
+    <path d="
+      M145 150
+      L90 162
+      C82 164 82 206 90 208
+      L145 220 Z
+    " fill="url(#chromeNozzle)" stroke="#475569" stroke-width="2" />
+    <ellipse cx="88" cy="185" rx="5" ry="24" fill="#020617" stroke="#64748B" stroke-width="2" />
+
+    <!-- DYNAMIC FRESH AIRFLOW & SHAMPOO WATER DROPLETS -->
+    <!-- Airflow / Heat Styling Beams -->
+    <path d="M78 174 Q40 170 15 160" stroke="url(#windBreeze)" stroke-width="4.5" stroke-linecap="round" />
+    <path d="M78 185 Q30 185 8 190" stroke="url(#windBreeze)" stroke-width="6" stroke-linecap="round" />
+    <path d="M78 196 Q40 200 20 215" stroke="url(#windBreeze)" stroke-width="4.5" stroke-linecap="round" />
+
+    <!-- Water Droplet 1 (Large Fresh Wash Droplet) -->
+    <path d="
+      M70 110
+      C70 110 50 135 50 150
+      A 20 20 0 1 0 90 150
+      C90 135 70 110 70 110 Z
+    " fill="url(#waterDroplet)" />
+    <circle cx="65" cy="148" r="4.5" fill="#FFFFFF" fill-opacity="0.8" />
+
+    <!-- Water Droplet 2 (Medium) -->
+    <path d="
+      M125 75
+      C125 75 110 92 110 102
+      A 15 15 0 1 0 140 102
+      C140 92 125 75 125 75 Z
+    " fill="url(#waterDroplet)" />
+    <circle cx="120" cy="100" r="3.5" fill="#FFFFFF" fill-opacity="0.8" />
+
+    <!-- Water Droplet 3 (Bottom) -->
+    <path d="
+      M95 245
+      C95 245 84 260 84 268
+      A 11 11 0 1 0 106 268
+      C106 260 95 245 95 245 Z
+    " fill="url(#waterDroplet)" />
+    <circle cx="92" cy="266" r="2.5" fill="#FFFFFF" fill-opacity="0.8" />
+
+    <!-- Fresh Wash Suds / Bubbles -->
+    <circle cx="140" cy="290" r="14" fill="none" stroke="#38BDF8" stroke-width="3" opacity="0.8" />
+    <circle cx="136" cy="286" r="4" fill="#FFFFFF" opacity="0.9" />
+    <circle cx="168" cy="330" r="9" fill="none" stroke="#38BDF8" stroke-width="2.5" opacity="0.7" />
+    <circle cx="165" cy="327" r="2.5" fill="#FFFFFF" opacity="0.9" />
+  </g>
+</svg>

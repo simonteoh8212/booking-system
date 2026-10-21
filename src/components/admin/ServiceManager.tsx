@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition, useEffect } from "react";
+import toast from "react-hot-toast";
 import { createService, updateService, deleteService } from "@/actions/services";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -94,6 +95,7 @@ export function ServiceManager({
         if (result.success) {
           setServices((prev) => prev.map((s) => (s.id === editTarget.id ? result.data : s)));
           setDialogOpen(false);
+          toast.success("Service updated successfully!");
         } else {
           setError(result.error);
         }
@@ -102,6 +104,7 @@ export function ServiceManager({
         if (result.success) {
           setServices((prev) => [...prev, result.data]);
           setDialogOpen(false);
+          toast.success("Service created successfully!");
         } else {
           setError(result.error);
         }
@@ -113,7 +116,10 @@ export function ServiceManager({
     if (!confirm("Delete this service? This cannot be undone.")) return;
     startTransition(async () => {
       const result = await deleteService(id);
-      if (result.success) setServices((prev) => prev.filter((s) => s.id !== id));
+      if (result.success) {
+        setServices((prev) => prev.filter((s) => s.id !== id));
+        toast.success("Service deleted successfully.");
+      }
     });
   }
 

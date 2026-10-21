@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useTransition, useRef } from "react";
 import { useRouter } from "next/navigation";
+import toast from "react-hot-toast";
 import { updateDepositSetting, getPreviewDepositQR } from "@/actions/deposit";
 import { parseDuitNowPayload, DEFAULT_DUITNOW_PAYLOAD } from "@/lib/duitnow";
 import { Button } from "@/components/ui/button";
@@ -208,12 +209,11 @@ export function DepositSettingsForm({ initialSetting }: DepositSettingsFormProps
       });
 
       if (res.success) {
-        setStatusMessage({
-          type: "success",
-          text: `Settings saved successfully! Currency: ${currencySymbol} (${currency}), Desk Language: ${deskLanguage}.`,
-        });
+        toast.success(`Settings saved successfully! Currency: ${currencySymbol} (${currency}), Desk Language: ${deskLanguage}.`);
+        setStatusMessage(null);
         router.refresh();
       } else {
+        toast.error(res.error || "Failed to save settings.");
         setStatusMessage({
           type: "error",
           text: res.error || "Failed to save settings.",
@@ -225,10 +225,8 @@ export function DepositSettingsForm({ initialSetting }: DepositSettingsFormProps
   function handleResetDefault() {
     setDuitnowPayload(DEFAULT_DUITNOW_PAYLOAD);
     setRecipientName("TEOH CHUN SEONG");
-    setStatusMessage({
-      type: "success",
-      text: "Reset to default Touch 'n Go DuitNow QR (Teoh Chun Seong). Click Save to apply.",
-    });
+    toast.success("Reset to default Touch 'n Go DuitNow QR (Teoh Chun Seong). Click Save to apply.");
+    setStatusMessage(null);
   }
 
   return (
@@ -626,20 +624,10 @@ export function DepositSettingsForm({ initialSetting }: DepositSettingsFormProps
             </div>
           </div>
 
-          {/* Feedback message */}
-          {statusMessage && (
-            <div
-              className={`p-3 rounded-lg text-xs flex items-center gap-2 ${
-                statusMessage.type === "success"
-                  ? "bg-green-500/10 text-green-700 dark:text-green-300 border border-green-500/20"
-                  : "bg-destructive/10 text-destructive border border-destructive/20"
-              }`}
-            >
-              {statusMessage.type === "success" ? (
-                <CheckCircle2 className="h-4 w-4 shrink-0" />
-              ) : (
-                <AlertCircle className="h-4 w-4 shrink-0" />
-              )}
+          {/* Error feedback message (if any) */}
+          {statusMessage && statusMessage.type === "error" && (
+            <div className="p-3 rounded-lg text-xs flex items-center gap-2 bg-destructive/10 text-destructive border border-destructive/20">
+              <AlertCircle className="h-4 w-4 shrink-0" />
               <span>{statusMessage.text}</span>
             </div>
           )}

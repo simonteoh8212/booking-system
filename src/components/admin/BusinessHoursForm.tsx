@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import toast from "react-hot-toast";
 import { upsertBusinessSchedule } from "@/actions/schedule";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -51,7 +52,10 @@ export function BusinessHoursForm({ initialSchedules }: BusinessHoursFormProps) 
       });
       if (result.success) {
         setSavedIdx(row.dayOfWeek);
+        toast.success(`${DAY_NAMES[row.dayOfWeek]} business hours saved!`);
         setTimeout(() => setSavedIdx(null), 2000);
+      } else {
+        toast.error(result.error || "Failed to save business hours.");
       }
     });
   }

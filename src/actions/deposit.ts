@@ -21,6 +21,13 @@ const DEFAULT_SETTING: DepositSettingDto = {
   currency: process.env.NEXT_PUBLIC_CURRENCY_CODE || "MYR",
   currencySymbol: process.env.NEXT_PUBLIC_CURRENCY_SYMBOL || "RM",
   deskLanguage: "BILINGUAL_ZH_FIRST",
+  showTodaySales: true,
+  showYesterdaySales: true,
+  showMonthlySales: true,
+  showServiceBreakdown: true,
+  showMakeAppointment: true,
+  showWalkIn: true,
+  showBookedCheckout: true,
 };
 
 /**
@@ -52,6 +59,13 @@ export async function getDepositSetting(): Promise<ActionResult<DepositSettingDt
         currency,
         currencySymbol,
         deskLanguage: (setting.deskLanguage as DeskLanguageMode) || "BILINGUAL_ZH_FIRST",
+        showTodaySales: setting.showTodaySales ?? true,
+        showYesterdaySales: setting.showYesterdaySales ?? true,
+        showMonthlySales: setting.showMonthlySales ?? true,
+        showServiceBreakdown: setting.showServiceBreakdown ?? true,
+        showMakeAppointment: setting.showMakeAppointment ?? true,
+        showWalkIn: setting.showWalkIn ?? true,
+        showBookedCheckout: setting.showBookedCheckout ?? true,
       },
     };
   } catch (error) {
@@ -98,6 +112,13 @@ export async function updateDepositSetting(
         currency,
         currencySymbol,
         deskLanguage,
+        ...(input.showTodaySales !== undefined && { showTodaySales: Boolean(input.showTodaySales) }),
+        ...(input.showYesterdaySales !== undefined && { showYesterdaySales: Boolean(input.showYesterdaySales) }),
+        ...(input.showMonthlySales !== undefined && { showMonthlySales: Boolean(input.showMonthlySales) }),
+        ...(input.showServiceBreakdown !== undefined && { showServiceBreakdown: Boolean(input.showServiceBreakdown) }),
+        ...(input.showMakeAppointment !== undefined && { showMakeAppointment: Boolean(input.showMakeAppointment) }),
+        ...(input.showWalkIn !== undefined && { showWalkIn: Boolean(input.showWalkIn) }),
+        ...(input.showBookedCheckout !== undefined && { showBookedCheckout: Boolean(input.showBookedCheckout) }),
       },
       create: {
         id: "default",
@@ -111,6 +132,13 @@ export async function updateDepositSetting(
         currency,
         currencySymbol,
         deskLanguage,
+        showTodaySales: input.showTodaySales !== undefined ? Boolean(input.showTodaySales) : true,
+        showYesterdaySales: input.showYesterdaySales !== undefined ? Boolean(input.showYesterdaySales) : true,
+        showMonthlySales: input.showMonthlySales !== undefined ? Boolean(input.showMonthlySales) : true,
+        showServiceBreakdown: input.showServiceBreakdown !== undefined ? Boolean(input.showServiceBreakdown) : true,
+        showMakeAppointment: input.showMakeAppointment !== undefined ? Boolean(input.showMakeAppointment) : true,
+        showWalkIn: input.showWalkIn !== undefined ? Boolean(input.showWalkIn) : true,
+        showBookedCheckout: input.showBookedCheckout !== undefined ? Boolean(input.showBookedCheckout) : true,
       },
     });
 
@@ -235,5 +263,96 @@ export async function getPreviewDepositQR(options: {
   } catch (error) {
     console.error("[getPreviewDepositQR]", error);
     return { success: false, error: "Failed to generate preview QR." };
+  }
+}
+
+/**
+ * Update Desk Hub scoreboard & breakdown visibility toggles
+ */
+export async function updateDeskScoreboardSettings(input: {
+  showTodaySales?: boolean;
+  showYesterdaySales?: boolean;
+  showMonthlySales?: boolean;
+  showServiceBreakdown?: boolean;
+  showMakeAppointment?: boolean;
+  showWalkIn?: boolean;
+  showBookedCheckout?: boolean;
+}): Promise<ActionResult<DepositSettingDto>> {
+  await requireAdmin();
+
+  try {
+    const existing = await prisma.depositSetting.findFirst();
+    const primaryId = existing?.id || "default";
+
+    // Enforce business rule: Either Walk-in or Booked checkout must be shown; cannot both be false
+    const finalWalkIn =
+      input.showWalkIn !== undefined
+        ? Boolean(input.showWalkIn)
+        : (existing?.showWalkIn ?? true);
+    const finalBookedCheckout =
+      input.showBookedCheckout !== undefined
+        ? Boolean(input.showBookedCheckout)
+        : (existing?.showBookedCheckout ?? true);
+
+    if (!finalWalkIn && !finalBookedCheckout) {
+      return {
+        success: false,
+        error:
+          "Cannot hide both: Either Walk-in or Booked checkout must be shown.",
+      };
+    }
+
+    const updated = await prisma.depositSetting.upsert({
+      where: { id: primaryId },
+      update: {
+        ...(input.showTodaySales !== undefined && { showTodaySales: Boolean(input.showTodaySales) }),
+        ...(input.showYesterdaySales !== undefined && { showYesterdaySales: Boolean(input.showYesterdaySales) }),
+        ...(input.showMonthlySales !== undefined && { showMonthlySales: Boolean(input.showMonthlySales) }),
+        ...(input.showServiceBreakdown !== undefined && { showServiceBreakdown: Boolean(input.showServiceBreakdown) }),
+        ...(input.showMakeAppointment !== undefined && { showMakeAppointment: Boolean(input.showMakeAppointment) }),
+        ...(input.showWalkIn !== undefined && { showWalkIn: Boolean(input.showWalkIn) }),
+        ...(input.showBookedCheckout !== undefined && { showBookedCheckout: Boolean(input.showBookedCheckout) }),
+      },
+      create: {
+        id: "default",
+        showTodaySales: input.showTodaySales !== undefined ? Boolean(input.showTodaySales) : true,
+        showYesterdaySales: input.showYesterdaySales !== undefined ? Boolean(input.showYesterdaySales) : true,
+        showMonthlySales: input.showMonthlySales !== undefined ? Boolean(input.showMonthlySales) : true,
+        showServiceBreakdown: input.showServiceBreakdown !== undefined ? Boolean(input.showServiceBreakdown) : true,
+        showMakeAppointment: input.showMakeAppointment !== undefined ? Boolean(input.showMakeAppointment) : true,
+        showWalkIn: input.showWalkIn !== undefined ? Boolean(input.showWalkIn) : true,
+        showBookedCheckout: input.showBookedCheckout !== undefined ? Boolean(input.showBookedCheckout) : true,
+      },
+    });
+
+    revalidatePath("/admin/desk", "page");
+    revalidatePath("/admin/desk");
+    revalidatePath("/admin/settings");
+
+    return {
+      success: true,
+      data: {
+        isEnabled: updated.isEnabled,
+        type: updated.type === "PERCENTAGE" ? "PERCENTAGE" : "FIXED",
+        amountCents: updated.amountCents,
+        percentage: updated.percentage,
+        duitnowPayload: updated.duitnowPayload ?? DEFAULT_DUITNOW_PAYLOAD,
+        qrImageUrl: updated.qrImageUrl ?? null,
+        recipientName: updated.recipientName ?? "Merchant",
+        currency: updated.currency,
+        currencySymbol: updated.currencySymbol,
+        deskLanguage: (updated.deskLanguage as DeskLanguageMode) || "BILINGUAL_ZH_FIRST",
+        showTodaySales: updated.showTodaySales ?? true,
+        showYesterdaySales: updated.showYesterdaySales ?? true,
+        showMonthlySales: updated.showMonthlySales ?? true,
+        showServiceBreakdown: updated.showServiceBreakdown ?? true,
+        showMakeAppointment: updated.showMakeAppointment ?? true,
+        showWalkIn: updated.showWalkIn ?? true,
+        showBookedCheckout: updated.showBookedCheckout ?? true,
+      },
+    };
+  } catch (error) {
+    console.error("[updateDeskScoreboardSettings]", error);
+    return { success: false, error: "Failed to update scoreboard display settings." };
   }
 }

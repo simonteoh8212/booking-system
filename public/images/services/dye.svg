@@ -1,0 +1,124 @@
+<svg width="512" height="512" viewBox="40 50 432 412" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- Bowl Gradients -->
+    <linearGradient id="bowlBody" x1="100" y1="260" x2="412" y2="460" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#334155" />
+      <stop offset="40%" stop-color="#1E293B" />
+      <stop offset="100%" stop-color="#0F172A" />
+    </linearGradient>
+    <linearGradient id="bowlRim" x1="100" y1="240" x2="412" y2="300" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#64748B" />
+      <stop offset="50%" stop-color="#94A3B8" />
+      <stop offset="100%" stop-color="#334155" />
+    </linearGradient>
+
+    <!-- Hair Color Creme Gradient (Glossy Purple-Magenta Tint) -->
+    <radialGradient id="dyeColor" cx="48%" cy="46%" r="52%">
+      <stop offset="0%" stop-color="#F43F5E" />
+      <stop offset="35%" stop-color="#D946EF" />
+      <stop offset="70%" stop-color="#9333EA" />
+      <stop offset="100%" stop-color="#6B21A8" />
+    </radialGradient>
+    <linearGradient id="glossHighlight" x1="160" y1="270" x2="340" y2="310" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.85" />
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0" />
+    </linearGradient>
+
+    <!-- Brush Handle & Bristles -->
+    <linearGradient id="brushHandle" x1="380" y1="60" x2="220" y2="300" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#F8FAFC" />
+      <stop offset="30%" stop-color="#CBD5E1" />
+      <stop offset="70%" stop-color="#475569" />
+      <stop offset="100%" stop-color="#0F172A" />
+    </linearGradient>
+    <linearGradient id="bristlesGrad" x1="180" y1="280" x2="240" y2="230" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#D946EF" />
+      <stop offset="40%" stop-color="#9333EA" />
+      <stop offset="100%" stop-color="#1E293B" />
+    </linearGradient>
+
+    <filter id="shadow3D" x="-10%" y="-10%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="16" stdDeviation="18" flood-color="#0F172A" flood-opacity="0.25" />
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#0F172A" flood-opacity="0.18" />
+    </filter>
+  </defs>
+
+  <g filter="url(#shadow3D)">
+    <!-- BOWL BASE / OUTER SHELL -->
+    <path d="
+      M90 280
+      C90 380 160 440 256 440
+      C352 440 422 380 422 280
+      C422 250 410 240 380 240
+      L132 240
+      C102 240 90 250 90 280 Z
+    " fill="url(#bowlBody)" stroke="#475569" stroke-width="3" />
+
+    <!-- Bowl Handle Tab (Classic Salon Tint Bowl) -->
+    <path d="
+      M94 250
+      C64 250 48 270 48 290
+      C48 310 68 318 90 310
+    " fill="url(#bowlBody)" stroke="#475569" stroke-width="3" stroke-linecap="round" />
+    <circle cx="70" cy="285" r="9" fill="#0F172A" />
+
+    <!-- BOWL INNER BASIN / LIQUID RECESS -->
+    <ellipse cx="256" cy="275" rx="150" ry="55" fill="#0F172A" stroke="url(#bowlRim)" stroke-width="6" />
+
+    <!-- VIBRANT HAIR DYE MIXTURE -->
+    <ellipse cx="256" cy="285" rx="136" ry="44" fill="url(#dyeColor)" />
+    <!-- Glossy reflection on dye surface -->
+    <path d="M160 280 Q250 310 340 278 Q250 295 160 280 Z" fill="url(#glossHighlight)" />
+    <ellipse cx="220" cy="278" rx="36" ry="8" fill="#FFFFFF" fill-opacity="0.35" transform="rotate(-6 220 278)" />
+
+    <!-- Measuring Grooves in Bowl -->
+    <path d="M125 320 Q145 350 170 375" stroke="#475569" stroke-width="2" stroke-linecap="round" fill="none" opacity="0.6"/>
+    <path d="M140 335 L155 330" stroke="#64748B" stroke-width="2" stroke-linecap="round" />
+    <path d="M152 355 L168 350" stroke="#64748B" stroke-width="2" stroke-linecap="round" />
+
+    <!-- DYE APPLICATOR BRUSH (Angled Across Bowl) -->
+    <g transform="rotate(-18 280 220)">
+      <!-- Long Pointed Sectioning Tail -->
+      <path d="
+        M440 90
+        L230 225
+        Q220 232 215 245
+        L210 260
+        L232 264
+        L245 250
+        L448 98
+        Q452 94 440 90 Z
+      " fill="url(#brushHandle)" stroke="#334155" stroke-width="2" />
+      <path d="M440 92 L236 228" stroke="#FFFFFF" stroke-opacity="0.6" stroke-width="2" />
+
+      <!-- Bristle Ferrule -->
+      <path d="M205 250 L240 258 L232 278 L196 268 Z" fill="#1E293B" stroke="#64748B" stroke-width="1.5" />
+
+      <!-- Bristles (Wide Angled Tint Brush) -->
+      <path d="
+        M196 268
+        L160 320
+        C155 328 165 335 174 332
+        L225 300
+        L232 278 Z
+      " fill="url(#bristlesGrad)" />
+      <!-- Bristle individual stroke accents -->
+      <path d="
+        M192 276 L164 322
+        M202 279 L175 321
+        M212 281 L187 318
+        M222 284 L200 312
+      " stroke="#F43F5E" stroke-width="2.5" stroke-linecap="round" />
+      <!-- Wet color on brush tip -->
+      <path d="M162 316 Q185 330 212 306" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round" opacity="0.8" fill="none" />
+    </g>
+
+    <!-- Floating Vibrant Sparkle/Droplets -->
+    <circle cx="160" cy="180" r="10" fill="#D946EF" />
+    <circle cx="157" cy="177" r="3.5" fill="#FFFFFF" />
+    <circle cx="395" cy="185" r="7" fill="#F43F5E" />
+    <circle cx="393" cy="183" r="2.5" fill="#FFFFFF" />
+    <circle cx="360" cy="130" r="13" fill="#9333EA" />
+    <circle cx="356" cy="126" r="4.5" fill="#FFFFFF" />
+  </g>
+</svg>

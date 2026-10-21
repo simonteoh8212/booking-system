@@ -37,6 +37,13 @@ export default async function AdminDashboardPage() {
         currency: "MYR",
         currencySymbol: "RM",
         deskLanguage: "BILINGUAL_ZH_FIRST" as const,
+        showTodaySales: true,
+        showYesterdaySales: true,
+        showMonthlySales: true,
+        showServiceBreakdown: true,
+        showMakeAppointment: true,
+        showWalkIn: true,
+        showBookedCheckout: true,
         servicesBreakdown: [],
       };
 

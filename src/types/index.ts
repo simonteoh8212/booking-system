@@ -108,6 +108,13 @@ export interface DepositSettingDto {
   currency: string;
   currencySymbol: string;
   deskLanguage?: DeskLanguageMode;
+  showTodaySales?: boolean;
+  showYesterdaySales?: boolean;
+  showMonthlySales?: boolean;
+  showServiceBreakdown?: boolean;
+  showMakeAppointment?: boolean;
+  showWalkIn?: boolean;
+  showBookedCheckout?: boolean;
 }
 
 export interface DepositExemptCustomerDto {

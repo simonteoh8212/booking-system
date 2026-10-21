@@ -2,7 +2,8 @@
 
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
-import { cn, formatPrice } from "@/lib/utils";
+import { cn, formatPrice, getServiceImage } from "@/lib/utils";
+import Image from "next/image";
 import { useCustomerLanguage } from "./CustomerLanguageContext";
 import type { ServiceDto } from "@/types";
 import { Clock, CheckCircle2 } from "lucide-react";
@@ -21,6 +22,7 @@ export function ServiceCard({
   currencySymbol = "RM",
 }: ServiceCardProps) {
   const { language, t } = useCustomerLanguage();
+  const svcImage = getServiceImage(service.name);
 
   return (
     <Card
@@ -33,19 +35,35 @@ export function ServiceCard({
       )}
     >
       {selected && (
-        <div className="absolute top-3.5 right-3.5">
+        <div className="absolute top-3.5 right-3.5 z-10">
           <CheckCircle2 className="h-5 w-5 text-primary fill-primary/20" />
         </div>
       )}
 
       <CardHeader className="pb-2">
-        <div className="flex items-start justify-between gap-2 pr-7">
-          <h3 className="font-bold text-base leading-tight text-foreground">{service.name}</h3>
-          {service.category && (
-            <Badge variant="secondary" className="shrink-0 text-xs font-semibold">
-              {service.category}
-            </Badge>
+        <div className="flex items-start gap-3">
+          {svcImage && (
+            <div className="relative w-18 h-18 sm:w-20 sm:h-20 rounded-2xl overflow-hidden shrink-0 border border-border/60 bg-muted/40 shadow-2xs p-1.5 flex items-center justify-center">
+              <Image
+                src={svcImage}
+                alt={service.name}
+                fill
+                unoptimized
+                className="object-contain drop-shadow-xs"
+                sizes="(max-width: 640px) 72px, 80px"
+              />
+            </div>
           )}
+          <div className="flex-1 min-w-0 pr-7">
+            <div className="flex items-start justify-between gap-2">
+              <h3 className="font-bold text-base leading-tight text-foreground">{service.name}</h3>
+              {service.category && (
+                <Badge variant="secondary" className="shrink-0 text-xs font-semibold">
+                  {service.category}
+                </Badge>
+              )}
+            </div>
+          </div>
         </div>
       </CardHeader>
 
