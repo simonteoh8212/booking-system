@@ -7,11 +7,13 @@ import { Loader2, Delete, Lock, AlertCircle } from "lucide-react";
 interface PinKeypadProps {
   onSuccessRedirect?: string;
   onSwitchToPassword?: () => void;
+  compact?: boolean;
 }
 
 export function PinKeypad({
   onSuccessRedirect = "/admin/desk",
   onSwitchToPassword,
+  compact = false,
 }: PinKeypadProps) {
   const [pin, setPin] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
@@ -122,7 +124,7 @@ export function PinKeypad({
   ];
 
   return (
-    <div className="flex flex-col items-center justify-center max-w-sm mx-auto px-4 py-2 select-none touch-manipulation">
+    <div className="flex flex-col items-center justify-center w-full max-w-xs mx-auto select-none touch-manipulation">
       <style jsx>{`
         @keyframes iosShake {
           0%,
@@ -165,23 +167,29 @@ export function PinKeypad({
       `}</style>
 
       {/* Icon & Title */}
-      <div className="text-center space-y-2 mb-6">
-        <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-primary/10 text-primary mb-1 shadow-xs">
-          <Lock className="h-7 w-7" />
+      <div className={`text-center ${compact ? "space-y-0.5 mb-2.5" : "space-y-1.5 mb-5"}`}>
+        <div className={`inline-flex items-center justify-center rounded-2xl bg-primary/10 text-primary shadow-xs ${
+          compact ? "w-9 h-9 mb-0.5" : "w-12 h-12 mb-1"
+        }`}>
+          <Lock className={compact ? "h-4.5 w-4.5" : "h-6 w-6"} />
         </div>
-        <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-foreground">
+        <h1 className={`font-black tracking-tight text-foreground ${
+          compact ? "text-lg leading-tight" : "text-2xl"
+        }`}>
           Enter Passcode
         </h1>
-        <p className="text-sm sm:text-base text-muted-foreground font-medium">
+        <p className={`text-muted-foreground font-medium ${
+          compact ? "text-[11px] leading-tight" : "text-xs sm:text-sm"
+        }`}>
           Touch your 4-digit PIN to open Salon Desk
         </p>
       </div>
 
       {/* 4 PIN Dots (iPhone style with smooth pop animation) */}
       <div
-        className={`flex items-center justify-center gap-6 my-4 transition-transform ${
-          isShaking ? "ios-shake text-destructive" : ""
-        }`}
+        className={`flex items-center justify-center transition-transform ${
+          compact ? "gap-3.5 my-2" : "gap-5 my-3"
+        } ${isShaking ? "ios-shake text-destructive" : ""}`}
       >
         {[0, 1, 2, 3].map((idx) => {
           const isFilled = pin.length > idx;
@@ -189,7 +197,9 @@ export function PinKeypad({
           return (
             <div
               key={idx}
-              className={`w-4 h-4 rounded-full transition-all duration-150 ${
+              className={`rounded-full transition-all duration-150 ${
+                compact ? "w-3 h-3" : "w-3.5 h-3.5"
+              } ${
                 isFilled
                   ? isLatest
                     ? "dot-pop bg-foreground shadow-sm"
@@ -202,26 +212,28 @@ export function PinKeypad({
       </div>
 
       {/* Error / Loading feedback */}
-      <div className="h-9 flex items-center justify-center mb-2">
+      <div className={`flex items-center justify-center ${compact ? "h-5 mb-2" : "h-7 mb-3"}`}>
         {isPending ? (
-          <div className="flex items-center gap-2 text-primary font-semibold text-sm sm:text-base animate-pulse">
-            <Loader2 className="h-4 w-4 animate-spin" />
+          <div className="flex items-center gap-1.5 text-primary font-semibold text-xs animate-pulse">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
             Unlocking Desk…
           </div>
         ) : error ? (
-          <div className="flex items-center gap-1.5 text-destructive font-semibold text-sm sm:text-base animate-in fade-in duration-200">
-            <AlertCircle className="h-4 w-4 shrink-0" />
+          <div className="flex items-center gap-1.5 text-destructive font-semibold text-xs animate-in fade-in duration-200">
+            <AlertCircle className="h-3.5 w-3.5 shrink-0" />
             {error}
           </div>
         ) : (
-          <span className="text-xs text-muted-foreground/70 font-mono">
+          <span className="text-[10px] text-muted-foreground/60 font-mono">
             Default PIN: 1234
           </span>
         )}
       </div>
 
       {/* iPhone Numeric Keypad (Instant zero-delay response) */}
-      <div className="grid grid-cols-3 gap-4 sm:gap-5 w-full max-w-[285px] mb-6">
+      <div className={`grid grid-cols-3 w-full mx-auto ${
+        compact ? "gap-2.5 max-w-[225px] mb-2.5" : "gap-3.5 sm:gap-4 max-w-[260px] mb-4"
+      }`}>
         {buttons.map((btn) => {
           const isPressed = activeKey === btn.num;
           return (
@@ -238,17 +250,21 @@ export function PinKeypad({
               onPointerUp={() => setActiveKey(null)}
               onPointerLeave={() => setActiveKey(null)}
               onPointerCancel={() => setActiveKey(null)}
-              className={`ios-key-btn w-[78px] h-[78px] sm:w-[82px] sm:h-[82px] rounded-full border border-border/60 bg-muted/30 hover:bg-muted/60 backdrop-blur-md shadow-xs flex flex-col items-center justify-center transition-all duration-75 cursor-pointer select-none focus:outline-hidden ${
+              className={`ios-key-btn rounded-full border border-border/80 bg-muted/40 hover:bg-muted/70 backdrop-blur-md shadow-xs flex flex-col items-center justify-center transition-all duration-75 cursor-pointer select-none focus:outline-hidden ${
+                compact ? "w-[62px] h-[62px]" : "w-[72px] h-[72px]"
+              } ${
                 isPressed
                   ? "scale-92 bg-foreground/20 border-foreground/30 shadow-inner"
                   : "active:scale-92 active:bg-foreground/20"
               }`}
             >
-              <span className="text-2xl sm:text-3xl font-semibold text-foreground leading-none tracking-tight">
+              <span className={`font-semibold text-foreground leading-none tracking-tight ${
+                compact ? "text-xl" : "text-2xl"
+              }`}>
                 {btn.num}
               </span>
               {btn.sub && (
-                <span className="text-[10px] font-bold text-muted-foreground tracking-[0.18em] mt-1">
+                <span className="text-[8px] font-bold text-muted-foreground tracking-[0.14em] mt-0.5">
                   {btn.sub}
                 </span>
               )}
@@ -264,7 +280,9 @@ export function PinKeypad({
             e.preventDefault();
             handleClear();
           }}
-          className="ios-key-btn w-[78px] h-[78px] sm:w-[82px] sm:h-[82px] rounded-full flex items-center justify-center text-sm font-semibold text-muted-foreground hover:text-foreground active:scale-92 transition-all cursor-pointer disabled:opacity-20 select-none"
+          className={`ios-key-btn rounded-full flex items-center justify-center text-xs font-semibold text-muted-foreground hover:text-foreground active:scale-92 transition-all cursor-pointer disabled:opacity-20 select-none ${
+            compact ? "w-[62px] h-[62px]" : "w-[72px] h-[72px]"
+          }`}
         >
           Clear
         </button>
@@ -281,13 +299,17 @@ export function PinKeypad({
           onPointerUp={() => setActiveKey(null)}
           onPointerLeave={() => setActiveKey(null)}
           onPointerCancel={() => setActiveKey(null)}
-          className={`ios-key-btn w-[78px] h-[78px] sm:w-[82px] sm:h-[82px] rounded-full border border-border/60 bg-muted/30 hover:bg-muted/60 backdrop-blur-md shadow-xs flex flex-col items-center justify-center transition-all duration-75 cursor-pointer select-none focus:outline-hidden ${
+          className={`ios-key-btn rounded-full border border-border/80 bg-muted/40 hover:bg-muted/70 backdrop-blur-md shadow-xs flex flex-col items-center justify-center transition-all duration-75 cursor-pointer select-none focus:outline-hidden ${
+            compact ? "w-[62px] h-[62px]" : "w-[72px] h-[72px]"
+          } ${
             activeKey === "0"
               ? "scale-92 bg-foreground/20 border-foreground/30 shadow-inner"
               : "active:scale-92 active:bg-foreground/20"
           }`}
         >
-          <span className="text-2xl sm:text-3xl font-semibold text-foreground leading-none tracking-tight">
+          <span className={`font-semibold text-foreground leading-none tracking-tight ${
+            compact ? "text-xl" : "text-2xl"
+          }`}>
             0
           </span>
         </button>
@@ -299,10 +321,12 @@ export function PinKeypad({
             e.preventDefault();
             handleDelete();
           }}
-          className="ios-key-btn w-[78px] h-[78px] sm:w-[82px] sm:h-[82px] rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground active:scale-92 transition-all cursor-pointer disabled:opacity-20 select-none"
+          className={`ios-key-btn rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground active:scale-92 transition-all cursor-pointer disabled:opacity-20 select-none ${
+            compact ? "w-[62px] h-[62px]" : "w-[72px] h-[72px]"
+          }`}
           title="Delete digit"
         >
-          <Delete className="h-6 w-6" />
+          <Delete className={compact ? "h-4 w-4" : "h-5 w-5"} />
         </button>
       </div>
 
@@ -311,7 +335,7 @@ export function PinKeypad({
         <button
           type="button"
           onClick={onSwitchToPassword}
-          className="text-xs sm:text-sm text-primary hover:underline font-semibold py-2 px-4 cursor-pointer"
+          className="text-[11px] text-primary/80 hover:text-primary hover:underline font-semibold py-1 px-3 cursor-pointer transition-colors"
         >
           Use Username & Password instead
         </button>

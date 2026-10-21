@@ -27,6 +27,7 @@ import { DeskFinancialReportView } from "./DeskFinancialReportView";
 import { AnimatedServiceCountBadge } from "./AnimatedServiceCountBadge";
 import { DeskPinUnlockDialog } from "./DeskPinUnlockDialog";
 import { DeskLanguageSwitcher } from "./DeskLanguageSwitcher";
+import { DeskLanguageFirstTimeModal } from "./DeskLanguageFirstTimeModal";
 import { DeskText } from "./DeskText";
 import {
   DESK_DICT,
@@ -83,6 +84,7 @@ export function DeskHub({
   const [languageMode, setLanguageMode] = useState<DeskLanguageMode>(
     initialSummary.deskLanguage || "BILINGUAL_ZH_FIRST"
   );
+  const [showFirstTimeLangModal, setShowFirstTimeLangModal] = useState(false);
   // Backend visibility flags controlled in Admin Settings
   const isTodayCardVisible = summary.showTodaySales !== false;
   const isYesterdayCardVisible = summary.showYesterdaySales !== false;
@@ -139,11 +141,14 @@ export function DeskHub({
           setCurrencySymbol(storedSymbol);
         }
         const storedLang = localStorage.getItem("app_desk_language") as DeskLanguageMode | null;
+        const hasSelectedBefore = localStorage.getItem("desk_language_selected");
         if (
           storedLang &&
           ["ONLY_ZH", "ONLY_EN", "BILINGUAL_ZH_FIRST", "BILINGUAL_EN_FIRST"].includes(storedLang)
         ) {
           setLanguageMode(storedLang);
+        } else if (!hasSelectedBefore) {
+          setShowFirstTimeLangModal(true);
         }
 
         const storedToday = localStorage.getItem("desk_show_today_sales");
@@ -237,6 +242,17 @@ export function DeskHub({
         );
       }
     });
+  }
+
+  // Handle language chosen in first-time modal
+  function handleFirstTimeLangSelect(newMode: DeskLanguageMode) {
+    handleLanguageChange(newMode);
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.setItem("desk_language_selected", "true");
+      } catch {}
+    }
+    setShowFirstTimeLangModal(false);
   }
 
   // Refresh data from server
@@ -1206,6 +1222,13 @@ export function DeskHub({
           </div>
         </SheetContent>
       </Sheet>
+
+      {/* First-time visitor language selection popup */}
+      <DeskLanguageFirstTimeModal
+        open={showFirstTimeLangModal}
+        currentMode={languageMode}
+        onSelect={handleFirstTimeLangSelect}
+      />
     </div>
     </>
   );

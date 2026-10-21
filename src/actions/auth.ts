@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { signAndSetSession, clearSession } from "@/lib/auth";
 import { verifySession } from "@/lib/auth";
 import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 import type { ActionResult } from "@/types";
 import bcrypt from "bcryptjs";
 
@@ -85,8 +86,21 @@ export async function adminPinLogin(pin: string): Promise<ActionResult<void>> {
 }
 
 // ----------------------------------------------------------------
-// Update Admin PIN
+// Get & Update Admin PIN
 // ----------------------------------------------------------------
+export async function getAdminPin(): Promise<ActionResult<string>> {
+  await requireAdmin();
+  try {
+    const admin = await prisma.adminUser.findFirst({
+      orderBy: { createdAt: "asc" },
+    });
+    return { success: true, data: admin?.pinCode || "1234" };
+  } catch (error) {
+    console.error("[getAdminPin]", error);
+    return { success: false, error: "Failed to load PIN." };
+  }
+}
+
 export async function updateAdminPin(newPin: string): Promise<ActionResult<void>> {
   await requireAdmin();
   try {
@@ -105,6 +119,7 @@ export async function updateAdminPin(newPin: string): Promise<ActionResult<void>
       data: { pinCode: cleanPin },
     });
 
+    revalidatePath("/admin/settings");
     return { success: true, data: undefined };
   } catch (error) {
     console.error("[updateAdminPin]", error);

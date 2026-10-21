@@ -40,16 +40,14 @@ function LoginContent() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-background to-primary/10 p-4">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-background via-background to-muted/20 px-4 py-6">
       {mode === "pin" ? (
-        <Card className="w-full max-w-sm shadow-2xl border-border/80 p-2 sm:p-4 animate-in fade-in zoom-in-95 duration-200">
-          <CardContent className="pt-4 pb-2">
-            <PinKeypad
-              onSuccessRedirect={fromUrl}
-              onSwitchToPassword={() => setMode("password")}
-            />
-          </CardContent>
-        </Card>
+        <div className="w-full max-w-xs mx-auto flex flex-col items-center justify-center animate-in fade-in duration-300">
+          <PinKeypad
+            onSuccessRedirect={fromUrl}
+            onSwitchToPassword={() => setMode("password")}
+          />
+        </div>
       ) : (
         <Card className="w-full max-w-sm shadow-2xl animate-in fade-in zoom-in-95 duration-200">
           <CardHeader className="text-center pb-4">
