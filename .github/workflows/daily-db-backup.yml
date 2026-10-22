@@ -3,7 +3,7 @@ name: Daily Database Backup (.sql)
 on:
   schedule:
     # Runs everyday at 1:35 PM Malaysia time (05:35 UTC)
-    - cron: '52 5 * * *'
+    - cron: '56 5 * * *'
   # Allows triggering the backup manually anytime from GitHub Actions tab
   workflow_dispatch:
 
@@ -40,42 +40,70 @@ jobs:
           mkdir -p backups
           OUTPUT_SQL="backups/salon_backup_${BACKUP_DATE}.sql"
 
-          # Clean the URL by stripping Prisma query parameters
-          CLEAN_URL=$(echo "$DATABASE_URL" | sed -E 's/[?&](pgbouncer|connection_limit|pool_timeout)=[^&]*//g' | sed -e 's/\?&/?/' -e 's/\?$//')
+          # Use Node.js for safe URL parsing (immune to special characters in passwords)
+          node - << 'EOF'
+          const { execSync } = require('child_process');
+          const rawUrl = process.env.DATABASE_URL.trim();
+          const outputFile = process.env.OUTPUT_SQL;
 
-          # Derive Supabase Direct Connection URL (port 5432 directly to db host, bypasses pooler connection limits)
-          # Converts: postgresql://postgres.REF:PASS@aws-0-ap-southeast-1.pooler.supabase.com:.../postgres
-          # Into:     postgresql://postgres:PASS@db.REF.supabase.co:5432/postgres
-          DIRECT_URL=$(echo "$CLEAN_URL" | sed -E 's|postgresql://postgres\.([^:]+):([^@]+)@[^:]+:(6543|5432)/|postgresql://postgres:\2@db.\1.supabase.co:5432/|')
+          function getCandidates(inputUrl) {
+            try {
+              const u = new URL(inputUrl);
+              u.searchParams.delete('pgbouncer');
+              u.searchParams.delete('connection_limit');
+              u.searchParams.delete('pool_timeout');
 
-          SUCCESS=0
+              const list = [];
 
-          # 1. Try Direct Supabase Connection first (no pooler limit!)
-          if [[ "$DIRECT_URL" != "$CLEAN_URL" ]]; then
-            echo "Attempting dump via Supabase direct host..."
-            if pg_dump "$DIRECT_URL" --no-owner --no-privileges --clean --if-exists --encoding=UTF8 --file="$OUTPUT_SQL" 2>/dev/null; then
-              SUCCESS=1
-              echo "Direct dump successful!"
-            else
-              echo "Direct host connection not reachable, trying pooler..."
-            fi
-          fi
+              // 1. Supabase Direct Host (bypasses pooler connection limits)
+              if (u.username.startsWith('postgres.') && u.hostname.includes('pooler.supabase.com')) {
+                const ref = u.username.split('.')[1];
+                const direct = new URL(u.toString());
+                direct.hostname = `db.${ref}.supabase.co`;
+                direct.username = 'postgres';
+                direct.port = '5432';
+                list.push({ name: 'Supabase Direct Host (port 5432)', url: direct.toString() });
+              }
 
-          # 2. Fallback to port 6543 (transaction pooler)
-          if [ $SUCCESS -eq 0 ]; then
-            URL_6543=$(echo "$CLEAN_URL" | sed -e 's/:5432\//:6543\//')
-            echo "Attempting dump via pooler port 6543..."
-            if pg_dump "$URL_6543" --no-owner --no-privileges --clean --if-exists --encoding=UTF8 --file="$OUTPUT_SQL" 2>/dev/null; then
-              SUCCESS=1
-              echo "Pooler 6543 dump successful!"
-            fi
-          fi
+              // 2. Pooler Port 6543 (transaction mode without pgbouncer param)
+              const pooler6543 = new URL(u.toString());
+              pooler6543.port = '6543';
+              list.push({ name: 'Supabase Pooler (port 6543)', url: pooler6543.toString() });
 
-          # 3. Final fallback: retry standard URL
-          if [ $SUCCESS -eq 0 ]; then
-            echo "Attempting final dump via standard connection..."
-            pg_dump "$CLEAN_URL" --no-owner --no-privileges --clean --if-exists --encoding=UTF8 --file="$OUTPUT_SQL"
-          fi
+              // 3. Pooler Port 5432 (session mode)
+              const pooler5432 = new URL(u.toString());
+              pooler5432.port = '5432';
+              list.push({ name: 'Supabase Pooler (port 5432)', url: pooler5432.toString() });
+
+              return list;
+            } catch (err) {
+              return [{ name: 'Raw URL', url: inputUrl }];
+            }
+          }
+
+          const candidates = getCandidates(rawUrl);
+          let ok = false;
+
+          for (const cand of candidates) {
+            console.log(`Connecting via ${cand.name}...`);
+            try {
+              execSync(
+                `pg_dump "${cand.url}" --no-owner --no-privileges --clean --if-exists --encoding=UTF8 --file="${outputFile}"`,
+                { stdio: 'inherit' }
+              );
+              console.log(`✓ Database backup dump succeeded via ${cand.name}!`);
+              ok = true;
+              break;
+            } catch (err) {
+              console.warn(`✗ ${cand.name} failed, trying next candidate...`);
+            }
+          }
+
+          if (!ok) {
+            console.error('All database connection candidates failed.');
+            process.exit(1);
+          }
+          EOF
 
           echo "Compressing backup file..."
           gzip -c "$OUTPUT_SQL" > "${OUTPUT_SQL}.gz"
