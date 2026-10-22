@@ -3,7 +3,7 @@ name: Daily Database Backup (.sql)
 on:
   schedule:
     # Runs everyday at 1:35 PM Malaysia time (05:35 UTC)
-    - cron: '43 5 * * *'
+    - cron: '50 5 * * *'
   # Allows triggering the backup manually anytime from GitHub Actions tab
   workflow_dispatch:
 
@@ -29,7 +29,7 @@ jobs:
 
       - name: Generate PostgreSQL Database Dump
         env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_URL: ${{ secrets.DIRECT_URL || secrets.DATABASE_URL }}
         run: |
           if [ -z "$DATABASE_URL" ]; then
             echo "::error::DATABASE_URL secret is not set in GitHub repository settings!"
@@ -40,8 +40,14 @@ jobs:
           mkdir -p backups
           OUTPUT_SQL="backups/salon_backup_${BACKUP_DATE}.sql"
 
+          # Automatically sanitize Supabase URL for pg_dump:
+          # 1. Switch port 6543 (transaction pooler) to 5432 (session pooler/direct connection)
+          # 2. Strip Prisma-specific query parameters (pgbouncer=true, connection_limit, etc.)
+          CLEAN_URL=$(echo "$DATABASE_URL" | sed -e 's/:6543\//:5432\//' -e 's/[?&]pgbouncer=[^&]*//g' -e 's/[?&]connection_limit=[^&]*//g' -e 's/[?&]pool_timeout=[^&]*//g')
+          CLEAN_URL=$(echo "$CLEAN_URL" | sed -e 's/\?&/?/' -e 's/\?$//')
+
           echo "Starting database dump from Supabase..."
-          pg_dump "$DATABASE_URL" \
+          pg_dump "$CLEAN_URL" \
             --no-owner \
             --no-privileges \
             --clean \
