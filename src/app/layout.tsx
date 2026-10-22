@@ -35,6 +35,42 @@ export const metadata: Metadata = {
     statusBarStyle: "default",
     title: "Salon POS",
     startupImage: [
+      // iPhone 14 Pro, 15, 15 Pro, 16, 16 Pro
+      {
+        url: "/apple-splash.png",
+        media: "(device-width: 393px) and (device-height: 852px) and (-webkit-device-pixel-ratio: 3)",
+      },
+      // iPhone 14 Pro Max, 15 Plus, 15 Pro Max, 16 Plus, 16 Pro Max
+      {
+        url: "/apple-splash.png",
+        media: "(device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3)",
+      },
+      // iPhone 12, 12 Pro, 13, 13 Pro, 14
+      {
+        url: "/apple-splash.png",
+        media: "(device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3)",
+      },
+      // iPhone 12 Pro Max, 13 Pro Max, 14 Plus
+      {
+        url: "/apple-splash.png",
+        media: "(device-width: 428px) and (device-height: 926px) and (-webkit-device-pixel-ratio: 3)",
+      },
+      // iPhone 11 Pro, XS, X
+      {
+        url: "/apple-splash.png",
+        media: "(device-width: 375px) and (device-height: 812px) and (-webkit-device-pixel-ratio: 3)",
+      },
+      // iPhone 11, XR
+      {
+        url: "/apple-splash.png",
+        media: "(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 2)",
+      },
+      // iPhone 7, 8, SE 2/3
+      {
+        url: "/apple-splash.png",
+        media: "(device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2)",
+      },
+      // Generic fallback
       {
         url: "/apple-splash.png",
       },
