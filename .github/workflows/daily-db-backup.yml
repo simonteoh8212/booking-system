@@ -22,10 +22,14 @@ jobs:
           echo "BACKUP_DATE=$(date +'%Y-%m-%d_%H%M%S')" >> $GITHUB_ENV
           echo "FILE_DATE=$(date +'%Y-%m-%d')" >> $GITHUB_ENV
 
-      - name: Install PostgreSQL Client
+      - name: Install PostgreSQL 17 Client
         run: |
+          sudo install -d /etc/apt/keyrings
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor --yes -o /etc/apt/keyrings/postgresql.gpg
+          echo "deb [signed-by=/etc/apt/keyrings/postgresql.gpg] http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
           sudo apt-get update -qq
-          sudo apt-get install -y postgresql-client
+          sudo apt-get install -y postgresql-client-17
+          /usr/lib/postgresql/17/bin/pg_dump --version
 
       - name: Generate PostgreSQL Database Dump
         env:
@@ -81,6 +85,11 @@ jobs:
             }
           }
 
+          const fs = require('fs');
+          const pgDumpCmd = fs.existsSync('/usr/lib/postgresql/17/bin/pg_dump')
+            ? '/usr/lib/postgresql/17/bin/pg_dump'
+            : 'pg_dump';
+
           const candidates = getCandidates(rawUrl);
           let ok = false;
 
@@ -88,7 +97,7 @@ jobs:
             console.log(`Connecting via ${cand.name}...`);
             try {
               execSync(
-                `pg_dump "${cand.url}" --no-owner --no-privileges --clean --if-exists --encoding=UTF8 --file="${outputFile}"`,
+                `"${pgDumpCmd}" "${cand.url}" --no-owner --no-privileges --clean --if-exists --encoding=UTF8 --file="${outputFile}"`,
                 { stdio: 'inherit' }
               );
               console.log(`✓ Database backup dump succeeded via ${cand.name}!`);
