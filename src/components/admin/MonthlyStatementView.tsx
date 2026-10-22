@@ -4,7 +4,8 @@ import { useState, useTransition } from "react";
 import { getMonthlyStatementData, type MonthlyStatementDto } from "@/actions/statement";
 import { DESK_DICT, resolveDeskText } from "@/lib/desk-i18n";
 import { formatPrice } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
+import Link from "next/link";
+import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Printer,
   Download,
@@ -147,17 +148,18 @@ export function MonthlyStatementView({
                 <span>返回前台 / Back</span>
               </Button>
             ) : (
-              <Button
-                asChild
-                variant="outline"
-                size="lg"
-                className="h-12 px-4 rounded-xl border border-border/80 bg-card hover:bg-muted font-bold text-foreground gap-2 cursor-pointer shadow-xs"
+              <Link
+                href={backHref}
+                className={buttonVariants({
+                  variant: "outline",
+                  size: "lg",
+                  className:
+                    "h-12 px-4 rounded-xl border border-border/80 bg-card hover:bg-muted font-bold text-foreground gap-2 cursor-pointer shadow-xs inline-flex items-center",
+                })}
               >
-                <a href={backHref}>
-                  <ArrowLeft className="h-4 w-4" />
-                  <span>返回主页 / Back</span>
-                </a>
-              </Button>
+                <ArrowLeft className="h-4 w-4" />
+                <span>返回主页 / Back</span>
+              </Link>
             )}
 
             <div>

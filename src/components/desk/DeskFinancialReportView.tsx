@@ -12,7 +12,7 @@ import type {
   DeskLanguageMode,
 } from "@/types";
 import { formatPrice, toBusinessDateString } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -436,23 +436,24 @@ export function DeskFinancialReportView({
             />
           </Button>
 
-          <Button
-            asChild
-            size="lg"
-            variant="outline"
-            className="h-14 sm:h-16 px-4 sm:px-5 text-sm sm:text-base font-bold border border-border/80 bg-card hover:bg-muted text-foreground gap-2 rounded-2xl shadow-xs cursor-pointer"
+          <Link
+            href={`/admin/reports?year=${selectedYear}&month=${selectedMonth}&from=desk`}
+            className={buttonVariants({
+              variant: "outline",
+              size: "lg",
+              className:
+                "h-14 sm:h-16 px-4 sm:px-5 text-sm sm:text-base font-bold border border-border/80 bg-card hover:bg-muted text-foreground gap-2 rounded-2xl shadow-xs cursor-pointer inline-flex items-center",
+            })}
             title="Open printable bank statement"
           >
-            <Link href={`/admin/reports?year=${selectedYear}&month=${selectedMonth}&from=desk`}>
-              <FileText className="h-5 w-5 text-foreground shrink-0" />
-              <DeskText
-                text={DESK_DICT.statement.statementActionBtn}
-                mode={languageMode}
-                layout="inline"
-                primaryClass="font-bold text-sm sm:text-base"
-              />
-            </Link>
-          </Button>
+            <FileText className="h-5 w-5 text-foreground shrink-0" />
+            <DeskText
+              text={DESK_DICT.statement.statementActionBtn}
+              mode={languageMode}
+              layout="inline"
+              primaryClass="font-bold text-sm sm:text-base"
+            />
+          </Link>
 
           <Button
             type="button"
