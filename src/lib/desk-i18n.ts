@@ -73,6 +73,30 @@ export function resolveDeskText(
 }
 
 /**
+ * Resolve a single formatted label string based on language mode:
+ * ONLY_ZH: "系统设置"
+ * ONLY_EN: "Settings"
+ * BILINGUAL_ZH_FIRST: "系统设置 (Settings)"
+ * BILINGUAL_EN_FIRST: "Settings (系统设置)"
+ */
+export function resolveLabel(
+  text: BilingualText,
+  mode: DeskLanguageMode = "BILINGUAL_ZH_FIRST"
+): string {
+  switch (mode) {
+    case "ONLY_ZH":
+      return text.zh;
+    case "ONLY_EN":
+      return text.en;
+    case "BILINGUAL_EN_FIRST":
+      return text.zh === text.en ? text.en : `${text.en} (${text.zh})`;
+    case "BILINGUAL_ZH_FIRST":
+    default:
+      return text.zh === text.en ? text.zh : `${text.zh} (${text.en})`;
+  }
+}
+
+/**
  * Format service names dynamically:
  * e.g. "剪 (Hair Cut)" ->
  *   ONLY_ZH: "剪发"

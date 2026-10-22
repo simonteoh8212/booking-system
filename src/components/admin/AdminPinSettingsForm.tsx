@@ -8,12 +8,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { KeyRound, Eye, EyeOff, Loader2, ShieldCheck } from "lucide-react";
+import { useDeskLanguage } from "@/lib/use-desk-language";
+import { resolveLabel } from "@/lib/desk-i18n";
 
 interface AdminPinSettingsFormProps {
   currentPin: string;
 }
 
 export function AdminPinSettingsForm({ currentPin: initialPin }: AdminPinSettingsFormProps) {
+  const { langMode } = useDeskLanguage();
   const [activePin, setActivePin] = useState(initialPin || "1234");
   const [showCurrentPin, setShowCurrentPin] = useState(false);
   const [newPin, setNewPin] = useState("");
@@ -37,12 +40,22 @@ export function AdminPinSettingsForm({ currentPin: initialPin }: AdminPinSetting
     const cleanConfirm = confirmPin.trim();
 
     if (!/^\d{4}$/.test(cleanNewPin)) {
-      setError("New PIN must be exactly 4 numeric digits (0-9). / 新密码必须是4位纯数字。");
+      setError(
+        resolveLabel(
+          { zh: "新密码必须是4位纯数字 (0-9)。", en: "New PIN must be exactly 4 numeric digits (0-9)." },
+          langMode
+        )
+      );
       return;
     }
 
     if (cleanNewPin !== cleanConfirm) {
-      setError("PIN confirmation does not match. / 两次输入的密码不一致。");
+      setError(
+        resolveLabel(
+          { zh: "两次输入的密码不一致，请重新确认。", en: "PIN confirmation does not match. Please try again." },
+          langMode
+        )
+      );
       return;
     }
 
@@ -52,7 +65,12 @@ export function AdminPinSettingsForm({ currentPin: initialPin }: AdminPinSetting
         setActivePin(cleanNewPin);
         setNewPin("");
         setConfirmPin("");
-        toast.success("4-digit PIN updated successfully! / 柜台密码更新成功！");
+        toast.success(
+          resolveLabel(
+            { zh: "4位柜台密码更新成功！", en: "4-digit passcode updated successfully!" },
+            langMode
+          )
+        );
       } else {
         setError(res.error || "Failed to update PIN");
         toast.error(res.error || "Failed to update PIN");
@@ -69,9 +87,17 @@ export function AdminPinSettingsForm({ currentPin: initialPin }: AdminPinSetting
               <KeyRound className="h-5 w-5" />
             </div>
             <div>
-              <CardTitle className="text-xl">4-Digit Passcode / 柜台解锁密码</CardTitle>
+              <CardTitle className="text-xl">
+                {resolveLabel({ zh: "4位前台解锁密码", en: "4-Digit Passcode" }, langMode)}
+              </CardTitle>
               <CardDescription className="text-sm">
-                Quick passcode for unlocking the Salon Desk and viewing sensitive financial reports
+                {resolveLabel(
+                  {
+                    zh: "用于解锁沙龙前台收银台及查看敏感财务对账单的快捷 PIN 码",
+                    en: "Quick passcode for unlocking the Salon Desk and viewing sensitive financial reports",
+                  },
+                  langMode
+                )}
               </CardDescription>
             </div>
           </div>
@@ -82,7 +108,7 @@ export function AdminPinSettingsForm({ currentPin: initialPin }: AdminPinSetting
           <div className="flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-2xl bg-muted/50 border border-border/80 gap-3">
             <div className="space-y-0.5">
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                Current Active Passcode / 当前使用密码
+                {resolveLabel({ zh: "当前生效密码", en: "Current Active Passcode" }, langMode)}
               </p>
               <div className="flex items-center gap-2">
                 <span className="font-mono text-2xl font-black tracking-widest text-foreground">
@@ -100,7 +126,7 @@ export function AdminPinSettingsForm({ currentPin: initialPin }: AdminPinSetting
             </div>
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground bg-background px-3 py-1.5 rounded-xl border shrink-0">
               <ShieldCheck className="h-4 w-4 text-emerald-500" />
-              <span>Staff Desk & Financials</span>
+              <span>{resolveLabel({ zh: "员工前台与财务安全", en: "Staff Desk & Financials" }, langMode)}</span>
             </div>
           </div>
 
@@ -109,7 +135,7 @@ export function AdminPinSettingsForm({ currentPin: initialPin }: AdminPinSetting
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="newPin" className="text-sm font-semibold">
-                  New 4-Digit PIN / 新密码
+                  {resolveLabel({ zh: "设置新 4 位密码", en: "New 4-Digit PIN" }, langMode)}
                 </Label>
                 <Input
                   id="newPin"
@@ -125,12 +151,14 @@ export function AdminPinSettingsForm({ currentPin: initialPin }: AdminPinSetting
                   }}
                   required
                 />
-                <p className="text-[11px] text-muted-foreground">Must be exactly 4 digits</p>
+                <p className="text-[11px] text-muted-foreground">
+                  {resolveLabel({ zh: "必须恰好为 4 位数字", en: "Must be exactly 4 digits" }, langMode)}
+                </p>
               </div>
 
               <div className="space-y-2">
                 <Label htmlFor="confirmPin" className="text-sm font-semibold">
-                  Confirm New PIN / 确认新密码
+                  {resolveLabel({ zh: "再次确认新密码", en: "Confirm New PIN" }, langMode)}
                 </Label>
                 <Input
                   id="confirmPin"
@@ -146,7 +174,9 @@ export function AdminPinSettingsForm({ currentPin: initialPin }: AdminPinSetting
                   }}
                   required
                 />
-                <p className="text-[11px] text-muted-foreground">Re-enter the 4 digits to confirm</p>
+                <p className="text-[11px] text-muted-foreground">
+                  {resolveLabel({ zh: "重新输入以确认", en: "Re-enter the 4 digits to confirm" }, langMode)}
+                </p>
               </div>
             </div>
 
@@ -158,14 +188,15 @@ export function AdminPinSettingsForm({ currentPin: initialPin }: AdminPinSetting
 
             <div className="pt-1">
               <p className="text-xs text-muted-foreground">
-                Tip: Default PIN is <code className="font-mono font-bold text-foreground">1234</code>
+                {resolveLabel({ zh: "提示：初始默认密码为", en: "Tip: Default PIN is" }, langMode)}{" "}
+                <code className="font-mono font-bold text-foreground">1234</code>
               </p>
             </div>
           </form>
         </CardContent>
       </Card>
 
-      {/* Floating Save Changes Dock (Slides up & fades in like Image 2 only when PIN is entered) */}
+      {/* Floating Save Changes Dock */}
       <div
         className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 w-[calc(100%-2rem)] max-w-xl transition-all duration-300 ease-out ${
           hasChanges
@@ -181,12 +212,12 @@ export function AdminPinSettingsForm({ currentPin: initialPin }: AdminPinSetting
             </span>
             <div className="min-w-0">
               <p className="text-xs sm:text-sm font-bold truncate">
-                Unsaved Changes
+                {resolveLabel({ zh: "未保存的新密码", en: "Unsaved Changes" }, langMode)}
               </p>
               <p className="text-[11px] opacity-70 hidden sm:block truncate">
                 {newPin.length === 4 && confirmPin.length === 4
-                  ? "New 4-digit passcode ready to save."
-                  : "Enter and confirm your 4-digit PIN."}
+                  ? resolveLabel({ zh: "新 4 位密码已就绪，点击保存生效。", en: "New 4-digit passcode ready to save." }, langMode)
+                  : resolveLabel({ zh: "请输入并确认 4 位数字密码。", en: "Enter and confirm your 4-digit PIN." }, langMode)}
               </p>
             </div>
           </div>
@@ -200,7 +231,7 @@ export function AdminPinSettingsForm({ currentPin: initialPin }: AdminPinSetting
               onClick={handleDiscard}
               className="h-9 px-3 text-xs sm:text-sm font-semibold opacity-80 hover:opacity-100 hover:bg-background/10 dark:hover:bg-muted cursor-pointer rounded-xl text-inherit"
             >
-              Discard
+              {resolveLabel({ zh: "放弃", en: "Discard" }, langMode)}
             </Button>
             <Button
               type="button"
@@ -212,10 +243,10 @@ export function AdminPinSettingsForm({ currentPin: initialPin }: AdminPinSetting
               {isPending ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin" />
-                  Saving...
+                  {resolveLabel({ zh: "保存中…", en: "Saving..." }, langMode)}
                 </>
               ) : (
-                "Save Changes"
+                resolveLabel({ zh: "保存新密码", en: "Save Changes" }, langMode)
               )}
             </Button>
           </div>

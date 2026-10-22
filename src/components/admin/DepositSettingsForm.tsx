@@ -13,7 +13,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import type { DepositSettingDto, DeskLanguageMode } from "@/types";
-import { DESK_LANGUAGE_OPTIONS } from "@/lib/desk-i18n";
+import { DESK_LANGUAGE_OPTIONS, resolveLabel } from "@/lib/desk-i18n";
+import { useDeskLanguage, saveDeskLanguage } from "@/lib/use-desk-language";
 import jsQR from "jsqr";
 import {
   Wallet,
@@ -36,11 +37,20 @@ interface DepositSettingsFormProps {
 
 export function DepositSettingsForm({ initialSetting }: DepositSettingsFormProps) {
   const router = useRouter();
+  const { langMode, setLangMode } = useDeskLanguage(initialSetting.deskLanguage);
   const [currency, setCurrency] = useState<string>(initialSetting.currency || "MYR");
   const [currencySymbol, setCurrencySymbol] = useState<string>(initialSetting.currencySymbol || "RM");
   const [deskLanguage, setDeskLanguage] = useState<DeskLanguageMode>(
-    initialSetting.deskLanguage || "BILINGUAL_ZH_FIRST"
+    langMode || initialSetting.deskLanguage || "BILINGUAL_ZH_FIRST"
   );
+
+  // Keep deskLanguage synchronized with active global language mode
+  useEffect(() => {
+    if (langMode && langMode !== deskLanguage) {
+      setDeskLanguage(langMode);
+    }
+  }, [langMode, deskLanguage]);
+
   const [isEnabled, setIsEnabled] = useState(initialSetting.isEnabled);
   const [type, setType] = useState<"FIXED" | "PERCENTAGE">(initialSetting.type);
   const [amountRm, setAmountRm] = useState((initialSetting.amountCents / 100).toFixed(2));
@@ -78,29 +88,31 @@ export function DepositSettingsForm({ initialSetting }: DepositSettingsFormProps
   // Update dynamic preview QR on changes
   useEffect(() => {
     let active = true;
-    async function updatePreview() {
-      const cents =
-        type === "PERCENTAGE"
-          ? Math.round((10000 * (parseFloat(percentage) || 20)) / 100) // Sample RM100 service
-          : Math.round(parseFloat(amountRm || "10") * 100);
+
+    async function loadPreview() {
+      const parsedAmount =
+        type === "FIXED"
+          ? Math.round((parseFloat(amountRm) || 10) * 100)
+          : Math.round(((100 * (parseInt(percentage, 10) || 20)) / 100) * 100);
 
       const res = await getPreviewDepositQR({
-        basePayload: duitnowPayload,
-        amountCents: Math.max(100, cents),
+        basePayload: duitnowPayload || undefined,
+        amountCents: parsedAmount,
       });
 
-      if (active && res.success) {
+      if (active && res.success && res.data) {
         setPreviewQrUrl(res.data);
       }
     }
-    updatePreview();
+
+    const timer = setTimeout(loadPreview, 300);
     return () => {
       active = false;
+      clearTimeout(timer);
     };
-  }, [duitnowPayload, amountRm, percentage, type]);
+  }, [isEnabled, type, amountRm, percentage, duitnowPayload]);
 
-  // Handle uploading and decoding client's DuitNow QR screenshot
-  function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
+  async function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -108,78 +120,66 @@ export function DepositSettingsForm({ initialSetting }: DepositSettingsFormProps
     setStatusMessage(null);
 
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
       const img = new Image();
       img.onload = () => {
-        try {
-          // Scale to max 1000px dimension to optimize storage while keeping extreme clarity
-          const maxDim = 1000;
-          let width = img.width;
-          let height = img.height;
-          if (width > maxDim || height > maxDim) {
-            if (width > height) {
-              height = Math.round((height * maxDim) / width);
-              width = maxDim;
-            } else {
-              width = Math.round((width * maxDim) / height);
-              height = maxDim;
-            }
-          }
-
-          const canvas = document.createElement("canvas");
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext("2d");
-          if (!ctx) {
-            throw new Error("Canvas context not available");
-          }
-          ctx.drawImage(img, 0, 0, width, height);
-
-          // Generate clean, compressed exact image data URL
-          const exactDataUrl = canvas.toDataURL("image/jpeg", 0.9);
-          setQrImageUrl(exactDataUrl);
-
-          // Also try scanning with jsQR for recipient name/payload convenience
-          const imageData = ctx.getImageData(0, 0, width, height);
-          const code = jsQR(imageData.data, imageData.width, imageData.height);
-
-          if (code && code.data) {
-            const raw = code.data.trim();
-            const check = parseDuitNowPayload(raw);
-            if (check.isValid) {
-              setDuitnowPayload(raw);
-              setRecipientName(check.recipientName);
-              setStatusMessage({
-                type: "success",
-                text: `✅ TNG DuitNow QR image saved! Account recipient detected: ${check.recipientName}. Click Save to apply.`,
-              });
-            } else {
-              setDuitnowPayload(raw);
-              setStatusMessage({
-                type: "success",
-                text: "✅ TNG DuitNow QR image saved! Exact image will be displayed to customers. Click Save to apply.",
-              });
-            }
-          } else {
-            // Even if jsQR cannot decode (common with styled TNG screenshots), we STILL save the exact image!
-            setStatusMessage({
-              type: "success",
-              text: "✅ Official TNG DuitNow QR image uploaded successfully! This exact image will be shown to customers. Click Save to apply.",
-            });
-          }
-        } catch (err) {
-          console.error(err);
+        const canvas = document.createElement("canvas");
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          setIsScanningQr(false);
           setStatusMessage({
             type: "error",
-            text: "Failed to process image. Please upload a PNG or JPEG file.",
+            text: "Canvas context not available.",
           });
-        } finally {
-          setIsScanningQr(false);
+          return;
         }
+
+        canvas.width = img.width;
+        canvas.height = img.height;
+        ctx.drawImage(img, 0, 0, img.width, img.height);
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+        const code = jsQR(imageData.data, imageData.width, imageData.height, {
+          inversionAttempts: "dontInvert",
+        });
+
+        if (code && code.data) {
+          const check = parseDuitNowPayload(code.data);
+          if (check.isValid) {
+            setDuitnowPayload(code.data);
+            if (check.recipientName) setRecipientName(check.recipientName);
+            setQrImageUrl(event.target?.result as string);
+            setStatusMessage({
+              type: "success",
+              text: `Successfully extracted DuitNow payload for ${check.recipientName || "Payee"}.`,
+            });
+            toast.success("QR code decoded successfully!");
+          } else {
+            setStatusMessage({
+              type: "error",
+              text: "QR detected, but it does not appear to be a valid EMVCo DuitNow QR code.",
+            });
+            toast.error("Invalid DuitNow QR detected.");
+          }
+        } else {
+          setQrImageUrl(event.target?.result as string);
+          setStatusMessage({
+            type: "error",
+            text: "Could not decode text/payload from QR image. Image saved as visual fallback.",
+          });
+          toast.error("Could not decode QR payload. Image stored as fallback.");
+        }
+        setIsScanningQr(false);
       };
+
       img.src = event.target?.result as string;
     };
     reader.readAsDataURL(file);
+  }
+
+  function handleLanguageSelect(newMode: DeskLanguageMode) {
+    setDeskLanguage(newMode);
+    setLangMode(newMode);
   }
 
   function handleSave() {
@@ -191,9 +191,9 @@ export function DepositSettingsForm({ initialSetting }: DepositSettingsFormProps
       if (typeof window !== "undefined") {
         try {
           localStorage.setItem("app_currency_symbol", currencySymbol);
-          localStorage.setItem("app_desk_language", deskLanguage);
         } catch {}
       }
+      saveDeskLanguage(deskLanguage);
 
       const res = await updateDepositSetting({
         isEnabled,
@@ -209,7 +209,13 @@ export function DepositSettingsForm({ initialSetting }: DepositSettingsFormProps
       });
 
       if (res.success) {
-        toast.success(`Settings saved successfully! Currency: ${currencySymbol} (${currency}), Desk Language: ${deskLanguage}.`);
+        toast.success(
+          deskLanguage === "ONLY_ZH"
+            ? "设置保存成功！"
+            : deskLanguage === "ONLY_EN"
+            ? "Settings saved successfully!"
+            : "设置保存成功 / Settings saved successfully!"
+        );
         setStatusMessage(null);
         router.refresh();
       } else {
@@ -240,14 +246,24 @@ export function DepositSettingsForm({ initialSetting }: DepositSettingsFormProps
                 <Wallet className="h-5 w-5" />
               </div>
               <div>
-                <CardTitle className="text-lg">Booking Deposit & DuitNow QR</CardTitle>
+                <CardTitle className="text-lg">
+                  {resolveLabel({ zh: "定金与线上支付设置", en: "Booking Deposit & Payment" }, deskLanguage)}
+                </CardTitle>
                 <CardDescription className="text-xs">
-                  Require customers to pay a deposit with dynamic QR code
+                  {resolveLabel(
+                    {
+                      zh: "配置顾客在线预约时需支付的定金金额、收款码与币种",
+                      en: "Require customers to pay a deposit with dynamic QR code",
+                    },
+                    deskLanguage
+                  )}
                 </CardDescription>
               </div>
             </div>
             <Badge variant={isEnabled ? "default" : "secondary"}>
-              {isEnabled ? "Deposit Active" : "Full Amount"}
+              {isEnabled
+                ? resolveLabel({ zh: "定金已启用", en: "Deposit Active" }, deskLanguage)
+                : resolveLabel({ zh: "线下全额支付", en: "Full Amount" }, deskLanguage)}
             </Badge>
           </div>
         </CardHeader>
@@ -256,7 +272,7 @@ export function DepositSettingsForm({ initialSetting }: DepositSettingsFormProps
           {/* Country & Currency Selector */}
           <div className="space-y-2 p-4 rounded-xl border bg-muted/20">
             <Label className="text-xs font-semibold uppercase text-muted-foreground tracking-wider">
-              Country & Currency / 国家与货币
+              {resolveLabel({ zh: "国家与结算货币", en: "Country & Currency" }, deskLanguage)}
             </Label>
             <div className="grid grid-cols-2 gap-3">
               <button
@@ -309,11 +325,20 @@ export function DepositSettingsForm({ initialSetting }: DepositSettingsFormProps
             <div className="flex items-center gap-2">
               <Languages className="h-4 w-4 text-primary" />
               <Label className="text-xs font-semibold uppercase text-muted-foreground tracking-wider">
-                Desk Language & Priority / 柜台语言显示模式与优先级
+                {resolveLabel(
+                  { zh: "前台语言显示模式与优先级", en: "Desk Language & Priority Mode" },
+                  deskLanguage
+                )}
               </Label>
             </div>
             <p className="text-xs text-muted-foreground -mt-1">
-              Choose language mode for the Salon Desk counter (/admin/desk). Selected language will be highlighted and prominent.
+              {resolveLabel(
+                {
+                  zh: "设置沙龙前台收银台 (/admin/desk) 及管理面板的语言显示模式。选定模式将实时全站生效。",
+                  en: "Choose language mode for the Salon Desk counter (/admin/desk) and admin panel. Changes take effect across the system.",
+                },
+                deskLanguage
+              )}
             </p>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
@@ -323,7 +348,7 @@ export function DepositSettingsForm({ initialSetting }: DepositSettingsFormProps
                   <button
                     key={opt.id}
                     type="button"
-                    onClick={() => setDeskLanguage(opt.id)}
+                    onClick={() => handleLanguageSelect(opt.id)}
                     className={`p-3.5 rounded-xl border-2 text-left flex flex-col justify-between transition-all cursor-pointer ${
                       isSelected
                         ? "border-primary bg-primary/10 shadow-xs ring-1 ring-primary"
@@ -345,7 +370,7 @@ export function DepositSettingsForm({ initialSetting }: DepositSettingsFormProps
                     {/* Live Preview Bar */}
                     <div className="mt-3 pt-2 border-t border-border/60 flex items-center justify-between text-xs">
                       <span className="text-[10px] text-muted-foreground font-semibold uppercase">
-                        Preview:
+                        {resolveLabel({ zh: "预览：", en: "Preview:" }, deskLanguage)}
                       </span>
                       <div className="text-right">
                         <span className="font-black text-foreground">{opt.previewPrimary}</span>
@@ -366,10 +391,16 @@ export function DepositSettingsForm({ initialSetting }: DepositSettingsFormProps
           <div className="flex items-center justify-between p-4 rounded-xl border bg-muted/30">
             <div className="space-y-0.5">
               <Label className="text-sm font-semibold cursor-pointer" htmlFor="deposit-toggle">
-                Require Booking Deposit
+                {resolveLabel({ zh: "启用预约定金收取", en: "Require Booking Deposit" }, deskLanguage)}
               </Label>
               <p className="text-xs text-muted-foreground">
-                When enabled, customers only pay the deposit to hold their slot. Remaining balance is paid at the salon.
+                {resolveLabel(
+                  {
+                    zh: "开启后，顾客在官网预约时仅需先支付定金锁定名额，到店后再补齐尾款。",
+                    en: "When enabled, customers only pay the deposit to hold their slot. Remaining balance is paid at the salon.",
+                  },
+                  deskLanguage
+                )}
               </p>
             </div>
             <button
@@ -393,7 +424,7 @@ export function DepositSettingsForm({ initialSetting }: DepositSettingsFormProps
             <div className="space-y-4 p-4 rounded-xl border bg-background animate-in fade-in">
               <div className="space-y-2">
                 <Label className="text-xs font-semibold uppercase text-muted-foreground tracking-wider">
-                  Calculation Mode
+                  {resolveLabel({ zh: "定金计算模式", en: "Calculation Mode" }, deskLanguage)}
                 </Label>
                 <div className="grid grid-cols-2 gap-3">
                   <button
@@ -406,7 +437,7 @@ export function DepositSettingsForm({ initialSetting }: DepositSettingsFormProps
                     }`}
                   >
                     <DollarSign className="h-4 w-4" />
-                    Exact Amount ({currencySymbol})
+                    {resolveLabel({ zh: `固定金额 (${currencySymbol})`, en: `Exact Amount (${currencySymbol})` }, deskLanguage)}
                   </button>
                   <button
                     type="button"
@@ -418,14 +449,16 @@ export function DepositSettingsForm({ initialSetting }: DepositSettingsFormProps
                     }`}
                   >
                     <Percent className="h-4 w-4" />
-                    Percentage (%)
+                    {resolveLabel({ zh: "比例百分比 (%)", en: "Percentage (%)" }, deskLanguage)}
                   </button>
                 </div>
               </div>
 
               {type === "FIXED" ? (
                 <div className="space-y-2">
-                  <Label htmlFor="fixedAmount">Deposit Amount ({currencySymbol})</Label>
+                  <Label htmlFor="fixedAmount">
+                    {resolveLabel({ zh: `定金金额 (${currencySymbol})`, en: `Deposit Amount (${currencySymbol})` }, deskLanguage)}
+                  </Label>
                   <div className="relative">
                     <span className="absolute left-3 top-2.5 text-sm text-muted-foreground font-semibold">
                       {currencySymbol}
@@ -442,19 +475,26 @@ export function DepositSettingsForm({ initialSetting }: DepositSettingsFormProps
                     />
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Regardless of service price, customer will pay exactly{" "}
-                    <strong>{currencySymbol === "$" ? `$${parseFloat(amountRm || "0").toFixed(2)}` : `RM ${parseFloat(amountRm || "0").toFixed(2)}`}</strong> deposit.
+                    {resolveLabel(
+                      {
+                        zh: `无论服务金额多少，顾客固定预付 ${currencySymbol === "$" ? `$${parseFloat(amountRm || "0").toFixed(2)}` : `RM ${parseFloat(amountRm || "0").toFixed(2)}`} 定金。`,
+                        en: `Regardless of service price, customer will pay exactly ${currencySymbol === "$" ? `$${parseFloat(amountRm || "0").toFixed(2)}` : `RM ${parseFloat(amountRm || "0").toFixed(2)}`} deposit.`,
+                      },
+                      deskLanguage
+                    )}
                   </p>
                 </div>
               ) : (
                 <div className="space-y-2">
-                  <Label htmlFor="percentageVal">Deposit Percentage (%)</Label>
+                  <Label htmlFor="pctAmount">
+                    {resolveLabel({ zh: "定金百分比 (%)", en: "Deposit Percentage (%)" }, deskLanguage)}
+                  </Label>
                   <div className="relative">
                     <Input
-                      id="percentageVal"
+                      id="pctAmount"
                       type="number"
-                      step="1"
-                      min="1"
+                      step="5"
+                      min="5"
                       max="100"
                       value={percentage}
                       onChange={(e) => setPercentage(e.target.value)}
@@ -466,8 +506,13 @@ export function DepositSettingsForm({ initialSetting }: DepositSettingsFormProps
                     </span>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    For example, on a {currencySymbol === "$" ? "$120.00" : "RM 120.00"} service, a {percentage}% deposit equals{" "}
-                    <strong>{currencySymbol === "$" ? `$${((120 * (parseFloat(percentage) || 0)) / 100).toFixed(2)}` : `RM ${((120 * (parseFloat(percentage) || 0)) / 100).toFixed(2)}`}</strong>.
+                    {resolveLabel(
+                      {
+                        zh: `例如 $120 的服务，${percentage}% 定金即为 ${currencySymbol === "$" ? `$${((120 * (parseFloat(percentage) || 0)) / 100).toFixed(2)}` : `RM ${((120 * (parseFloat(percentage) || 0)) / 100).toFixed(2)}`}。`,
+                        en: `For example, on a ${currencySymbol === "$" ? "$120.00" : "RM 120.00"} service, a ${percentage}% deposit equals ${currencySymbol === "$" ? `$${((120 * (parseFloat(percentage) || 0)) / 100).toFixed(2)}` : `RM ${((120 * (parseFloat(percentage) || 0)) / 100).toFixed(2)}`}.`,
+                      },
+                      deskLanguage
+                    )}
                   </p>
                 </div>
               )}
@@ -480,9 +525,17 @@ export function DepositSettingsForm({ initialSetting }: DepositSettingsFormProps
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <div>
-                <Label className="text-sm font-semibold">DuitNow Base QR Configuration</Label>
+                <Label className="text-sm font-semibold">
+                  {resolveLabel({ zh: "DuitNow 基础收款码配置", en: "DuitNow Base QR Configuration" }, deskLanguage)}
+                </Label>
                 <p className="text-xs text-muted-foreground">
-                  Works with Touch &apos;n Go, Maybank MAE, CIMB, or any Malaysian bank QR
+                  {resolveLabel(
+                    {
+                      zh: "支持 Touch 'n Go、Maybank MAE、CIMB 或任意马来西亚银行 App 扫码",
+                      en: "Works with Touch 'n Go, Maybank MAE, CIMB, or any Malaysian bank QR",
+                    },
+                    deskLanguage
+                  )}
                 </p>
               </div>
               <Button
@@ -493,25 +546,31 @@ export function DepositSettingsForm({ initialSetting }: DepositSettingsFormProps
                 className="text-xs h-8 gap-1.5"
               >
                 <RefreshCw className="h-3 w-3" />
-                Reset Demo
+                {resolveLabel({ zh: "重置默认", en: "Reset Demo" }, deskLanguage)}
               </Button>
             </div>
 
             {/* Detected Recipient Badge */}
             <div className="p-3.5 rounded-xl border bg-muted/40 space-y-2">
               <div className="flex items-center justify-between text-xs">
-                <span className="text-muted-foreground">Detected Payee:</span>
+                <span className="text-muted-foreground">
+                  {resolveLabel({ zh: "收款方姓名：", en: "Detected Payee:" }, deskLanguage)}
+                </span>
                 <span className="font-semibold text-foreground">
                   {recipientName || "Unknown"}
                 </span>
               </div>
               <div className="flex items-center justify-between text-xs">
-                <span className="text-muted-foreground">EMVCo Standard:</span>
+                <span className="text-muted-foreground">
+                  {resolveLabel({ zh: "EMVCo 规范校验：", en: "EMVCo Standard:" }, deskLanguage)}
+                </span>
                 <Badge
                   variant={parsed.isValid ? "default" : "destructive"}
                   className="text-[10px] h-5"
                 >
-                  {parsed.isValid ? "Valid DuitNow QR" : "Invalid Payload"}
+                  {parsed.isValid
+                    ? resolveLabel({ zh: "有效 DuitNow 码", en: "Valid DuitNow QR" }, deskLanguage)
+                    : resolveLabel({ zh: "无效载荷", en: "Invalid Payload" }, deskLanguage)}
                 </Badge>
               </div>
             </div>
@@ -523,7 +582,7 @@ export function DepositSettingsForm({ initialSetting }: DepositSettingsFormProps
                   <div className="flex items-center gap-2">
                     <CheckCircle2 className="h-4 w-4 text-emerald-600" />
                     <span className="text-xs font-bold text-foreground">
-                      Official TNG DuitNow QR Image (Exact Customer View)
+                      {resolveLabel({ zh: "官方 TNG 收款码图片（顾客扫码视图）", en: "Official TNG DuitNow QR Image" }, deskLanguage)}
                     </span>
                   </div>
                   <Button
@@ -539,7 +598,7 @@ export function DepositSettingsForm({ initialSetting }: DepositSettingsFormProps
                     }}
                     className="h-7 px-2.5 text-xs text-destructive hover:bg-destructive/10 cursor-pointer"
                   >
-                    Remove Image
+                    {resolveLabel({ zh: "移除图片", en: "Remove Image" }, deskLanguage)}
                   </Button>
                 </div>
 
@@ -553,7 +612,7 @@ export function DepositSettingsForm({ initialSetting }: DepositSettingsFormProps
                 </div>
                 <div className="flex items-center justify-between pt-1">
                   <p className="text-[11px] text-emerald-700 dark:text-emerald-300 font-medium">
-                    ✓ This exact downloaded image is displayed to customers at checkout.
+                    ✓ {resolveLabel({ zh: "顾客在在线预约结账时将直接看到此收款图片", en: "This exact downloaded image is displayed to customers at checkout." }, deskLanguage)}
                   </p>
                   <Button
                     type="button"
@@ -564,7 +623,7 @@ export function DepositSettingsForm({ initialSetting }: DepositSettingsFormProps
                     className="h-8 text-xs font-bold gap-1.5 cursor-pointer"
                   >
                     <Upload className="h-3 w-3" />
-                    Replace Image
+                    {resolveLabel({ zh: "更换图片", en: "Replace Image" }, deskLanguage)}
                   </Button>
                 </div>
               </div>
@@ -572,7 +631,7 @@ export function DepositSettingsForm({ initialSetting }: DepositSettingsFormProps
               /* Upload Client QR Image */
               <div className="space-y-2">
                 <Label className="text-xs font-semibold">
-                  Upload Downloaded TNG / DuitNow QR Image / 上传TNG收款二维码
+                  {resolveLabel({ zh: "上传 TNG / DuitNow 二维码图片", en: "Upload Downloaded TNG / DuitNow QR Image" }, deskLanguage)}
                 </Label>
                 <div className="flex gap-2">
                   <input
@@ -592,18 +651,24 @@ export function DepositSettingsForm({ initialSetting }: DepositSettingsFormProps
                     {isScanningQr ? (
                       <>
                         <Loader2 className="h-4 w-4 animate-spin" />
-                        Processing Image…
+                        {resolveLabel({ zh: "正在解析图片…", en: "Processing Image…" }, deskLanguage)}
                       </>
                     ) : (
                       <>
                         <Upload className="h-4 w-4 text-primary" />
-                        Upload Downloaded TNG DuitNow QR Image / 上传TNG下载的二维码
+                        {resolveLabel({ zh: "上传 TNG 下载的二维码图片", en: "Upload Downloaded TNG DuitNow QR Image" }, deskLanguage)}
                       </>
                     )}
                   </Button>
                 </div>
                 <p className="text-[11px] text-muted-foreground">
-                  Upload the QR code image downloaded from your Touch &apos;n Go (TNG) eWallet app. The exact image will be displayed directly to customers during online booking deposit payment.
+                  {resolveLabel(
+                    {
+                      zh: "直接上传您从 Touch 'n Go (TNG) 电子钱包下载的收款码。顾客在线预约支付定金时将直接看到此原图并能扫码。",
+                      en: "Upload the QR code image downloaded from your Touch 'n Go (TNG) eWallet app. The exact image will be displayed directly to customers during online booking deposit payment.",
+                    },
+                    deskLanguage
+                  )}
                 </p>
               </div>
             )}
@@ -611,7 +676,7 @@ export function DepositSettingsForm({ initialSetting }: DepositSettingsFormProps
             {/* Raw Payload Textarea */}
             <div className="space-y-2">
               <Label htmlFor="duitnowRaw" className="text-xs">
-                Raw EMVCo Payload String
+                {resolveLabel({ zh: "EMVCo 原始载荷字符串", en: "Raw EMVCo Payload String" }, deskLanguage)}
               </Label>
               <Textarea
                 id="duitnowRaw"
@@ -642,12 +707,12 @@ export function DepositSettingsForm({ initialSetting }: DepositSettingsFormProps
             {isPending ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin" />
-                正在保存设置… (Saving…)
+                {resolveLabel({ zh: "正在保存设置…", en: "Saving settings…" }, deskLanguage)}
               </>
             ) : (
               <>
                 <CheckCircle2 className="h-4 w-4" />
-                保存设置 / Save Settings
+                {resolveLabel({ zh: "保存设置", en: "Save Settings" }, deskLanguage)}
               </>
             )}
           </Button>
@@ -660,18 +725,28 @@ export function DepositSettingsForm({ initialSetting }: DepositSettingsFormProps
           <CardHeader className="pb-3">
             <div className="flex items-center gap-2 text-primary text-xs font-semibold uppercase tracking-wider">
               <Sparkles className="h-4 w-4" />
-              Customer View Preview
+              {resolveLabel({ zh: "顾客端实时预览", en: "Customer View Preview" }, deskLanguage)}
             </div>
-            <CardTitle className="text-base">Dynamic DuitNow QR Preview</CardTitle>
+            <CardTitle className="text-base">
+              {resolveLabel({ zh: "动态 DuitNow 收款码预览", en: "Dynamic DuitNow QR Preview" }, deskLanguage)}
+            </CardTitle>
             <CardDescription className="text-xs">
-              This is how your customer will see and scan the QR during checkout
+              {resolveLabel(
+                {
+                  zh: "此为顾客在线预约时看到的支付界面与收款码",
+                  en: "This is how your customer will see and scan the QR during checkout",
+                },
+                deskLanguage
+              )}
             </CardDescription>
           </CardHeader>
 
           <CardContent className="space-y-4 text-center">
             {/* Amount Banner */}
             <div className="p-3 rounded-xl bg-primary/10 border border-primary/20 text-center">
-              <p className="text-xs text-muted-foreground">Pre-filled Deposit Amount</p>
+              <p className="text-xs text-muted-foreground">
+                {resolveLabel({ zh: "预填定金金额", en: "Pre-filled Deposit Amount" }, deskLanguage)}
+              </p>
               <p className="text-2xl font-black text-primary font-mono tracking-tight mt-0.5">
                 {isEnabled
                   ? type === "FIXED"
@@ -682,7 +757,8 @@ export function DepositSettingsForm({ initialSetting }: DepositSettingsFormProps
                   : (currencySymbol === "$" ? "$100.00 (Full Amount)" : "RM 100.00 (Full Amount)")}
               </p>
               <p className="text-[11px] text-primary/80 mt-1 flex items-center justify-center gap-1">
-                <CheckCircle2 className="h-3 w-3 inline" /> Amount is locked & non-editable on scan
+                <CheckCircle2 className="h-3 w-3 inline" />
+                {resolveLabel({ zh: "扫码时金额已锁定不可随意篡改", en: "Amount is locked & non-editable on scan" }, deskLanguage)}
               </p>
             </div>
 
@@ -712,18 +788,16 @@ export function DepositSettingsForm({ initialSetting }: DepositSettingsFormProps
             <div className="p-3 rounded-xl bg-muted/60 text-left space-y-1 text-xs text-muted-foreground border">
               <div className="flex items-center gap-1.5 font-semibold text-foreground">
                 <Info className="h-3.5 w-3.5 text-primary" />
-                How customers experience this:
+                {resolveLabel({ zh: "顾客支付流程说明：", en: "How customers experience this:" }, deskLanguage)}
               </div>
               <p className="text-[11px] leading-relaxed">
-                When a customer opens Touch &apos;n Go, MAE, or CIMB and scans this QR, their app immediately opens the transfer screen with{" "}
-                <strong className="text-foreground">
-                  {isEnabled
-                    ? type === "FIXED"
-                      ? (currencySymbol === "$" ? `$${parseFloat(amountRm || "10").toFixed(2)}` : `RM ${parseFloat(amountRm || "10").toFixed(2)}`)
-                      : `${percentage}% deposit`
-                    : "full amount"}
-                </strong>{" "}
-                and reference code already entered. They cannot accidentally underpay!
+                {resolveLabel(
+                  {
+                    zh: `顾客使用 Touch 'n Go、MAE 或任何银行 App 扫描此二维码时，App 自动预填好 ${isEnabled ? (type === "FIXED" ? (currencySymbol === "$" ? `$${parseFloat(amountRm || "10").toFixed(2)}` : `RM ${parseFloat(amountRm || "10").toFixed(2)}`) : `${percentage}% 定金`) : "全额"} 及流水参考号，顾客无法漏付或篡改金额。`,
+                    en: `When a customer opens Touch 'n Go, MAE, or CIMB and scans this QR, their app immediately opens the transfer screen with ${isEnabled ? (type === "FIXED" ? (currencySymbol === "$" ? `$${parseFloat(amountRm || "10").toFixed(2)}` : `RM ${parseFloat(amountRm || "10").toFixed(2)}`) : `${percentage}% deposit`) : "full amount"} and reference code already entered. They cannot accidentally underpay!`,
+                  },
+                  deskLanguage
+                )}
               </p>
             </div>
           </CardContent>

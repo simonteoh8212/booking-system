@@ -293,6 +293,8 @@ export function DeskHub({
     if (typeof window !== "undefined") {
       try {
         localStorage.setItem("app_desk_language", newMode);
+        document.cookie = `app_desk_language=${newMode}; path=/; max-age=31536000; SameSite=Lax`;
+        window.dispatchEvent(new Event("storage"));
       } catch {}
     }
     startTransition(async () => {

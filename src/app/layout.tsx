@@ -1,9 +1,13 @@
-import type { Metadata } from "next";
 import { Manrope, Noto_Sans_SC } from "next/font/google";
 import "./globals.css";
 import { NavigationProgressBar } from "@/components/NavigationProgressBar";
 import { ToastProvider } from "@/components/ToastProvider";
+import type { Metadata, Viewport } from 'next'
 
+
+export const viewport: Viewport = {
+  themeColor: '#70adf5',
+}
 const manrope = Manrope({
   variable: "--font-manrope",
   subsets: ["latin"],
@@ -19,11 +23,21 @@ const notoSansSC = Noto_Sans_SC({
 });
 
 export const metadata: Metadata = {
-  title: {
-    default: "Book an Appointment",
-    template: "%s | BookEase",
+  title: 'Salon POS',
+  description: 'Salon point-of-sale web app',
+  applicationName: 'Salon POS',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'default',
+    title: 'Salon POS',
   },
-  description: "Easy online appointment booking for local service businesses.",
+  icons: {
+    icon: '/icon.png',
+    apple: [
+      { url: '/apple-icon.png' },
+      { url: '/apple-touch-icon.png' },
+    ],
+  },
 };
 
 export default function RootLayout({

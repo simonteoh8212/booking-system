@@ -8,6 +8,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import type { DepositSettingDto } from "@/types";
+import { useDeskLanguage } from "@/lib/use-desk-language";
+import { resolveLabel } from "@/lib/desk-i18n";
 import {
   SlidersHorizontal,
   TrendingUp,
@@ -17,14 +19,12 @@ import {
   Scissors,
   Eye,
   EyeOff,
-  CheckCircle2,
   AlertCircle,
   Loader2,
   ExternalLink,
   ShieldCheck,
   UserPlus,
   CalendarCheck,
-  Receipt,
 } from "lucide-react";
 
 interface DeskScoreboardSettingsFormProps {
@@ -34,6 +34,8 @@ interface DeskScoreboardSettingsFormProps {
 export function DeskScoreboardSettingsForm({
   initialSetting,
 }: DeskScoreboardSettingsFormProps) {
+  const { langMode } = useDeskLanguage(initialSetting.deskLanguage);
+
   const [showTodaySales, setShowTodaySales] = useState<boolean>(
     initialSetting.showTodaySales ?? true
   );
@@ -102,19 +104,15 @@ export function DeskScoreboardSettingsForm({
       showWalkIn: initialSetting.showWalkIn ?? true,
       showBookedCheckout: initialSetting.showBookedCheckout ?? true,
     };
+    setShowTodaySales(updated.showTodaySales);
+    setShowYesterdaySales(updated.showYesterdaySales);
+    setShowMonthlySales(updated.showMonthlySales);
+    setShowServiceBreakdown(updated.showServiceBreakdown);
+    setShowMakeAppointment(updated.showMakeAppointment);
+    setShowWalkIn(updated.showWalkIn);
+    setShowBookedCheckout(updated.showBookedCheckout);
     setSavedSetting(updated);
   }, [initialSetting]);
-
-  const totalCards = 5;
-  const activeCount =
-    (showTodaySales ? 1 : 0) +
-    (showYesterdaySales ? 1 : 0) +
-    (showMonthlySales ? 1 : 0) +
-    (showServiceBreakdown ? 1 : 0) +
-    (showMakeAppointment ? 1 : 0);
-
-  const allHidden = activeCount === 0;
-  const allShown = activeCount === totalCards;
 
   function handleHideAll() {
     setShowTodaySales(false);
@@ -122,7 +120,6 @@ export function DeskScoreboardSettingsForm({
     setShowMonthlySales(false);
     setShowServiceBreakdown(false);
     setShowMakeAppointment(false);
-    setErrorMessage(null);
   }
 
   function handleShowAll() {
@@ -131,35 +128,54 @@ export function DeskScoreboardSettingsForm({
     setShowMonthlySales(true);
     setShowServiceBreakdown(true);
     setShowMakeAppointment(true);
-    setErrorMessage(null);
   }
 
   function handleToggleWalkIn() {
     if (showWalkIn && !showBookedCheckout) {
-      toast.error("Cannot hide both: Either Walk-in or Booked checkout must be shown. (散客开单与预约结账至少需要保留显示一项)");
+      toast.error(
+        resolveLabel(
+          {
+            zh: "至少需要保留一种开单方式（散客直接开单 或 预约顾客结账）",
+            en: "At least one checkout mode must be enabled (Walk-in or Booked).",
+          },
+          langMode
+        )
+      );
       return;
     }
     setShowWalkIn(!showWalkIn);
-    setErrorMessage(null);
   }
 
   function handleToggleBookedCheckout() {
     if (showBookedCheckout && !showWalkIn) {
-      toast.error("Cannot hide both: Either Walk-in or Booked checkout must be shown. (散客开单与预约结账至少需要保留显示一项)");
+      toast.error(
+        resolveLabel(
+          {
+            zh: "至少需要保留一种开单方式（散客直接开单 或 预约顾客结账）",
+            en: "At least one checkout mode must be enabled (Walk-in or Booked).",
+          },
+          langMode
+        )
+      );
       return;
     }
     setShowBookedCheckout(!showBookedCheckout);
-    setErrorMessage(null);
   }
+
+  const scoreboardToggles = [
+    showTodaySales,
+    showYesterdaySales,
+    showMonthlySales,
+    showServiceBreakdown,
+    showMakeAppointment,
+  ];
+  const activeCount = scoreboardToggles.filter(Boolean).length;
+  const totalCards = scoreboardToggles.length;
+  const allHidden = activeCount === 0;
+  const allShown = activeCount === totalCards;
 
   function handleSave() {
     setErrorMessage(null);
-    if (!showWalkIn && !showBookedCheckout) {
-      const err = "Cannot hide both: Either Walk-in or Booked checkout must be shown. (散客开单与预约结账至少需要保留显示一项)";
-      toast.error(err);
-      setErrorMessage(err);
-      return;
-    }
     startTransition(async () => {
       const res = await updateDeskScoreboardSettings({
         showTodaySales,
@@ -172,7 +188,7 @@ export function DeskScoreboardSettingsForm({
       });
 
       if (res.success) {
-        setSavedSetting({
+        const newSaved = {
           showTodaySales,
           showYesterdaySales,
           showMonthlySales,
@@ -180,29 +196,23 @@ export function DeskScoreboardSettingsForm({
           showMakeAppointment,
           showWalkIn,
           showBookedCheckout,
-        });
+        };
+        setSavedSetting(newSaved);
 
         if (typeof window !== "undefined") {
           try {
             localStorage.setItem(
-              "desk_settings_visibility",
-              JSON.stringify({
-                showTodaySales,
-                showYesterdaySales,
-                showMonthlySales,
-                showServiceBreakdown,
-                showMakeAppointment,
-                showWalkIn,
-                showBookedCheckout,
-              })
+              "desk_scoreboard_visibility",
+              JSON.stringify(newSaved)
             );
           } catch {}
         }
 
         toast.success(
-          allHidden
-            ? "Settings saved! Display options updated successfully."
-            : "Settings saved! All desk and count sales display options updated successfully."
+          resolveLabel(
+            { zh: "前台看板显示设置已保存！", en: "Desk display settings saved successfully!" },
+            langMode
+          )
         );
         setErrorMessage(null);
       } else {
@@ -223,23 +233,42 @@ export function DeskScoreboardSettingsForm({
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <CardTitle className="text-lg">Desk Sales Scoreboard Visibility</CardTitle>
+                <CardTitle className="text-lg">
+                  {resolveLabel(
+                    { zh: "前台看板卡片显示设置", en: "Desk Sales Scoreboard Visibility" },
+                    langMode
+                  )}
+                </CardTitle>
                 {allHidden ? (
                   <Badge variant="destructive" className="text-[11px] gap-1">
-                    <EyeOff className="h-3 w-3" /> All Hidden
+                    <EyeOff className="h-3 w-3" />
+                    {resolveLabel({ zh: "全部隐藏", en: "All Hidden" }, langMode)}
                   </Badge>
                 ) : allShown ? (
                   <Badge variant="default" className="text-[11px] bg-emerald-600 gap-1">
-                    <Eye className="h-3 w-3" /> All Visible
+                    <Eye className="h-3 w-3" />
+                    {resolveLabel({ zh: "全部显示", en: "All Visible" }, langMode)}
                   </Badge>
                 ) : (
                   <Badge variant="secondary" className="text-[11px]">
-                    {activeCount}/{totalCards} Cards Shown
+                    {resolveLabel(
+                      {
+                        zh: `${activeCount}/${totalCards} 项已显示`,
+                        en: `${activeCount}/${totalCards} Cards Shown`,
+                      },
+                      langMode
+                    )}
                   </Badge>
                 )}
               </div>
               <CardDescription className="text-xs text-muted-foreground pt-0.5">
-                Control which sales cards and breakdown statistics appear on the Salon Desk Hub page (/admin/desk).
+                {resolveLabel(
+                  {
+                    zh: "控制沙龙前台页面 (/admin/desk) 上显示或隐藏的销售额统计卡片与开单入口。",
+                    en: "Control which sales cards and breakdown statistics appear on the Salon Desk Hub page (/admin/desk).",
+                  },
+                  langMode
+                )}
               </CardDescription>
             </div>
           </div>
@@ -255,7 +284,7 @@ export function DeskScoreboardSettingsForm({
               className="text-xs cursor-pointer h-8"
             >
               <EyeOff className="h-3.5 w-3.5 mr-1 text-muted-foreground" />
-              Hide All
+              {resolveLabel({ zh: "全部隐藏", en: "Hide All" }, langMode)}
             </Button>
             <Button
               type="button"
@@ -266,7 +295,7 @@ export function DeskScoreboardSettingsForm({
               className="text-xs cursor-pointer h-8"
             >
               <Eye className="h-3.5 w-3.5 mr-1 text-emerald-600" />
-              Show All
+              {resolveLabel({ zh: "全部显示", en: "Show All" }, langMode)}
             </Button>
             <Link
               href="/admin/desk"
@@ -274,7 +303,7 @@ export function DeskScoreboardSettingsForm({
               rel="noopener noreferrer"
               className="inline-flex items-center justify-center rounded-lg border border-border bg-background px-2.5 py-1 text-xs font-medium text-foreground hover:bg-muted transition-colors h-8"
             >
-              Desk Hub
+              {resolveLabel({ zh: "前台开单", en: "Desk Hub" }, langMode)}
               <ExternalLink className="h-3 w-3 ml-1 text-muted-foreground" />
             </Link>
           </div>
@@ -287,15 +316,23 @@ export function DeskScoreboardSettingsForm({
           <div className="flex items-start gap-3 p-3.5 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-900 dark:text-amber-200 text-xs">
             <ShieldCheck className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
             <div>
-              <p className="font-semibold">Privacy Mode Active</p>
+              <p className="font-semibold">
+                {resolveLabel({ zh: "隐私保护模式已激活", en: "Privacy Mode Active" }, langMode)}
+              </p>
               <p className="text-amber-800/90 dark:text-amber-300/90 text-[11px] pt-0.5">
-                All sales revenue figures and service breakdown cards will be completely removed from the Salon Desk Hub page. Staff will only see the main action buttons and appointments checklist.
+                {resolveLabel(
+                  {
+                    zh: "前台开单大屏将隐藏所有销售额与明细卡片，仅保留快捷操作与预约清单，防止到店顾客窥视营业收入。",
+                    en: "All sales revenue figures and service breakdown cards will be completely removed from the Salon Desk Hub page. Staff will only see the main action buttons and appointments checklist.",
+                  },
+                  langMode
+                )}
               </p>
             </div>
           </div>
         )}
 
-        {/* 4 Interactive Toggle Cards */}
+        {/* 5 Interactive Scoreboard Toggle Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
           {/* Toggle 1: Today's Sales */}
           <div
@@ -318,13 +355,23 @@ export function DeskScoreboardSettingsForm({
               </div>
               <div className="min-w-0 space-y-0.5">
                 <div className="flex items-center gap-1.5">
-                  <span className="font-bold text-sm text-foreground">Today's Sales Card</span>
-                  <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-muted-foreground">
-                    今日营业额
-                  </Badge>
+                  <span className="font-bold text-sm text-foreground">
+                    {resolveLabel({ zh: "今日营业额卡片", en: "Today's Sales Card" }, langMode)}
+                  </span>
+                  {langMode !== "ONLY_ZH" && langMode !== "ONLY_EN" && (
+                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-muted-foreground">
+                      今日营业额
+                    </Badge>
+                  )}
                 </div>
                 <p className="text-xs text-muted-foreground line-clamp-2">
-                  Live revenue, completed client counter, and waiting bookings count for today.
+                  {resolveLabel(
+                    {
+                      zh: "实时统计今日营业总额、已完成服务人次与待服务预约数。",
+                      en: "Live revenue, completed client counter, and waiting bookings count for today.",
+                    },
+                    langMode
+                  )}
                 </p>
               </div>
             </div>
@@ -370,13 +417,23 @@ export function DeskScoreboardSettingsForm({
               </div>
               <div className="min-w-0 space-y-0.5">
                 <div className="flex items-center gap-1.5">
-                  <span className="font-bold text-sm text-foreground">Yesterday's Sales Card</span>
-                  <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-muted-foreground">
-                    昨日营业额
-                  </Badge>
+                  <span className="font-bold text-sm text-foreground">
+                    {resolveLabel({ zh: "昨日营业额卡片", en: "Yesterday's Sales Card" }, langMode)}
+                  </span>
+                  {langMode !== "ONLY_ZH" && langMode !== "ONLY_EN" && (
+                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-muted-foreground">
+                      昨日营业额
+                    </Badge>
+                  )}
                 </div>
                 <p className="text-xs text-muted-foreground line-clamp-2">
-                  Yesterday's total sales revenue and completed client count for day-over-day tracking.
+                  {resolveLabel(
+                    {
+                      zh: "统计昨日营业总额与已服务人数，用于环比核对。",
+                      en: "Yesterday's total sales revenue and completed client count for day-over-day tracking.",
+                    },
+                    langMode
+                  )}
                 </p>
               </div>
             </div>
@@ -422,13 +479,23 @@ export function DeskScoreboardSettingsForm({
               </div>
               <div className="min-w-0 space-y-0.5">
                 <div className="flex items-center gap-1.5">
-                  <span className="font-bold text-sm text-foreground">Monthly Sales Card</span>
-                  <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-muted-foreground">
-                    当月营业额
-                  </Badge>
+                  <span className="font-bold text-sm text-foreground">
+                    {resolveLabel({ zh: "当月营业额卡片", en: "Monthly Sales Card" }, langMode)}
+                  </span>
+                  {langMode !== "ONLY_ZH" && langMode !== "ONLY_EN" && (
+                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-muted-foreground">
+                      当月营业额
+                    </Badge>
+                  )}
                 </div>
                 <p className="text-xs text-muted-foreground line-clamp-2">
-                  Month-to-date sales total and cumulative clients served count for the current month.
+                  {resolveLabel(
+                    {
+                      zh: "本月累计营业额与服务人次统计。",
+                      en: "Month-to-date sales total and cumulative clients served count for the current month.",
+                    },
+                    langMode
+                  )}
                 </p>
               </div>
             </div>
@@ -474,13 +541,23 @@ export function DeskScoreboardSettingsForm({
               </div>
               <div className="min-w-0 space-y-0.5">
                 <div className="flex items-center gap-1.5">
-                  <span className="font-bold text-sm text-foreground">Service Sales Breakdown</span>
-                  <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-muted-foreground">
-                    服务销售明细
-                  </Badge>
+                  <span className="font-bold text-sm text-foreground">
+                    {resolveLabel({ zh: "服务销售明细卡片", en: "Service Sales Breakdown" }, langMode)}
+                  </span>
+                  {langMode !== "ONLY_ZH" && langMode !== "ONLY_EN" && (
+                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-muted-foreground">
+                      服务销售明细
+                    </Badge>
+                  )}
                 </div>
                 <p className="text-xs text-muted-foreground line-clamp-2">
-                  Bottom card showing individual service counts and earnings (e.g. Hair Cut x 2, Coloring x 1).
+                  {resolveLabel(
+                    {
+                      zh: "看板底部显示各项具体服务的单项开单数量与收益（如剪发 x 2，染发 x 1）。",
+                      en: "Bottom card showing individual service counts and earnings (e.g. Hair Cut x 2, Coloring x 1).",
+                    },
+                    langMode
+                  )}
                 </p>
               </div>
             </div>
@@ -526,13 +603,23 @@ export function DeskScoreboardSettingsForm({
               </div>
               <div className="min-w-0 space-y-0.5">
                 <div className="flex items-center gap-1.5">
-                  <span className="font-bold text-sm text-foreground">Make Appointment Card</span>
-                  <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-muted-foreground">
-                    预约入口卡片
-                  </Badge>
+                  <span className="font-bold text-sm text-foreground">
+                    {resolveLabel({ zh: "预约办理入口卡片", en: "Make Appointment Card" }, langMode)}
+                  </span>
+                  {langMode !== "ONLY_ZH" && langMode !== "ONLY_EN" && (
+                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-muted-foreground">
+                      预约入口卡片
+                    </Badge>
+                  )}
                 </div>
                 <p className="text-xs text-muted-foreground line-clamp-2">
-                  View today's checklist & calendar, create new customer appointments.
+                  {resolveLabel(
+                    {
+                      zh: "前台快速查看当日预约、日历看板与新建顾客预约。",
+                      en: "View today's checklist & calendar, create new customer appointments.",
+                    },
+                    langMode
+                  )}
                 </p>
               </div>
             </div>
@@ -564,14 +651,23 @@ export function DeskScoreboardSettingsForm({
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="text-sm sm:text-base font-bold text-foreground">
-                  Count Sales Target Visibility
+                  {resolveLabel(
+                    { zh: "收款开单对象显示设置", en: "Count Sales Target Visibility" },
+                    langMode
+                  )}
                 </h3>
                 <Badge variant="outline" className="text-[11px] font-semibold">
-                  1. 结算对象 (Section 1)
+                  {resolveLabel({ zh: "1. 结算对象", en: "Section 1: Targets" }, langMode)}
                 </Badge>
               </div>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Toggle to show or hide either Walk-in direct billing, Booked customer checkout, or show both.
+                {resolveLabel(
+                  {
+                    zh: "配置开单时是否显示散客直接开单、预约顾客结账或两者皆显示。",
+                    en: "Toggle to show or hide either Walk-in direct billing, Booked customer checkout, or show both.",
+                  },
+                  langMode
+                )}
               </p>
             </div>
 
@@ -590,7 +686,7 @@ export function DeskScoreboardSettingsForm({
                     : "text-muted-foreground hover:text-foreground"
                 }`}
               >
-                Show Both (全部显示)
+                {resolveLabel({ zh: "全部显示", en: "Show Both" }, langMode)}
               </Button>
               <Button
                 type="button"
@@ -606,7 +702,7 @@ export function DeskScoreboardSettingsForm({
                     : "text-muted-foreground hover:text-foreground"
                 }`}
               >
-                Walk-in Only (仅散客)
+                {resolveLabel({ zh: "仅散客", en: "Walk-in Only" }, langMode)}
               </Button>
               <Button
                 type="button"
@@ -622,7 +718,7 @@ export function DeskScoreboardSettingsForm({
                     : "text-muted-foreground hover:text-foreground"
                 }`}
               >
-                Booked Only (仅预约)
+                {resolveLabel({ zh: "仅预约", en: "Booked Only" }, langMode)}
               </Button>
             </div>
           </div>
@@ -650,24 +746,30 @@ export function DeskScoreboardSettingsForm({
                 <div className="min-w-0 space-y-0.5">
                   <div className="flex items-center gap-1.5">
                     <span className="font-bold text-sm text-foreground">
-                      散客直接开单 (Walk-in)
+                      {resolveLabel({ zh: "散客直接开单", en: "Walk-in Direct Billing" }, langMode)}
                     </span>
                     {showWalkIn && !showBookedCheckout ? (
                       <Badge variant="outline" className="text-[10px] text-amber-600 dark:text-amber-400 border-amber-500/30 px-1.5 py-0">
-                        Required (必选)
+                        {resolveLabel({ zh: "必选", en: "Required" }, langMode)}
                       </Badge>
                     ) : showWalkIn ? (
                       <Badge variant="default" className="text-[10px] bg-emerald-600 px-1.5 py-0">
-                        Visible
+                        {resolveLabel({ zh: "显示", en: "Visible" }, langMode)}
                       </Badge>
                     ) : (
                       <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
-                        Hidden
+                        {resolveLabel({ zh: "隐藏", en: "Hidden" }, langMode)}
                       </Badge>
                     )}
                   </div>
                   <p className="text-xs text-muted-foreground line-clamp-2">
-                    Show walk-in order button in count sales for direct on-the-spot cashiering.
+                    {resolveLabel(
+                      {
+                        zh: "在收款开单中提供散客快速录入，无需事前预约直接结账开单。",
+                        en: "Show walk-in order button in count sales for direct on-the-spot cashiering.",
+                      },
+                      langMode
+                    )}
                   </p>
                 </div>
               </div>
@@ -714,24 +816,30 @@ export function DeskScoreboardSettingsForm({
                 <div className="min-w-0 space-y-0.5">
                   <div className="flex items-center gap-1.5">
                     <span className="font-bold text-sm text-foreground">
-                      预约顾客结账 (Appointment)
+                      {resolveLabel({ zh: "预约顾客结账", en: "Booked Customer Checkout" }, langMode)}
                     </span>
                     {!showWalkIn && showBookedCheckout ? (
                       <Badge variant="outline" className="text-[10px] text-amber-600 dark:text-amber-400 border-amber-500/30 px-1.5 py-0">
-                        Required (必选)
+                        {resolveLabel({ zh: "必选", en: "Required" }, langMode)}
                       </Badge>
                     ) : showBookedCheckout ? (
                       <Badge variant="default" className="text-[10px] bg-sky-600 px-1.5 py-0">
-                        Visible
+                        {resolveLabel({ zh: "显示", en: "Visible" }, langMode)}
                       </Badge>
                     ) : (
                       <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
-                        Hidden
+                        {resolveLabel({ zh: "隐藏", en: "Hidden" }, langMode)}
                       </Badge>
                     )}
                   </div>
                   <p className="text-xs text-muted-foreground line-clamp-2">
-                    Show today&apos;s scheduled appointment checklist in count sales to settle client bookings.
+                    {resolveLabel(
+                      {
+                        zh: "在收款开单中显示今日预约列表，核对定金并结清到店预约顾客尾款。",
+                        en: "Show today's scheduled appointment checklist in count sales to settle client bookings.",
+                      },
+                      langMode
+                    )}
                   </p>
                 </div>
               </div>
@@ -766,7 +874,7 @@ export function DeskScoreboardSettingsForm({
           </div>
         )}
 
-        {/* Floating Save Changes Dock (Slides up & fades in only when settings change) */}
+        {/* Floating Save Changes Dock */}
         <div
           className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 w-[calc(100%-2rem)] max-w-xl transition-all duration-300 ease-out ${
             hasChanges
@@ -782,10 +890,13 @@ export function DeskScoreboardSettingsForm({
               </span>
               <div className="min-w-0">
                 <p className="text-xs sm:text-sm font-bold truncate">
-                  Unsaved Changes
+                  {resolveLabel({ zh: "未保存的修改", en: "Unsaved Changes" }, langMode)}
                 </p>
                 <p className="text-[11px] opacity-70 hidden sm:block truncate">
-                  Settings changed. Save to apply changes.
+                  {resolveLabel(
+                    { zh: "前台设置已修改，请保存以生效。", en: "Settings changed. Save to apply changes." },
+                    langMode
+                  )}
                 </p>
               </div>
             </div>
@@ -799,7 +910,7 @@ export function DeskScoreboardSettingsForm({
                 onClick={handleDiscard}
                 className="h-9 px-3 text-xs sm:text-sm font-semibold opacity-80 hover:opacity-100 hover:bg-background/10 dark:hover:bg-muted cursor-pointer rounded-xl text-inherit"
               >
-                Discard
+                {resolveLabel({ zh: "放弃", en: "Discard" }, langMode)}
               </Button>
               <Button
                 type="button"
@@ -811,10 +922,10 @@ export function DeskScoreboardSettingsForm({
                 {isPending ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin" />
-                    Saving...
+                    {resolveLabel({ zh: "保存中…", en: "Saving..." }, langMode)}
                   </>
                 ) : (
-                  "Save Changes"
+                  resolveLabel({ zh: "保存修改", en: "Save Changes" }, langMode)
                 )}
               </Button>
             </div>
