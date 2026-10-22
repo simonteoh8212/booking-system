@@ -7,6 +7,7 @@ import { redirect } from "next/navigation";
 export const metadata: Metadata = {
   title: "Reports & Statements | 对账单中心",
 };
+export const instant = false;
 
 interface ReportsPageProps {
   searchParams: Promise<{

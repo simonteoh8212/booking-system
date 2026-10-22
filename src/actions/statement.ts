@@ -54,6 +54,7 @@ export interface MonthlyStatementDto {
     phoneNumber: string;
     isWalkin: boolean;
     services: string;
+    serviceNames: string[];
     paymentMethod: "CASH" | "DUITNOW_QR" | "CARD" | "OTHER";
     amountCents: number;
     notes: string;
@@ -164,10 +165,13 @@ export async function getMonthlyStatementData(
       const timeStr = dt.toTimeString().slice(0, 5);
 
       const isWalkin = b.customer.phoneNumber.startsWith("WALKIN-");
-      const serviceList =
+      const serviceNames =
         b.items.length > 0
-          ? b.items.map((it) => it.service.name).join(", ")
-          : b.service?.name || "Service";
+          ? b.items.map((it) => it.service.name)
+          : b.service?.name
+          ? [b.service.name]
+          : ["Service"];
+      const serviceList = serviceNames.join(", ");
 
       // Count services
       if (b.items.length > 0) {
@@ -212,6 +216,7 @@ export async function getMonthlyStatementData(
         phoneNumber: b.customer.phoneNumber,
         isWalkin,
         services: serviceList,
+        serviceNames,
         paymentMethod: method,
         amountCents: b.totalPriceCents,
         notes: b.notes || "",

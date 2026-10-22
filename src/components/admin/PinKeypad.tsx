@@ -167,14 +167,14 @@ export function PinKeypad({
       `}</style>
 
       {/* Icon & Title */}
-      <div className={`text-center ${compact ? "space-y-0.5 mb-2.5" : "space-y-1.5 mb-5"}`}>
+      <div className={`text-center ${compact ? "space-y-0.5 mb-2" : "space-y-1 sm:space-y-1.5 mb-3 sm:mb-4"}`}>
         <div className={`inline-flex items-center justify-center rounded-2xl bg-primary/10 text-primary shadow-xs ${
-          compact ? "w-9 h-9 mb-0.5" : "w-12 h-12 mb-1"
+          compact ? "w-9 h-9 mb-0.5" : "w-11 h-11 sm:w-12 sm:h-12 mb-1"
         }`}>
-          <Lock className={compact ? "h-4.5 w-4.5" : "h-6 w-6"} />
+          <Lock className={compact ? "h-4.5 w-4.5" : "h-5 w-5 sm:h-6 sm:w-6"} />
         </div>
         <h1 className={`font-black tracking-tight text-foreground ${
-          compact ? "text-lg leading-tight" : "text-2xl"
+          compact ? "text-lg leading-tight" : "text-xl sm:text-2xl"
         }`}>
           Enter Passcode
         </h1>
@@ -188,7 +188,7 @@ export function PinKeypad({
       {/* 4 PIN Dots (iPhone style with smooth pop animation) */}
       <div
         className={`flex items-center justify-center transition-transform ${
-          compact ? "gap-3.5 my-2" : "gap-5 my-3"
+          compact ? "gap-3.5 my-1.5" : "gap-4 sm:gap-5 my-2 sm:my-2.5"
         } ${isShaking ? "ios-shake text-destructive" : ""}`}
       >
         {[0, 1, 2, 3].map((idx) => {
@@ -198,7 +198,7 @@ export function PinKeypad({
             <div
               key={idx}
               className={`rounded-full transition-all duration-150 ${
-                compact ? "w-3 h-3" : "w-3.5 h-3.5"
+                compact ? "w-3 h-3" : "w-3 sm:w-3.5 h-3 sm:h-3.5"
               } ${
                 isFilled
                   ? isLatest
@@ -212,7 +212,7 @@ export function PinKeypad({
       </div>
 
       {/* Error / Loading feedback */}
-      <div className={`flex items-center justify-center ${compact ? "h-5 mb-2" : "h-7 mb-3"}`}>
+      <div className={`flex items-center justify-center ${compact ? "h-5 mb-1.5" : "h-6 sm:h-7 mb-2 sm:mb-3"}`}>
         {isPending ? (
           <div className="flex items-center gap-1.5 text-primary font-semibold text-xs animate-pulse">
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -232,7 +232,7 @@ export function PinKeypad({
 
       {/* iPhone Numeric Keypad (Instant zero-delay response) */}
       <div className={`grid grid-cols-3 w-full mx-auto ${
-        compact ? "gap-2.5 max-w-[225px] mb-2.5" : "gap-3.5 sm:gap-4 max-w-[260px] mb-4"
+        compact ? "gap-2.5 max-w-[225px] mb-2" : "gap-3 sm:gap-3.5 max-w-[245px] sm:max-w-[260px] mb-3 sm:mb-4"
       }`}>
         {buttons.map((btn) => {
           const isPressed = activeKey === btn.num;
@@ -251,7 +251,7 @@ export function PinKeypad({
               onPointerLeave={() => setActiveKey(null)}
               onPointerCancel={() => setActiveKey(null)}
               className={`ios-key-btn rounded-full border border-border/80 bg-muted/40 hover:bg-muted/70 backdrop-blur-md shadow-xs flex flex-col items-center justify-center transition-all duration-75 cursor-pointer select-none focus:outline-hidden ${
-                compact ? "w-[62px] h-[62px]" : "w-[72px] h-[72px]"
+                compact ? "w-[60px] h-[60px]" : "w-[66px] h-[66px] sm:w-[72px] sm:h-[72px]"
               } ${
                 isPressed
                   ? "scale-92 bg-foreground/20 border-foreground/30 shadow-inner"
@@ -259,7 +259,7 @@ export function PinKeypad({
               }`}
             >
               <span className={`font-semibold text-foreground leading-none tracking-tight ${
-                compact ? "text-xl" : "text-2xl"
+                compact ? "text-xl" : "text-xl sm:text-2xl"
               }`}>
                 {btn.num}
               </span>
@@ -281,7 +281,7 @@ export function PinKeypad({
             handleClear();
           }}
           className={`ios-key-btn rounded-full flex items-center justify-center text-xs font-semibold text-muted-foreground hover:text-foreground active:scale-92 transition-all cursor-pointer disabled:opacity-20 select-none ${
-            compact ? "w-[62px] h-[62px]" : "w-[72px] h-[72px]"
+            compact ? "w-[60px] h-[60px]" : "w-[66px] h-[66px] sm:w-[72px] sm:h-[72px]"
           }`}
         >
           Clear
@@ -300,7 +300,7 @@ export function PinKeypad({
           onPointerLeave={() => setActiveKey(null)}
           onPointerCancel={() => setActiveKey(null)}
           className={`ios-key-btn rounded-full border border-border/80 bg-muted/40 hover:bg-muted/70 backdrop-blur-md shadow-xs flex flex-col items-center justify-center transition-all duration-75 cursor-pointer select-none focus:outline-hidden ${
-            compact ? "w-[62px] h-[62px]" : "w-[72px] h-[72px]"
+            compact ? "w-[60px] h-[60px]" : "w-[66px] h-[66px] sm:w-[72px] sm:h-[72px]"
           } ${
             activeKey === "0"
               ? "scale-92 bg-foreground/20 border-foreground/30 shadow-inner"
@@ -308,7 +308,7 @@ export function PinKeypad({
           }`}
         >
           <span className={`font-semibold text-foreground leading-none tracking-tight ${
-            compact ? "text-xl" : "text-2xl"
+            compact ? "text-xl" : "text-xl sm:text-2xl"
           }`}>
             0
           </span>
@@ -322,7 +322,7 @@ export function PinKeypad({
             handleDelete();
           }}
           className={`ios-key-btn rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground active:scale-92 transition-all cursor-pointer disabled:opacity-20 select-none ${
-            compact ? "w-[62px] h-[62px]" : "w-[72px] h-[72px]"
+            compact ? "w-[60px] h-[60px]" : "w-[66px] h-[66px] sm:w-[72px] sm:h-[72px]"
           }`}
           title="Delete digit"
         >

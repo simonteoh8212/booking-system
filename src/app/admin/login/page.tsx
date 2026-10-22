@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, Suspense } from "react";
+import { useState, useTransition, useEffect, Suspense } from "react";
 import { adminLogin } from "@/actions/auth";
 import { useSearchParams } from "next/navigation";
 import { PinKeypad } from "@/components/admin/PinKeypad";
@@ -26,6 +26,18 @@ function LoginContent() {
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
+  // Prevent any document scrolling and overscroll bounce on the passcode screen
+  useEffect(() => {
+    const origOverflow = document.body.style.overflow;
+    const origOverscroll = document.body.style.overscrollBehavior;
+    document.body.style.overflow = "hidden";
+    document.body.style.overscrollBehavior = "none";
+    return () => {
+      document.body.style.overflow = origOverflow;
+      document.body.style.overscrollBehavior = origOverscroll;
+    };
+  }, []);
+
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
@@ -40,7 +52,7 @@ function LoginContent() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-background via-background to-muted/20 px-4 py-6">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-gradient-to-b from-background via-background to-muted/20 p-4 overflow-hidden overscroll-none select-none">
       {mode === "pin" ? (
         <div className="w-full max-w-xs mx-auto flex flex-col items-center justify-center animate-in fade-in duration-300">
           <PinKeypad
@@ -141,7 +153,7 @@ export default function AdminLoginPage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen flex items-center justify-center">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background overflow-hidden">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
         </div>
       }
