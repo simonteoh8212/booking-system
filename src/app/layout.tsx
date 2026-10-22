@@ -3,6 +3,7 @@ import "./globals.css";
 import { NavigationProgressBar } from "@/components/NavigationProgressBar";
 import { ToastProvider } from "@/components/ToastProvider";
 import { PwaSplashDismiss } from "@/components/PwaSplashDismiss";
+import { ServiceWorkerRegister } from "@/components/ServiceWorkerRegister";
 import type { Metadata, Viewport } from "next";
 
 export const viewport: Viewport = {
@@ -180,6 +181,7 @@ export default function RootLayout({
         </div>
 
         <PwaSplashDismiss />
+        <ServiceWorkerRegister />
         <NavigationProgressBar />
         <ToastProvider />
         {children}
