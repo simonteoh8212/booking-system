@@ -3,7 +3,7 @@ name: Daily Database Backup (.sql)
 on:
   schedule:
     # Runs everyday at 1:35 PM Malaysia time (05:35 UTC)
-    - cron: '01 6 * * *'
+    - cron: '10 6 * * *'
   # Allows triggering the backup manually anytime from GitHub Actions tab
   workflow_dispatch:
 
@@ -34,6 +34,7 @@ jobs:
       - name: Generate PostgreSQL Database Dump
         env:
           DATABASE_URL: ${{ secrets.DIRECT_URL || secrets.DATABASE_URL }}
+          OUTPUT_SQL: backups/salon_backup_${{ env.BACKUP_DATE }}.sql
         run: |
           if [ -z "$DATABASE_URL" ]; then
             echo "::error::DATABASE_URL secret is not set in GitHub repository settings!"
@@ -42,13 +43,13 @@ jobs:
           fi
 
           mkdir -p backups
-          OUTPUT_SQL="backups/salon_backup_${BACKUP_DATE}.sql"
+          export OUTPUT_SQL="backups/salon_backup_${BACKUP_DATE}.sql"
 
           # Use Node.js for safe URL parsing (immune to special characters in passwords)
           node - << 'EOF'
           const { execSync } = require('child_process');
           const rawUrl = process.env.DATABASE_URL.trim();
-          const outputFile = process.env.OUTPUT_SQL;
+          const outputFile = process.env.OUTPUT_SQL || `backups/salon_backup_${process.env.BACKUP_DATE}.sql`;
 
           function getCandidates(inputUrl) {
             try {
