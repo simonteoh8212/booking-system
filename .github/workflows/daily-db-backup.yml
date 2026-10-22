@@ -3,7 +3,7 @@ name: Daily Database Backup (.sql)
 on:
   schedule:
     # Runs everyday at 1:35 PM Malaysia time (05:35 UTC)
-    - cron: '50 5 * * *'
+    - cron: '52 5 * * *'
   # Allows triggering the backup manually anytime from GitHub Actions tab
   workflow_dispatch:
 
@@ -40,20 +40,42 @@ jobs:
           mkdir -p backups
           OUTPUT_SQL="backups/salon_backup_${BACKUP_DATE}.sql"
 
-          # Automatically sanitize Supabase URL for pg_dump:
-          # 1. Switch port 6543 (transaction pooler) to 5432 (session pooler/direct connection)
-          # 2. Strip Prisma-specific query parameters (pgbouncer=true, connection_limit, etc.)
-          CLEAN_URL=$(echo "$DATABASE_URL" | sed -e 's/:6543\//:5432\//' -e 's/[?&]pgbouncer=[^&]*//g' -e 's/[?&]connection_limit=[^&]*//g' -e 's/[?&]pool_timeout=[^&]*//g')
-          CLEAN_URL=$(echo "$CLEAN_URL" | sed -e 's/\?&/?/' -e 's/\?$//')
+          # Clean the URL by stripping Prisma query parameters
+          CLEAN_URL=$(echo "$DATABASE_URL" | sed -E 's/[?&](pgbouncer|connection_limit|pool_timeout)=[^&]*//g' | sed -e 's/\?&/?/' -e 's/\?$//')
 
-          echo "Starting database dump from Supabase..."
-          pg_dump "$CLEAN_URL" \
-            --no-owner \
-            --no-privileges \
-            --clean \
-            --if-exists \
-            --encoding=UTF8 \
-            --file="$OUTPUT_SQL"
+          # Derive Supabase Direct Connection URL (port 5432 directly to db host, bypasses pooler connection limits)
+          # Converts: postgresql://postgres.REF:PASS@aws-0-ap-southeast-1.pooler.supabase.com:.../postgres
+          # Into:     postgresql://postgres:PASS@db.REF.supabase.co:5432/postgres
+          DIRECT_URL=$(echo "$CLEAN_URL" | sed -E 's|postgresql://postgres\.([^:]+):([^@]+)@[^:]+:(6543|5432)/|postgresql://postgres:\2@db.\1.supabase.co:5432/|')
+
+          SUCCESS=0
+
+          # 1. Try Direct Supabase Connection first (no pooler limit!)
+          if [[ "$DIRECT_URL" != "$CLEAN_URL" ]]; then
+            echo "Attempting dump via Supabase direct host..."
+            if pg_dump "$DIRECT_URL" --no-owner --no-privileges --clean --if-exists --encoding=UTF8 --file="$OUTPUT_SQL" 2>/dev/null; then
+              SUCCESS=1
+              echo "Direct dump successful!"
+            else
+              echo "Direct host connection not reachable, trying pooler..."
+            fi
+          fi
+
+          # 2. Fallback to port 6543 (transaction pooler)
+          if [ $SUCCESS -eq 0 ]; then
+            URL_6543=$(echo "$CLEAN_URL" | sed -e 's/:5432\//:6543\//')
+            echo "Attempting dump via pooler port 6543..."
+            if pg_dump "$URL_6543" --no-owner --no-privileges --clean --if-exists --encoding=UTF8 --file="$OUTPUT_SQL" 2>/dev/null; then
+              SUCCESS=1
+              echo "Pooler 6543 dump successful!"
+            fi
+          fi
+
+          # 3. Final fallback: retry standard URL
+          if [ $SUCCESS -eq 0 ]; then
+            echo "Attempting final dump via standard connection..."
+            pg_dump "$CLEAN_URL" --no-owner --no-privileges --clean --if-exists --encoding=UTF8 --file="$OUTPUT_SQL"
+          fi
 
           echo "Compressing backup file..."
           gzip -c "$OUTPUT_SQL" > "${OUTPUT_SQL}.gz"
