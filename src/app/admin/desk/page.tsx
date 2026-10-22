@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { requireAdmin } from "@/actions/auth";
 import { getDeskDailySummary, getDeskAppointments } from "@/actions/desk";
 import { getActiveServices } from "@/actions/services";
+import { getDepositSetting } from "@/actions/deposit";
 import { DeskHub } from "@/components/desk/DeskHub";
 import { connection } from "next/server";
 
@@ -18,6 +19,14 @@ export default async function DeskPage() {
     getActiveServices(),
   ]);
 
+  let fallbackSetting: any = null;
+  if (!summaryRes.success) {
+    try {
+      const depRes = await getDepositSetting();
+      if (depRes.success) fallbackSetting = depRes.data;
+    } catch {}
+  }
+
   const summary = summaryRes.success
     ? summaryRes.data
     : {
@@ -31,16 +40,16 @@ export default async function DeskPage() {
         monthSalesCents: 0,
         monthCompletedCount: 0,
         monthLabel: "This Month",
-        currency: "MYR",
-        currencySymbol: "RM",
-        deskLanguage: "BILINGUAL_ZH_FIRST" as const,
-        showTodaySales: true,
-        showYesterdaySales: true,
-        showMonthlySales: true,
-        showServiceBreakdown: true,
-        showMakeAppointment: true,
-        showWalkIn: true,
-        showBookedCheckout: true,
+        currency: fallbackSetting?.currency || "MYR",
+        currencySymbol: fallbackSetting?.currencySymbol || "RM",
+        deskLanguage: fallbackSetting?.deskLanguage || ("BILINGUAL_ZH_FIRST" as const),
+        showTodaySales: fallbackSetting?.showTodaySales ?? true,
+        showYesterdaySales: fallbackSetting?.showYesterdaySales ?? true,
+        showMonthlySales: fallbackSetting?.showMonthlySales ?? true,
+        showServiceBreakdown: fallbackSetting?.showServiceBreakdown ?? true,
+        showMakeAppointment: fallbackSetting?.showMakeAppointment ?? true,
+        showWalkIn: fallbackSetting?.showWalkIn ?? true,
+        showBookedCheckout: fallbackSetting?.showBookedCheckout ?? true,
         servicesBreakdown: [],
       };
 

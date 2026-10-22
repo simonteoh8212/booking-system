@@ -363,14 +363,14 @@ export function DeskCountSalesView({
         <Card className="border border-border/80 bg-muted/20">
           <CardContent className="p-4 sm:p-5 space-y-3">
             <Label className="text-sm sm:text-base font-bold text-foreground">
-              {resolveDeskText({ zh: "选择今日已预约的顾客：", en: "Select Scheduled Client:" }, languageMode).primary}
+              {resolveDeskText(DESK_DICT.countSalesView.selectScheduledClient, languageMode).primary}
             </Label>
             {pendingAppointments.length === 0 ? (
               <p className="text-sm text-muted-foreground italic py-2">
                 {resolveDeskText(
                   canShowWalkIn
-                    ? { zh: "今天暂无等待中的预约，请选择散客开单。", en: "No pending appointments today. Please select Walk-in." }
-                    : { zh: "今天暂无等待中的预约。", en: "No pending appointments today." },
+                    ? DESK_DICT.countSalesView.noPendingAppointmentsWalkinNotice
+                    : DESK_DICT.countSalesView.noPendingAppointmentsNotice,
                   languageMode
                 ).primary}
               </p>
@@ -445,7 +445,7 @@ export function DeskCountSalesView({
               <div className="flex items-center justify-between">
                 <span className="text-xs sm:text-sm font-bold uppercase tracking-wider text-muted-foreground">
                   <DeskText
-                    text={{ zh: "顾客信息 (选填)", en: "Customer Details (Optional)" }}
+                    text={DESK_DICT.countSalesView.customerDetailsOptional}
                     mode={languageMode}
                     layout="inline"
                   />
@@ -518,7 +518,7 @@ export function DeskCountSalesView({
             />
           </Label>
           <span className="text-xs sm:text-sm font-semibold text-muted-foreground font-mono">
-            {selectedServiceIds.length} {resolveDeskText({ zh: "项已选", en: "Selected" }, languageMode).primary}
+            {selectedServiceIds.length} {resolveDeskText(DESK_DICT.countSalesView.itemsSelected, languageMode).primary}
           </span>
         </div>
 
@@ -599,20 +599,23 @@ export function DeskCountSalesView({
             {
               id: "CASH",
               icon: "💵",
-              zh: "现金",
-              en: "Cash",
+              text: DESK_DICT.countSalesView.pmCash,
             },
             {
               id: "DUITNOW_QR",
               icon: "📱",
-              zh: "转账",
-              en: currencySymbol === "$" ? "PayID / QR" : "DuitNow QR",
+              text:
+                currencySymbol === "$"
+                  ? DESK_DICT.countSalesView.pmTransferPayid
+                  : DESK_DICT.countSalesView.pmTransferDuitnow,
             },
             {
               id: "CARD",
               icon: "💳",
-              zh: "刷卡",
-              en: currencySymbol === "$" ? "Card / EFTPOS" : "Card",
+              text:
+                currencySymbol === "$"
+                  ? DESK_DICT.countSalesView.pmCardEftpos
+                  : DESK_DICT.countSalesView.pmCard,
             },
           ].map((pm) => {
             const isChosen = paymentMethod === pm.id;
@@ -630,8 +633,7 @@ export function DeskCountSalesView({
                 <div className="flex items-center gap-1">
                   <span>{pm.icon}</span>
                   <DeskText
-                    zh={pm.zh}
-                    en={pm.en}
+                    text={pm.text}
                     mode={languageMode}
                     primaryClass="font-bold text-sm sm:text-base"
                     secondaryClass="text-[10px] text-muted-foreground"

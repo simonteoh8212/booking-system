@@ -21,7 +21,9 @@ export default async function BookingsPage() {
   await connection();
   const [result, depositSetting] = await Promise.all([
     getAllBookings(),
-    prisma.depositSetting.findFirst(),
+    prisma.depositSetting.findFirst({
+      orderBy: { updatedAt: "desc" },
+    }),
   ]);
   const bookings = result.success ? result.data.bookings : [];
   const currencySymbol =

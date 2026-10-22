@@ -177,7 +177,9 @@ export async function createBookingHold(
     const normalizedPhone = normalizePhoneNumber(phoneNumber);
 
     const [depositSetting, exemptCustomer] = await Promise.all([
-      prisma.depositSetting.findFirst(),
+      prisma.depositSetting.findFirst({
+        orderBy: { updatedAt: "desc" },
+      }),
       prisma.depositExemptCustomer.findFirst({
         where: { phoneNumber: normalizedPhone, isActive: true },
       }),

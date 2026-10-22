@@ -181,6 +181,24 @@ export function DeskScoreboardSettingsForm({
           showWalkIn,
           showBookedCheckout,
         });
+
+        if (typeof window !== "undefined") {
+          try {
+            localStorage.setItem(
+              "desk_settings_visibility",
+              JSON.stringify({
+                showTodaySales,
+                showYesterdaySales,
+                showMonthlySales,
+                showServiceBreakdown,
+                showMakeAppointment,
+                showWalkIn,
+                showBookedCheckout,
+              })
+            );
+          } catch {}
+        }
+
         toast.success(
           allHidden
             ? "Settings saved! Display options updated successfully."

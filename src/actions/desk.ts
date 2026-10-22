@@ -9,6 +9,7 @@ import {
 } from "@/lib/utils";
 import { invalidateBookingCache } from "@/lib/booking-cache";
 import { revalidatePath } from "next/cache";
+import { getOrEnsurePrimaryDepositSetting } from "./deposit";
 import type {
   ActionResult,
   BookingStatus,
@@ -105,8 +106,20 @@ export async function getDeskDailySummary(
       year: "numeric",
     });
 
-    const [bookings, yesterdayBookings, monthBookings, depositSetting] =
-      await Promise.all([
+    // Fetch deposit settings safely so visibility, currency, and language never fail
+    let depositSetting = null;
+    try {
+      depositSetting = await getOrEnsurePrimaryDepositSetting();
+    } catch (settingErr) {
+      console.error("[getDeskDailySummary] depositSetting fetch warning:", settingErr);
+    }
+
+    // Fetch bookings safely
+    let bookings: any[] = [];
+    let yesterdayBookings: { totalPriceCents: number }[] = [];
+    let monthBookings: { totalPriceCents: number }[] = [];
+    try {
+      [bookings, yesterdayBookings, monthBookings] = await Promise.all([
         prisma.booking.findMany({
           where: {
             startDatetime: { gte: startOfDay, lte: endOfDay },
@@ -134,8 +147,10 @@ export async function getDeskDailySummary(
           },
           select: { totalPriceCents: true },
         }),
-        prisma.depositSetting.findFirst(),
       ]);
+    } catch (bookingErr) {
+      console.error("[getDeskDailySummary] Bookings query warning:", bookingErr);
+    }
 
     let totalSalesCents = 0;
     let completedCount = 0;
@@ -605,7 +620,7 @@ export async function getMonthlyFinancialReport(
     );
 
     // Get currency settings
-    const depositSetting = await prisma.depositSetting.findFirst();
+    const depositSetting = await getOrEnsurePrimaryDepositSetting();
     const currency = depositSetting?.currency || "MYR";
     const currencySymbol = depositSetting?.currencySymbol || "RM";
 

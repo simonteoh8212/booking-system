@@ -54,12 +54,12 @@ const CATEGORY_CONFIG: Record<
   ExpenseCategory,
   { zh: string; en: string; icon: string }
 > = {
-  STOCK: { zh: "进货库存", en: "Stock / Supplies", icon: "📦" },
-  RENT: { zh: "店面租金", en: "Shop Rent", icon: "🏢" },
-  UTILITIES: { zh: "水电杂费", en: "Utilities", icon: "💡" },
-  SALARY: { zh: "员工薪资/提成", en: "Salary / Commission", icon: "👤" },
-  MARKETING: { zh: "推广广告", en: "Marketing", icon: "📣" },
-  OTHER: { zh: "其他杂费", en: "Other Misc", icon: "🧾" },
+  STOCK: { ...DESK_DICT.financialReport.categoryStock, icon: "📦" },
+  RENT: { ...DESK_DICT.financialReport.categoryRent, icon: "🏢" },
+  UTILITIES: { ...DESK_DICT.financialReport.categoryUtilities, icon: "💡" },
+  SALARY: { ...DESK_DICT.financialReport.categorySalary, icon: "👤" },
+  MARKETING: { ...DESK_DICT.financialReport.categoryMarketing, icon: "📣" },
+  OTHER: { ...DESK_DICT.financialReport.categoryOther, icon: "🧾" },
 };
 
 /**
@@ -94,7 +94,7 @@ function resolveExpenseTitle(
 
   if (isStandard) {
     return {
-      title: resolveDeskText({ zh: cfg.zh, en: cfg.en }, languageMode).primary,
+      title: resolveDeskText(cfg, languageMode).primary,
       isStandard: true,
     };
   }
@@ -318,10 +318,7 @@ export function DeskFinancialReportView({
       if (item.category === "OTHER" && !item.title) {
         setFormError(
           resolveDeskText(
-            {
-              zh: "填写“其他杂费”时必须输入具体说明",
-              en: "Please enter description for Other Misc expense.",
-            },
+            DESK_DICT.financialReport.otherRequiresDesc,
             languageMode
           ).primary
         );
@@ -332,10 +329,7 @@ export function DeskFinancialReportView({
     if (allFilledItems.length === 0) {
       setFormError(
         resolveDeskText(
-          {
-            zh: "请在任意支出分类中输入至少一笔金额",
-            en: "Please enter at least one expense amount.",
-          },
+          DESK_DICT.financialReport.enterAtLeastOne,
           languageMode
         ).primary
       );
@@ -365,10 +359,7 @@ export function DeskFinancialReportView({
     if (
       !confirm(
         resolveDeskText(
-          {
-            zh: "确定要删除这条支出记录吗？",
-            en: "Are you sure you want to delete this expense record?",
-          },
+          DESK_DICT.financialReport.confirmDelete,
           languageMode
         ).primary
       )
@@ -437,9 +428,9 @@ export function DeskFinancialReportView({
             primaryClass="text-2xl sm:text-3xl font-black tracking-tight text-foreground"
             secondaryClass="text-sm font-semibold text-muted-foreground"
           />
-          <p className="text-xs text-muted-foreground font-normal mt-0.5">
+          {/* <p className="text-xs text-muted-foreground font-normal mt-0.5">
             {resolveDeskText(DESK_DICT.financialReport.subtitle, languageMode).primary}
-          </p>
+          </p> */}
         </div>
 
         {/* Month Selector Bar */}
@@ -527,7 +518,7 @@ export function DeskFinancialReportView({
               <span>{reportData?.monthLabel || ""}</span>
             </span>
             <span className="text-muted-foreground font-semibold">
-              + 100% {resolveDeskText({ zh: "收入", en: "Income" }, languageMode).primary}
+              + 100% {resolveDeskText(DESK_DICT.financialReport.incomePercent, languageMode).primary}
             </span>
           </div>
         </Card>
@@ -570,11 +561,11 @@ export function DeskFinancialReportView({
               <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
               <span>
                 {reportData?.expenseCategories.length || 0}{" "}
-                {resolveDeskText({ zh: "类开销", en: "Categories" }, languageMode).primary}
+                {resolveDeskText(DESK_DICT.financialReport.categoriesCountUnit, languageMode).primary}
               </span>
             </span>
             <span className="text-amber-700 font-semibold">
-              − {resolveDeskText({ zh: "进货/杂支", en: "Cost Outflow" }, languageMode).primary}
+              − {resolveDeskText(DESK_DICT.financialReport.costOutflow, languageMode).primary}
             </span>
           </div>
         </Card>
@@ -643,7 +634,7 @@ export function DeskFinancialReportView({
                 }`}
               />
               <span>
-                {resolveDeskText({ zh: "营业额 − 支出", en: "Sales − Expenses" }, languageMode).primary}
+                {resolveDeskText(DESK_DICT.financialReport.revenueMinusExpenses, languageMode).primary}
               </span>
             </span>
             <span
@@ -654,8 +645,8 @@ export function DeskFinancialReportView({
               {
                 resolveDeskText(
                   isNetPositive
-                    ? { zh: "✓ 盈利", en: "✓ Profit" }
-                    : { zh: "⚠ 亏损", en: "⚠ Loss" },
+                    ? DESK_DICT.financialReport.profitTag
+                    : DESK_DICT.financialReport.lossTag,
                   languageMode
                 ).primary
               }
@@ -669,7 +660,7 @@ export function DeskFinancialReportView({
         <div className="p-4 rounded-2xl border border-border/80 bg-card space-y-2.5 shadow-xs">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-              {resolveDeskText({ zh: "支出分类占比", en: "Expense Allocation" }, languageMode).primary}
+              {resolveDeskText(DESK_DICT.financialReport.expenseAllocation, languageMode).primary}
             </span>
             <span className="text-xs font-mono font-semibold text-muted-foreground">
               {formatPrice(reportData.totalExpensesCents, currSym)}
@@ -825,10 +816,7 @@ export function DeskFinancialReportView({
               </h3>
               <p className="text-xs text-muted-foreground mt-1 mb-4">
                 {resolveDeskText(
-                  {
-                    zh: "同时输入多项开销，系统自动核算营业额与纯利润",
-                    en: "Enter multiple expenses at once to calculate net profit",
-                  },
+                  DESK_DICT.financialReport.multiExpenseSub,
                   languageMode
                 ).primary}
               </p>
@@ -867,7 +855,7 @@ export function DeskFinancialReportView({
                           languageMode
                         );
                         const catLabel = resolveDeskText(
-                          { zh: config.zh, en: config.en },
+                          config,
                           languageMode
                         ).primary;
 
@@ -908,7 +896,7 @@ export function DeskFinancialReportView({
                         className="h-9 w-9 p-0 rounded-xl text-muted-foreground hover:text-destructive hover:bg-destructive/10 cursor-pointer"
                         title={
                           resolveDeskText(
-                            { zh: "删除记录", en: "Delete expense" },
+                            DESK_DICT.financialReport.deleteRecord,
                             languageMode
                           ).primary
                         }
@@ -993,19 +981,19 @@ export function DeskFinancialReportView({
               <thead className="bg-muted/50 border-b border-border/80 text-xs font-bold text-muted-foreground uppercase">
                 <tr>
                   <th className="py-3 px-4">
-                    {resolveDeskText({ zh: "日期", en: "Date" }, languageMode).primary}
+                    {resolveDeskText(DESK_DICT.financialReport.dateHeader, languageMode).primary}
                   </th>
                   <th className="py-3 px-4 text-center">
-                    {resolveDeskText({ zh: "开单数", en: "Orders" }, languageMode).primary}
+                    {resolveDeskText(DESK_DICT.financialReport.ordersHeader, languageMode).primary}
                   </th>
                   <th className="py-3 px-4 text-right">
-                    {resolveDeskText({ zh: "当日营业额", en: "Sales" }, languageMode).primary}
+                    {resolveDeskText(DESK_DICT.financialReport.salesHeader, languageMode).primary}
                   </th>
                   <th className="py-3 px-4 text-right">
-                    {resolveDeskText({ zh: "当日支出", en: "Expenses" }, languageMode).primary}
+                    {resolveDeskText(DESK_DICT.financialReport.expensesHeader, languageMode).primary}
                   </th>
                   <th className="py-3 px-4 text-right">
-                    {resolveDeskText({ zh: "净收益", en: "Net Profit" }, languageMode).primary}
+                    {resolveDeskText(DESK_DICT.financialReport.netProfitHeader, languageMode).primary}
                   </th>
                 </tr>
               </thead>
@@ -1050,7 +1038,7 @@ export function DeskFinancialReportView({
                       className="py-8 text-center text-muted-foreground italic text-xs"
                     >
                       {resolveDeskText(
-                        { zh: "本月暂无每日收支明细", en: "No daily records for this month yet" },
+                        DESK_DICT.financialReport.noDailyRecords,
                         languageMode
                       ).primary}
                     </td>
@@ -1079,15 +1067,9 @@ export function DeskFinancialReportView({
                       layout="inline"
                     />
                   </DialogTitle>
-                  <DialogDescription className="text-xs text-muted-foreground">
-                    {resolveDeskText(
-                      {
-                        zh: "可同时在多个分类中输入金额，点击下方按钮一键保存全部：",
-                        en: "Enter amounts for multiple categories at once and save together:",
-                      },
-                      languageMode
-                    ).primary}
-                  </DialogDescription>
+                  {/* <DialogDescription className="text-xs text-muted-foreground">
+                    {resolveDeskText(DESK_DICT.financialReport.modalLogExpenseSub, languageMode).primary}
+                  </DialogDescription> */}
                 </div>
               </div>
 
@@ -1139,19 +1121,19 @@ export function DeskFinancialReportView({
                       <span className="text-xl shrink-0">{cfg.icon}</span>
                       <div>
                         <span className="font-extrabold text-sm sm:text-base text-foreground block leading-tight">
-                          {resolveDeskText({ zh: cfg.zh, en: cfg.en }, languageMode).primary}
+                          {resolveDeskText(cfg, languageMode).primary}
                         </span>
                         {isOther ? (
                           <span className="text-[10px] text-destructive font-bold">
                             {resolveDeskText(
-                              { zh: "* 填金额须写说明", en: "* Description required" },
+                              DESK_DICT.financialReport.descRequiredNotice,
                               languageMode
                             ).primary}
                           </span>
                         ) : (
                           <span className="text-[10px] text-muted-foreground font-normal">
                             {resolveDeskText(
-                              { zh: "选填说明 (可选)", en: "Optional description" },
+                              DESK_DICT.financialReport.descOptionalNotice,
                               languageMode
                             ).primary}
                           </span>
@@ -1197,19 +1179,10 @@ export function DeskFinancialReportView({
                         placeholder={
                           isOther
                             ? resolveDeskText(
-                                {
-                                  zh: "具体杂费用途说明 (如: 维修水管)",
-                                  en: "Specific description (e.g. Plumbing repair)",
-                                },
+                                DESK_DICT.financialReport.otherDescPlaceholder,
                                 languageMode
                               ).primary
-                            : resolveDeskText(
-                                {
-                                  zh: `备注 (选填，留空默认“${cfg.zh}”)`,
-                                  en: `Notes (optional, defaults to "${cfg.en}")`,
-                                },
-                                languageMode
-                              ).primary
+                            : `${resolveDeskText(DESK_DICT.financialReport.notesDefaultPrefix, languageMode).primary}${resolveDeskText(cfg, languageMode).primary}${resolveDeskText(DESK_DICT.financialReport.notesDefaultSuffix, languageMode).primary}`
                         }
                         value={currentInput.title}
                         onChange={(e) =>
@@ -1231,17 +1204,14 @@ export function DeskFinancialReportView({
               >
                 <div className="flex items-center justify-between font-bold text-muted-foreground">
                   <span>
-                    {resolveDeskText(
-                      { zh: `额外支出行 #${idx + 1}`, en: `Custom Expense #${idx + 1}` },
-                      languageMode
-                    ).primary}
+                    {`${resolveDeskText(DESK_DICT.financialReport.customRowLabel, languageMode).primary} #${idx + 1}`}
                   </span>
                   <button
                     type="button"
                     onClick={() => handleRemoveExtraRow(row.id)}
                     className="text-muted-foreground hover:text-destructive cursor-pointer p-1"
                     title={resolveDeskText(
-                      { zh: "删除行", en: "Remove row" },
+                      DESK_DICT.financialReport.removeRow,
                       languageMode
                     ).primary}
                   >
@@ -1265,7 +1235,7 @@ export function DeskFinancialReportView({
                         <option key={cKey} value={cKey}>
                           {CATEGORY_CONFIG[cKey].icon}{" "}
                           {resolveDeskText(
-                            { zh: CATEGORY_CONFIG[cKey].zh, en: CATEGORY_CONFIG[cKey].en },
+                            CATEGORY_CONFIG[cKey],
                             languageMode
                           ).primary}
                         </option>
@@ -1282,7 +1252,7 @@ export function DeskFinancialReportView({
                       step="0.01"
                       min="0"
                       placeholder={resolveDeskText(
-                        { zh: "金额 (0.00)", en: "Amount (0.00)" },
+                        DESK_DICT.financialReport.amountPlaceholder,
                         languageMode
                       ).primary}
                       value={row.amountStr}
@@ -1295,7 +1265,7 @@ export function DeskFinancialReportView({
 
                   <Input
                     placeholder={resolveDeskText(
-                      { zh: "说明 / 备注 (选填)", en: "Description / Notes (Optional)" },
+                      DESK_DICT.financialReport.descPlaceholder,
                       languageMode
                     ).primary}
                     value={row.title}
@@ -1319,7 +1289,7 @@ export function DeskFinancialReportView({
               <Plus className="h-4 w-4" />
               <span>
                 {resolveDeskText(
-                  { zh: "+ 添加更多自定义行", en: "+ Add extra custom row" },
+                  DESK_DICT.financialReport.addCustomRowBtn,
                   languageMode
                 ).primary}
               </span>
@@ -1335,24 +1305,21 @@ export function DeskFinancialReportView({
                     <CheckCircle2 className="h-4 w-4 text-emerald-600" />
                     {languageMode === "ONLY_EN" ? (
                       <>
-                        <span className="font-mono text-emerald-600 text-sm">{totalItemCount}</span> expense item(s) filled:
+                        <span className="font-mono text-emerald-600 text-sm">{totalItemCount}</span> {resolveDeskText(DESK_DICT.financialReport.itemsFilledUnit, languageMode).primary}
                       </>
                     ) : languageMode === "ONLY_ZH" ? (
                       <>
-                        已填写 <span className="font-mono text-emerald-600 text-sm">{totalItemCount}</span> 项支出：
+                        {resolveDeskText(DESK_DICT.financialReport.itemsFilledPrefix, languageMode).primary} <span className="font-mono text-emerald-600 text-sm">{totalItemCount}</span> {resolveDeskText(DESK_DICT.financialReport.itemsFilledUnit, languageMode).primary}
                       </>
                     ) : (
                       <>
-                        已填写 <span className="font-mono text-emerald-600 text-sm">{totalItemCount}</span> 项支出 ({totalItemCount} filled):
+                        {resolveDeskText(DESK_DICT.financialReport.itemsFilledPrefix, languageMode).primary} <span className="font-mono text-emerald-600 text-sm">{totalItemCount}</span> {resolveDeskText(DESK_DICT.financialReport.itemsFilledUnit, languageMode).primary} ({totalItemCount} filled)
                       </>
                     )}
                   </span>
                 ) : (
                   resolveDeskText(
-                    {
-                      zh: "在上方任意分类中输入金额即可同时录入",
-                      en: "Enter amounts in any categories above to log together",
-                    },
+                    DESK_DICT.financialReport.enterAmountsHint,
                     languageMode
                   ).primary
                 )}
@@ -1390,18 +1357,9 @@ export function DeskFinancialReportView({
                 )}
                 <span>
                   {totalItemCount > 0
-                    ? resolveDeskText(
-                        {
-                          zh: `✓ 一键保存全部 (${totalItemCount} 笔)`,
-                          en: `✓ Save All (${totalItemCount} items)`,
-                        },
-                        languageMode
-                      ).primary
+                    ? `${resolveDeskText(DESK_DICT.financialReport.saveAllWithCountPrefix, languageMode).primary}${totalItemCount}${resolveDeskText(DESK_DICT.financialReport.saveAllWithCountSuffix, languageMode).primary}`
                     : resolveDeskText(
-                        {
-                          zh: "请先输入金额",
-                          en: "Enter amount first",
-                        },
+                        DESK_DICT.financialReport.enterAmountFirst,
                         languageMode
                       ).primary}
                 </span>

@@ -31,15 +31,44 @@ const DEFAULT_SETTING: DepositSettingDto = {
 };
 
 /**
+ * Ensures a single canonical DepositSetting row exists in the database.
+ * If multiple rows exist (e.g. from old migrations or separate upserts),
+ * keeps the latest updated record and purges orphan duplicates to prevent state desync.
+ */
+export async function getOrEnsurePrimaryDepositSetting() {
+  const all = await prisma.depositSetting.findMany({
+    orderBy: { updatedAt: "desc" },
+  });
+
+  if (all.length === 0) {
+    return await prisma.depositSetting.create({
+      data: {
+        id: "default",
+        currency: process.env.NEXT_PUBLIC_CURRENCY_CODE || "MYR",
+        currencySymbol: process.env.NEXT_PUBLIC_CURRENCY_SYMBOL || "RM",
+        deskLanguage: "BILINGUAL_ZH_FIRST",
+      },
+    });
+  }
+
+  // If there are duplicate rows, keep the most recently updated one and purge the rest
+  if (all.length > 1) {
+    const keeper = all[0];
+    await prisma.depositSetting.deleteMany({
+      where: { id: { not: keeper.id } },
+    });
+    return keeper;
+  }
+
+  return all[0];
+}
+
+/**
  * Fetch current deposit configuration (public or admin).
  */
 export async function getDepositSetting(): Promise<ActionResult<DepositSettingDto>> {
   try {
-    const setting = await prisma.depositSetting.findFirst();
-
-    if (!setting) {
-      return { success: true, data: DEFAULT_SETTING };
-    }
+    const setting = await getOrEnsurePrimaryDepositSetting();
 
     const currency = setting.currency || process.env.NEXT_PUBLIC_CURRENCY_CODE || "MYR";
     const currencySymbol =
@@ -95,13 +124,12 @@ export async function updateDepositSetting(
     const currencySymbol = currency === "AUD" ? "$" : (input.currencySymbol || "RM");
     const deskLanguage = input.deskLanguage || "BILINGUAL_ZH_FIRST";
 
-    // Find primary row or fallback to 'default'
-    const existing = await prisma.depositSetting.findFirst();
-    const primaryId = existing?.id || "default";
+    // Find primary canonical row
+    const primary = await getOrEnsurePrimaryDepositSetting();
 
-    const updated = await prisma.depositSetting.upsert({
-      where: { id: primaryId },
-      update: {
+    const updated = await prisma.depositSetting.update({
+      where: { id: primary.id },
+      data: {
         isEnabled: input.isEnabled !== undefined ? Boolean(input.isEnabled) : false,
         type: input.type === "PERCENTAGE" ? "PERCENTAGE" : "FIXED",
         amountCents: Math.max(100, Math.round(Number(input.amountCents ?? 1000))),
@@ -119,26 +147,6 @@ export async function updateDepositSetting(
         ...(input.showMakeAppointment !== undefined && { showMakeAppointment: Boolean(input.showMakeAppointment) }),
         ...(input.showWalkIn !== undefined && { showWalkIn: Boolean(input.showWalkIn) }),
         ...(input.showBookedCheckout !== undefined && { showBookedCheckout: Boolean(input.showBookedCheckout) }),
-      },
-      create: {
-        id: "default",
-        isEnabled: input.isEnabled !== undefined ? Boolean(input.isEnabled) : false,
-        type: input.type === "PERCENTAGE" ? "PERCENTAGE" : "FIXED",
-        amountCents: Math.max(100, Math.round(Number(input.amountCents ?? 1000))),
-        percentage: Math.min(100, Math.max(1, Math.round(Number(input.percentage ?? 20)))),
-        duitnowPayload: rawPayload,
-        qrImageUrl: input.qrImageUrl ?? null,
-        recipientName: recipientName ?? "Merchant",
-        currency,
-        currencySymbol,
-        deskLanguage,
-        showTodaySales: input.showTodaySales !== undefined ? Boolean(input.showTodaySales) : true,
-        showYesterdaySales: input.showYesterdaySales !== undefined ? Boolean(input.showYesterdaySales) : true,
-        showMonthlySales: input.showMonthlySales !== undefined ? Boolean(input.showMonthlySales) : true,
-        showServiceBreakdown: input.showServiceBreakdown !== undefined ? Boolean(input.showServiceBreakdown) : true,
-        showMakeAppointment: input.showMakeAppointment !== undefined ? Boolean(input.showMakeAppointment) : true,
-        showWalkIn: input.showWalkIn !== undefined ? Boolean(input.showWalkIn) : true,
-        showBookedCheckout: input.showBookedCheckout !== undefined ? Boolean(input.showBookedCheckout) : true,
       },
     });
 
@@ -180,13 +188,10 @@ export async function updateDeskLanguageSetting(
 ): Promise<ActionResult<{ deskLanguage: DeskLanguageMode }>> {
   await requireAdmin();
   try {
-    const updated = await prisma.depositSetting.upsert({
-      where: { id: "default" },
-      update: { deskLanguage: mode },
-      create: {
-        id: "default",
-        deskLanguage: mode,
-      },
+    const primary = await getOrEnsurePrimaryDepositSetting();
+    const updated = await prisma.depositSetting.update({
+      where: { id: primary.id },
+      data: { deskLanguage: mode },
     });
 
     revalidatePath("/admin/desk");
@@ -211,17 +216,11 @@ export async function updateDeskCurrencySetting(
 ): Promise<ActionResult<{ currency: string; currencySymbol: string }>> {
   await requireAdmin();
   try {
-    const existing = await prisma.depositSetting.findFirst();
-    const primaryId = existing?.id || "default";
+    const primary = await getOrEnsurePrimaryDepositSetting();
 
-    const updated = await prisma.depositSetting.upsert({
-      where: { id: primaryId },
-      update: { currency, currencySymbol },
-      create: {
-        id: "default",
-        currency,
-        currencySymbol,
-      },
+    const updated = await prisma.depositSetting.update({
+      where: { id: primary.id },
+      data: { currency, currencySymbol },
     });
 
     revalidatePath("/admin/desk", "page");
@@ -281,18 +280,17 @@ export async function updateDeskScoreboardSettings(input: {
   await requireAdmin();
 
   try {
-    const existing = await prisma.depositSetting.findFirst();
-    const primaryId = existing?.id || "default";
+    const primary = await getOrEnsurePrimaryDepositSetting();
 
     // Enforce business rule: Either Walk-in or Booked checkout must be shown; cannot both be false
     const finalWalkIn =
       input.showWalkIn !== undefined
         ? Boolean(input.showWalkIn)
-        : (existing?.showWalkIn ?? true);
+        : (primary.showWalkIn ?? true);
     const finalBookedCheckout =
       input.showBookedCheckout !== undefined
         ? Boolean(input.showBookedCheckout)
-        : (existing?.showBookedCheckout ?? true);
+        : (primary.showBookedCheckout ?? true);
 
     if (!finalWalkIn && !finalBookedCheckout) {
       return {
@@ -302,9 +300,9 @@ export async function updateDeskScoreboardSettings(input: {
       };
     }
 
-    const updated = await prisma.depositSetting.upsert({
-      where: { id: primaryId },
-      update: {
+    const updated = await prisma.depositSetting.update({
+      where: { id: primary.id },
+      data: {
         ...(input.showTodaySales !== undefined && { showTodaySales: Boolean(input.showTodaySales) }),
         ...(input.showYesterdaySales !== undefined && { showYesterdaySales: Boolean(input.showYesterdaySales) }),
         ...(input.showMonthlySales !== undefined && { showMonthlySales: Boolean(input.showMonthlySales) }),
@@ -312,16 +310,6 @@ export async function updateDeskScoreboardSettings(input: {
         ...(input.showMakeAppointment !== undefined && { showMakeAppointment: Boolean(input.showMakeAppointment) }),
         ...(input.showWalkIn !== undefined && { showWalkIn: Boolean(input.showWalkIn) }),
         ...(input.showBookedCheckout !== undefined && { showBookedCheckout: Boolean(input.showBookedCheckout) }),
-      },
-      create: {
-        id: "default",
-        showTodaySales: input.showTodaySales !== undefined ? Boolean(input.showTodaySales) : true,
-        showYesterdaySales: input.showYesterdaySales !== undefined ? Boolean(input.showYesterdaySales) : true,
-        showMonthlySales: input.showMonthlySales !== undefined ? Boolean(input.showMonthlySales) : true,
-        showServiceBreakdown: input.showServiceBreakdown !== undefined ? Boolean(input.showServiceBreakdown) : true,
-        showMakeAppointment: input.showMakeAppointment !== undefined ? Boolean(input.showMakeAppointment) : true,
-        showWalkIn: input.showWalkIn !== undefined ? Boolean(input.showWalkIn) : true,
-        showBookedCheckout: input.showBookedCheckout !== undefined ? Boolean(input.showBookedCheckout) : true,
       },
     });
 

@@ -50,6 +50,8 @@ import {
   BarChart3,
   Menu,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import {
   Sheet,
@@ -75,7 +77,18 @@ export function DeskHub({
 }: DeskHubProps) {
   const [view, setView] = useState<"HUB" | "APPOINTMENTS" | "COUNT_SALES" | "FINANCIAL_REPORT">("HUB");
   const [isPinDialogOpen, setIsPinDialogOpen] = useState(false);
-  const [summary, setSummary] = useState<DeskDailySummary>(initialSummary);
+  const [summary, setSummary] = useState<DeskDailySummary>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const raw = localStorage.getItem("desk_settings_visibility");
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          return { ...initialSummary, ...parsed };
+        }
+      } catch {}
+    }
+    return initialSummary;
+  });
   const [appointments, setAppointments] = useState<DeskAppointmentItem[]>(initialAppointments);
   const [preSelectedAppointmentId, setPreSelectedAppointmentId] = useState<string>("");
   const [currencySymbol, setCurrencySymbol] = useState<string>(
@@ -105,6 +118,29 @@ export function DeskHub({
   const [isMobileSalesOpen, setIsMobileSalesOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
 
+  // Collapsible toggle for Today's Service Sales Breakdown (default collapsed to avoid POS button confusion)
+  const [isBreakdownExpanded, setIsBreakdownExpanded] = useState<boolean>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const stored = localStorage.getItem("desk_breakdown_expanded");
+        return stored === "true";
+      } catch {}
+    }
+    return false;
+  });
+
+  function toggleBreakdownExpanded() {
+    setIsBreakdownExpanded((prev) => {
+      const next = !prev;
+      if (typeof window !== "undefined") {
+        try {
+          localStorage.setItem("desk_breakdown_expanded", String(next));
+        } catch {}
+      }
+      return next;
+    });
+  }
+
   // Track active service count increment animations locked to initial & target counts
   const [activeAnimations, setActiveAnimations] = useState<
     Record<
@@ -118,9 +154,27 @@ export function DeskHub({
   >({});
   const [highlightedServiceIds, setHighlightedServiceIds] = useState<string[]>([]);
 
-  // Sync state whenever initialSummary prop changes (e.g. Next.js navigation)
+  // Sync state whenever initialSummary prop changes (e.g. Next.js navigation or server revalidation)
   useEffect(() => {
-    setSummary(initialSummary);
+    let localVisibility: Record<string, boolean> = {};
+    if (typeof window !== "undefined") {
+      try {
+        const raw = localStorage.getItem("desk_settings_visibility");
+        if (raw) localVisibility = JSON.parse(raw);
+      } catch {}
+    }
+
+    setSummary((prev) => ({
+      ...initialSummary,
+      showTodaySales: localVisibility.showTodaySales ?? (prev.showTodaySales === false ? false : initialSummary.showTodaySales),
+      showYesterdaySales: localVisibility.showYesterdaySales ?? (prev.showYesterdaySales === false ? false : initialSummary.showYesterdaySales),
+      showMonthlySales: localVisibility.showMonthlySales ?? (prev.showMonthlySales === false ? false : initialSummary.showMonthlySales),
+      showServiceBreakdown: localVisibility.showServiceBreakdown ?? (prev.showServiceBreakdown === false ? false : initialSummary.showServiceBreakdown),
+      showMakeAppointment: localVisibility.showMakeAppointment ?? (prev.showMakeAppointment === false ? false : initialSummary.showMakeAppointment),
+      showWalkIn: localVisibility.showWalkIn ?? (prev.showWalkIn === false ? false : initialSummary.showWalkIn),
+      showBookedCheckout: localVisibility.showBookedCheckout ?? (prev.showBookedCheckout === false ? false : initialSummary.showBookedCheckout),
+    }));
+
     if (initialSummary.currencySymbol) {
       setCurrencySymbol(initialSummary.currencySymbol);
       try {
@@ -159,6 +213,17 @@ export function DeskHub({
 
         const storedMonth = localStorage.getItem("desk_show_month_sales");
         if (storedMonth !== null) setRevealMonthSales(storedMonth === "true");
+
+        const storedVisibility = localStorage.getItem("desk_settings_visibility");
+        if (storedVisibility) {
+          try {
+            const parsed = JSON.parse(storedVisibility);
+            setSummary((prev) => ({
+              ...prev,
+              ...parsed,
+            }));
+          } catch {}
+        }
       } catch {}
 
       const handleStorage = () => {
@@ -263,7 +328,27 @@ export function DeskHub({
         getDeskAppointments(),
       ]);
       if (sumRes.success) {
-        setSummary(sumRes.data);
+        setSummary((prev) => {
+          let localVisibility: Record<string, boolean> = {};
+          if (typeof window !== "undefined") {
+            try {
+              const raw = localStorage.getItem("desk_settings_visibility");
+              if (raw) localVisibility = JSON.parse(raw);
+            } catch {}
+          }
+
+          return {
+            ...sumRes.data,
+            // Keep user visibility settings preserved so hidden sections don't pop up after sale or network hiccups
+            showTodaySales: localVisibility.showTodaySales ?? (prev.showTodaySales === false ? false : sumRes.data.showTodaySales),
+            showYesterdaySales: localVisibility.showYesterdaySales ?? (prev.showYesterdaySales === false ? false : sumRes.data.showYesterdaySales),
+            showMonthlySales: localVisibility.showMonthlySales ?? (prev.showMonthlySales === false ? false : sumRes.data.showMonthlySales),
+            showServiceBreakdown: localVisibility.showServiceBreakdown ?? (prev.showServiceBreakdown === false ? false : sumRes.data.showServiceBreakdown),
+            showMakeAppointment: localVisibility.showMakeAppointment ?? (prev.showMakeAppointment === false ? false : sumRes.data.showMakeAppointment),
+            showWalkIn: localVisibility.showWalkIn ?? (prev.showWalkIn === false ? false : sumRes.data.showWalkIn),
+            showBookedCheckout: localVisibility.showBookedCheckout ?? (prev.showBookedCheckout === false ? false : sumRes.data.showBookedCheckout),
+          };
+        });
         if (sumRes.data.currencySymbol) {
           setCurrencySymbol(sumRes.data.currencySymbol);
           try {
@@ -798,7 +883,7 @@ export function DeskHub({
             </div>
             {/* High-contrast solid emerald action pill */}
             <span className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-600 text-white text-xs sm:text-sm font-bold shadow-xs group-hover:bg-emerald-700 transition-all">
-              <span>{resolveDeskText({ zh: "立即开单", en: "Start Sale" }, languageMode).primary}</span>
+              <span>{resolveDeskText(DESK_DICT.hubCards.startSaleBtn, languageMode).primary}</span>
               <ArrowRight className="h-3.5 w-3.5 group-hover:translate-x-1 transition-transform" />
             </span>
           </div>
@@ -829,7 +914,7 @@ export function DeskHub({
                 <CalendarDays className="h-6 sm:h-7 w-6 sm:w-7" />
               </div>
               <span className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-muted text-foreground text-xs sm:text-sm font-bold border border-border/60 group-hover:bg-foreground group-hover:text-background transition-all shadow-xs">
-                <span>{resolveDeskText({ zh: "预约管理", en: "Appointments" }, languageMode).primary}</span>
+                <span>{resolveDeskText(DESK_DICT.hubCards.appointmentsBadge, languageMode).primary}</span>
                 <ArrowRight className="h-3.5 w-3.5 group-hover:translate-x-1 transition-transform" />
               </span>
             </div>
@@ -881,17 +966,17 @@ export function DeskHub({
                   {isTodayCardVisible ? (
                     <>
                       <DeskText text={DESK_DICT.scoreboard.todaySales} mode={languageMode} layout="inline" />
-                      <span className="truncate">· {summary.completedCount} {resolveDeskText({ zh: "单完成", en: "orders" }, languageMode).primary}</span>
+                      <span className="truncate">· {summary.completedCount} {resolveDeskText(DESK_DICT.scoreboard.ordersDone, languageMode).primary}</span>
                     </>
                   ) : isYesterdayCardVisible ? (
                     <>
                       <DeskText text={DESK_DICT.scoreboard.yesterdaySales} mode={languageMode} layout="inline" />
-                      <span className="truncate">· {summary.yesterdayCompletedCount || 0} {resolveDeskText({ zh: "单完成", en: "orders" }, languageMode).primary}</span>
+                      <span className="truncate">· {summary.yesterdayCompletedCount || 0} {resolveDeskText(DESK_DICT.scoreboard.ordersDone, languageMode).primary}</span>
                     </>
                   ) : (
                     <>
                       <DeskText text={DESK_DICT.scoreboard.monthlySales} mode={languageMode} layout="inline" />
-                      <span className="truncate">· {summary.monthCompletedCount || 0} {resolveDeskText({ zh: "单完成", en: "orders" }, languageMode).primary}</span>
+                      <span className="truncate">· {summary.monthCompletedCount || 0} {resolveDeskText(DESK_DICT.scoreboard.ordersDone, languageMode).primary}</span>
                     </>
                   )}
                 </div>
@@ -905,125 +990,189 @@ export function DeskHub({
               </div>
             </div>
             <div className="flex items-center gap-1.5 text-xs font-bold text-foreground bg-muted px-3 py-2 rounded-xl shrink-0">
-              <span>{resolveDeskText({ zh: "营业看板", en: "Scoreboard" }, languageMode).primary}</span>
+              <span>{resolveDeskText(DESK_DICT.scoreboard.scoreboardTitle, languageMode).primary}</span>
               <ChevronRight className="h-4 w-4 text-muted-foreground" />
             </div>
           </button>
         </div>
       )}
 
-      {/* TODAY'S SERVICE SALES BREAKDOWN (how many hair cuts, hair color dye, etc.) */}
+      {/* TODAY'S SERVICE SALES BREAKDOWN (Collapsible Accordion: Collapsed by default to prevent POS confusion) */}
       {isServiceBreakdownVisible && (
-        <Card className="border-2 p-5 sm:p-6 space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Scissors className="h-5 w-5 text-primary" />
-              <DeskText
-                text={DESK_DICT.breakdown.title}
-                mode={languageMode}
-                layout="inline"
-                primaryClass="text-lg sm:text-xl font-extrabold text-foreground"
-              />
+        <Card className="border border-border/80 bg-card rounded-2xl shadow-xs overflow-hidden transition-all duration-200">
+          {/* Clickable Header / Toggle Bar */}
+          <button
+            type="button"
+            onClick={toggleBreakdownExpanded}
+            className="w-full p-4 sm:p-5 flex items-center justify-between gap-3 text-left hover:bg-muted/30 transition-colors cursor-pointer select-none"
+          >
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-10 h-10 rounded-xl bg-muted/80 text-foreground flex items-center justify-center shrink-0 border border-border/50 shadow-xs">
+                <Scissors className="h-5 w-5 text-foreground" />
+              </div>
+              <div className="space-y-0.5 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <DeskText
+                    text={DESK_DICT.breakdown.title}
+                    mode={languageMode}
+                    layout="inline"
+                    primaryClass="text-base sm:text-lg font-bold text-foreground"
+                  />
+                  {summary.servicesBreakdown.length > 0 && (
+                    <Badge variant="outline" className="text-xs font-mono font-bold bg-muted/50 border-border/60">
+                      {summary.servicesBreakdown.length} {resolveDeskText(DESK_DICT.breakdown.servicesDoneBadge, languageMode).primary}
+                    </Badge>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground truncate">
+                  {resolveDeskText(DESK_DICT.breakdown.subtitle, languageMode).primary}
+                </p>
+              </div>
             </div>
-            <Badge variant="outline" className="text-xs font-bold font-mono">
-              {summary.servicesBreakdown.length}{" "}
-              <DeskText
-                text={DESK_DICT.breakdown.servicesDoneBadge}
-                mode={languageMode}
-                layout="badge"
-                primaryClass="font-medium ml-1"
-              />
-            </Badge>
-          </div>
-          <Separator />
 
-          {summary.servicesBreakdown.length === 0 ? (
-            <div className="text-center py-6 text-muted-foreground space-y-1">
-              <p className="text-base font-semibold">
-                <DeskText
-                  text={DESK_DICT.breakdown.noSalesYet}
-                  mode={languageMode}
-                  layout="inline"
-                />
-              </p>
-              <p className="text-xs">
-                <DeskText
-                  text={DESK_DICT.breakdown.tapCountNotice}
-                  mode={languageMode}
-                  layout="inline"
-                />
-              </p>
+            {/* Right: Quick Summary Numbers & Chevron Button */}
+            <div className="flex items-center gap-3 shrink-0">
+              {summary.servicesBreakdown.length > 0 && !isBreakdownExpanded && (
+                <div className="hidden sm:flex items-center gap-2.5 pr-1 font-mono text-xs text-muted-foreground">
+                  <span className="font-semibold">
+                    {summary.servicesBreakdown.reduce((acc, it) => acc + it.count, 0)}{" "}
+                    {resolveDeskText(DESK_DICT.breakdown.clientsUnit, languageMode).primary}
+                  </span>
+                  <span>•</span>
+                  <span className="font-bold text-foreground">
+                    {formatPrice(
+                      summary.servicesBreakdown.reduce((acc, it) => acc + it.totalCents, 0),
+                      currencySymbol
+                    )}
+                  </span>
+                </div>
+              )}
+
+              <span className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-xl border border-border/70 bg-muted/50 text-foreground hover:bg-muted transition-colors shadow-2xs">
+                <span>
+                  {resolveDeskText(
+                    isBreakdownExpanded ? DESK_DICT.breakdown.collapseBtn : DESK_DICT.breakdown.expandBtn,
+                    languageMode
+                  ).primary}
+                </span>
+                {isBreakdownExpanded ? (
+                  <ChevronUp className="h-3.5 w-3.5 text-muted-foreground" />
+                ) : (
+                  <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                )}
+              </span>
             </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-              {summary.servicesBreakdown.map((item) => {
-                const svcNameResolved = resolveServiceName(item.serviceName, languageMode);
-                const anim = activeAnimations[item.serviceId];
-                const isJustIncremented = highlightedServiceIds.includes(item.serviceId);
-                const initialCount = anim ? anim.initialCount : item.count;
-                const targetCount = anim ? anim.targetCount : item.count;
-                const shouldAnimate = Boolean(anim && anim.targetCount > anim.initialCount);
+          </button>
 
-                return (
-                  <div
-                    key={item.serviceId}
-                    className={`p-3.5 sm:p-4 rounded-2xl border transition-colors duration-500 flex items-center justify-between gap-3 ${
-                      isJustIncremented
-                        ? "ring-2 ring-emerald-500 bg-emerald-500/10 border-emerald-500/50 shadow-md shadow-emerald-500/10"
-                        : "border-border/80 bg-muted/30"
-                    }`}
-                  >
-                    <div className="flex items-center gap-3 min-w-0 flex-1">
-                      {getServiceImage(item.serviceName) ? (
-                        <div className="relative w-14 h-14 sm:w-16 sm:h-16 rounded-2xl overflow-hidden shrink-0 border border-border/60 bg-muted/40 shadow-2xs p-1 flex items-center justify-center">
-                          <Image
-                            src={getServiceImage(item.serviceName)!}
-                            alt={item.serviceName}
-                            fill
-                            unoptimized
-                            className="object-contain drop-shadow-xs"
-                            sizes="(max-width: 640px) 56px, 64px"
+          {/* Collapsible Content Body */}
+          {isBreakdownExpanded && (
+            <div className="border-t border-border/60 p-4 sm:p-5 pt-4 space-y-4 animate-in fade-in-50 duration-200">
+              {/* Quick totals bar inside expanded view */}
+              {summary.servicesBreakdown.length > 0 && (
+                <div className="flex items-center justify-between text-xs text-muted-foreground pb-1 border-b border-border/40">
+                  <span className="font-semibold">
+                    {summary.servicesBreakdown.reduce((acc, it) => acc + it.count, 0)}{" "}
+                    {resolveDeskText(DESK_DICT.breakdown.clientsUnit, languageMode).primary}
+                  </span>
+                  <span className="font-mono font-bold text-foreground">
+                    {resolveDeskText(DESK_DICT.breakdown.totalLabel, languageMode).primary}:{" "}
+                    {formatPrice(
+                      summary.servicesBreakdown.reduce((acc, it) => acc + it.totalCents, 0),
+                      currencySymbol
+                    )}
+                  </span>
+                </div>
+              )}
+
+              {summary.servicesBreakdown.length === 0 ? (
+                <div className="text-center py-6 text-muted-foreground space-y-1">
+                  <p className="text-base font-semibold">
+                    <DeskText
+                      text={DESK_DICT.breakdown.noSalesYet}
+                      mode={languageMode}
+                      layout="inline"
+                    />
+                  </p>
+                  <p className="text-xs">
+                    <DeskText
+                      text={DESK_DICT.breakdown.tapCountNotice}
+                      mode={languageMode}
+                      layout="inline"
+                    />
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                  {summary.servicesBreakdown.map((item) => {
+                    const svcNameResolved = resolveServiceName(item.serviceName, languageMode);
+                    const anim = activeAnimations[item.serviceId];
+                    const isJustIncremented = highlightedServiceIds.includes(item.serviceId);
+                    const initialCount = anim ? anim.initialCount : item.count;
+                    const targetCount = anim ? anim.targetCount : item.count;
+                    const shouldAnimate = Boolean(anim && anim.targetCount > anim.initialCount);
+
+                    return (
+                      <div
+                        key={item.serviceId}
+                        className={`p-3.5 sm:p-4 rounded-2xl border transition-colors duration-500 flex items-center justify-between gap-3 ${
+                          isJustIncremented
+                            ? "ring-2 ring-emerald-500 bg-emerald-500/10 border-emerald-500/50 shadow-md shadow-emerald-500/10"
+                            : "border-border/80 bg-muted/30"
+                        }`}
+                      >
+                        <div className="flex items-center gap-3 min-w-0 flex-1">
+                          {getServiceImage(item.serviceName) ? (
+                            <div className="relative w-14 h-14 sm:w-16 sm:h-16 rounded-2xl overflow-hidden shrink-0 border border-border/60 bg-muted/40 shadow-2xs p-1 flex items-center justify-center">
+                              <Image
+                                src={getServiceImage(item.serviceName)!}
+                                alt={item.serviceName}
+                                fill
+                                unoptimized
+                                className="object-contain drop-shadow-xs"
+                                sizes="(max-width: 640px) 56px, 64px"
+                              />
+                            </div>
+                          ) : (
+                            <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                              <Scissors className="h-6 sm:h-7 w-6 sm:w-7" />
+                            </div>
+                          )}
+                          <div className="space-y-0.5 min-w-0">
+                            <DeskText
+                              zh={svcNameResolved.primary}
+                              en={svcNameResolved.secondary}
+                              mode={languageMode}
+                              primaryClass="font-bold text-base sm:text-lg text-foreground leading-tight truncate"
+                              secondaryClass="text-xs text-muted-foreground font-normal"
+                            />
+                            <p className="text-xs text-muted-foreground font-medium truncate">
+                              {item.category || "General"}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <AnimatedServiceCountBadge
+                            targetCount={targetCount}
+                            initialCount={initialCount}
+                            shouldAnimate={shouldAnimate}
+                            unitText={
+                              resolveDeskText(
+                                targetCount === 1
+                                  ? DESK_DICT.breakdown.clientUnit
+                                  : DESK_DICT.breakdown.clientsUnit,
+                                languageMode
+                              ).primary
+                            }
                           />
+                          <p className="text-sm sm:text-base font-bold font-mono text-foreground mt-1">
+                            {formatPrice(item.totalCents, currencySymbol)}
+                          </p>
                         </div>
-                      ) : (
-                        <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
-                          <Scissors className="h-6 sm:h-7 w-6 sm:w-7" />
-                        </div>
-                      )}
-                      <div className="space-y-0.5 min-w-0">
-                        <DeskText
-                          zh={svcNameResolved.primary}
-                          en={svcNameResolved.secondary}
-                          mode={languageMode}
-                          primaryClass="font-bold text-base sm:text-lg text-foreground leading-tight truncate"
-                          secondaryClass="text-xs text-muted-foreground font-normal"
-                        />
-                        <p className="text-xs text-muted-foreground font-medium truncate">
-                          {item.category || "General"}
-                        </p>
                       </div>
-                    </div>
-                    <div className="text-right">
-                      <AnimatedServiceCountBadge
-                        targetCount={targetCount}
-                        initialCount={initialCount}
-                        shouldAnimate={shouldAnimate}
-                        unitText={
-                          resolveDeskText(
-                            targetCount === 1
-                              ? DESK_DICT.breakdown.clientUnit
-                              : DESK_DICT.breakdown.clientsUnit,
-                            languageMode
-                          ).primary
-                        }
-                      />
-                      <p className="text-sm sm:text-base font-bold font-mono text-foreground mt-1">
-                        {formatPrice(item.totalCents, currencySymbol)}
-                      </p>
-                    </div>
-                  </div>
-                );
-              })}
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
         </Card>
@@ -1111,7 +1260,7 @@ export function DeskHub({
                 <div className="flex items-center gap-2.5">
                   <span suppressHydrationWarning className="text-base">{currencySymbol === "$" ? "🇦🇺" : "🇲🇾"}</span>
                   <span className="text-xs text-muted-foreground">
-                    {resolveDeskText({ zh: "结算货币", en: "Currency" }, languageMode).primary}
+                    {resolveDeskText(DESK_DICT.header.currency, languageMode).primary}
                   </span>
                 </div>
                 <span suppressHydrationWarning className="font-mono font-bold text-sm text-foreground bg-muted px-2.5 py-1 rounded-lg">
@@ -1122,7 +1271,7 @@ export function DeskHub({
               {/* Language Switcher in Mobile Drawer */}
               <div className="pt-1">
                 <div className="text-xs font-bold text-muted-foreground mb-1.5 px-1">
-                  {resolveDeskText({ zh: "界面语言模式", en: "Display Language" }, languageMode).primary}
+                  {resolveDeskText(DESK_DICT.header.languageMode, languageMode).primary}
                 </div>
                 <div className="grid grid-cols-2 gap-1.5">
                   {[
@@ -1160,14 +1309,14 @@ export function DeskHub({
                 className="w-full h-11 px-3.5 rounded-xl border border-border/80 bg-card hover:bg-muted font-bold text-xs flex items-center gap-2.5 text-muted-foreground hover:text-foreground cursor-pointer transition-colors"
               >
                 <RefreshCw className={`h-4 w-4 ${isPending ? "animate-spin text-primary" : ""}`} />
-                <span>{resolveDeskText({ zh: "刷新前台数据", en: "Refresh Desk Data" }, languageMode).primary}</span>
+                <span>{resolveDeskText(DESK_DICT.header.refreshDeskData, languageMode).primary}</span>
               </button>
 
               {/* Settings Link */}
               <Link href="/admin/settings" onClick={() => setIsMobileMenuOpen(false)} className="block">
                 <div className="w-full h-11 px-3.5 rounded-xl border border-border/80 bg-card hover:bg-muted font-bold text-xs flex items-center gap-2.5 text-muted-foreground hover:text-foreground cursor-pointer transition-colors">
                   <Settings className="h-4 w-4" />
-                  <span>{resolveDeskText({ zh: "系统管理设置", en: "Admin Settings" }, languageMode).primary}</span>
+                  <span>{resolveDeskText(DESK_DICT.header.adminSettings, languageMode).primary}</span>
                 </div>
               </Link>
             </div>
@@ -1211,7 +1360,7 @@ export function DeskHub({
             </div>
             <SheetDescription className="text-xs text-muted-foreground">
               {resolveDeskText(
-                { zh: "今日、昨日及本月实时营业总额与完成单数", en: "Live sales revenue and completed order stats" },
+                DESK_DICT.scoreboard.scoreboardSub,
                 languageMode
               ).primary}
             </SheetDescription>
