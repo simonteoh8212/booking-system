@@ -40,7 +40,9 @@ import {
   Scissors,
   CheckCircle2,
   X,
+  Download,
 } from "lucide-react";
+import toast from "react-hot-toast";
 import { DESK_DICT, resolveDeskText, resolveServiceName } from "@/lib/desk-i18n";
 import { DeskText } from "./DeskText";
 
@@ -377,6 +379,20 @@ export function DeskFinancialReportView({
     });
   }
 
+  function handleExportMonthCsv() {
+    try {
+      const link = document.createElement("a");
+      link.href = `/api/admin/export-sales?year=${selectedYear}&month=${selectedMonth}`;
+      link.setAttribute("download", "");
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      toast.success(resolveDeskText(DESK_DICT.backup.exportingCsv, languageMode).primary);
+    } catch {
+      toast.error("Export failed. Please try again.");
+    }
+  }
+
   const currSym = reportData?.currencySymbol || currencySymbol;
   const isNetPositive = (reportData?.netProfitCents || 0) >= 0;
 
@@ -400,7 +416,24 @@ export function DeskFinancialReportView({
           />
         </Button>
 
-        <div className="flex items-center gap-2 self-end sm:self-auto">
+        <div className="flex items-center gap-2 self-end sm:self-auto flex-wrap">
+          <Button
+            type="button"
+            onClick={handleExportMonthCsv}
+            size="lg"
+            variant="outline"
+            className="h-14 sm:h-16 px-4 sm:px-5 text-sm sm:text-base font-bold border border-border/80 bg-card hover:bg-muted text-foreground gap-2 rounded-2xl shadow-xs cursor-pointer"
+            title="Download CSV for Excel"
+          >
+            <Download className="h-5 w-5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+            <DeskText
+              text={DESK_DICT.backup.exportSalesShort}
+              mode={languageMode}
+              layout="inline"
+              primaryClass="font-bold text-sm sm:text-base"
+            />
+          </Button>
+
           <Button
             type="button"
             onClick={handleOpenModal}

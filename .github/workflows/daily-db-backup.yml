@@ -1,0 +1,64 @@
+name: Daily Database Backup (.sql)
+
+on:
+  schedule:
+    # Runs everyday at 1:35 PM Malaysia time (05:35 UTC)
+    - cron: '35 5 * * *'
+  # Allows triggering the backup manually anytime from GitHub Actions tab
+  workflow_dispatch:
+
+jobs:
+  backup:
+    name: Backup PostgreSQL Database
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set Backup Timestamp
+        id: timestamp
+        run: |
+          echo "BACKUP_DATE=$(date +'%Y-%m-%d_%H%M%S')" >> $GITHUB_ENV
+          echo "FILE_DATE=$(date +'%Y-%m-%d')" >> $GITHUB_ENV
+
+      - name: Install PostgreSQL Client
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y postgresql-client
+
+      - name: Generate PostgreSQL Database Dump
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::DATABASE_URL secret is not set in GitHub repository settings!"
+            echo "Please go to: Settings -> Secrets and variables -> Actions -> New repository secret -> DATABASE_URL"
+            exit 1
+          fi
+
+          mkdir -p backups
+          OUTPUT_SQL="backups/salon_backup_${BACKUP_DATE}.sql"
+
+          echo "Starting database dump from Supabase..."
+          pg_dump "$DATABASE_URL" \
+            --no-owner \
+            --no-privileges \
+            --clean \
+            --if-exists \
+            --encoding=UTF8 \
+            --file="$OUTPUT_SQL"
+
+          echo "Compressing backup file..."
+          gzip -c "$OUTPUT_SQL" > "${OUTPUT_SQL}.gz"
+
+          echo "Backup created successfully:"
+          ls -lh backups/
+
+      - name: Upload Backup to GitHub Artifacts (Retained for 60 days)
+        uses: actions/upload-artifact@v4
+        with:
+          name: db-backup-${{ env.BACKUP_DATE }}
+          path: backups/salon_backup_${{ env.BACKUP_DATE }}.sql.gz
+          retention-days: 60
+          if-no-files-found: error

@@ -400,4 +400,34 @@ export const DESK_DICT = {
     enterAmountFirst: { zh: "请先输入金额", en: "Enter amount first" },
     expenseAllocation: { zh: "开销分类占比", en: "Expense Allocation" },
   },
+
+  // Database Backup & Export
+  backup: {
+    title: { zh: "数据库备份与导出", en: "Database Backup & Export" },
+    subtitle: {
+      zh: "一键导出完整 SQL 备份或按月下载 Excel/CSV 销售账单",
+      en: "Export full SQL database dump or monthly CSV sales spreadsheet",
+    },
+    downloadSqlBtn: {
+      zh: "💾 立即下载完整数据库备份 (.sql)",
+      en: "💾 Download Full Database Backup (.sql)",
+    },
+    downloadingSql: { zh: "正在生成备份文件...", en: "Generating backup..." },
+    sqlHelpText: {
+      zh: "包含所有顾客、开单销售、明细项目、开销支出及系统设置。可在 Supabase 或任意 PostgreSQL 数据库直接运行恢复。",
+      en: "Includes all customers, sales, booking items, expenses, and settings. Can be directly restored in Supabase or any PostgreSQL database.",
+    },
+    exportMonthCsvBtn: { zh: "📥 导出本月销售明细 (CSV)", en: "📥 Export Monthly Sales (CSV)" },
+    exportAllCsvBtn: { zh: "📥 导出全部历史销售 (CSV)", en: "📥 Export All-Time Sales (CSV)" },
+    exportSalesShort: { zh: "导出账单", en: "Export CSV" },
+    exportingCsv: { zh: "正在下载本月销售账单 (CSV)...", en: "Downloading monthly sales CSV..." },
+    tablesIncluded: { zh: "包含数据表", en: "Tables Included" },
+    recordsCount: { zh: "总记录数", en: "Total Records" },
+    automatedBackupNote: {
+      zh: "GitHub Actions 每日自动备份已配置",
+      en: "Daily automated GitHub Actions backup configured",
+    },
+    exportBtn: { zh: "导出与备份", en: "Export & Backup" },
+    exportDesc: { zh: "下载本月销售账单或完整数据库", en: "Download monthly sales or full database" },
+  },
 } as const;
