@@ -3,7 +3,7 @@ name: Daily Database Backup (.sql)
 on:
   schedule:
     # Runs everyday at 1:35 PM Malaysia time (05:35 UTC)
-    - cron: '10 6 * * *'
+    - cron: '0 7 * * *'
   # Allows triggering the backup manually anytime from GitHub Actions tab
   workflow_dispatch:
 

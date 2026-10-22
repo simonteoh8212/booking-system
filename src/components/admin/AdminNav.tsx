@@ -14,6 +14,7 @@ import {
   Menu,
   X,
   Scissors,
+  FileText,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -22,6 +23,7 @@ const navItems = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard, exact: true },
   { href: "/admin/bookings", label: "Bookings", icon: CalendarDays },
   { href: "/admin/services", label: "Services", icon: Wrench },
+  { href: "/admin/reports", label: "Statements", icon: FileText },
   { href: "/admin/settings", label: "Settings", icon: Settings },
 ];
 

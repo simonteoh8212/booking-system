@@ -24,6 +24,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
+import Link from "next/link";
 import {
   ArrowLeft,
   ChevronLeft,
@@ -41,6 +42,7 @@ import {
   CheckCircle2,
   X,
   Download,
+  FileText,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { DESK_DICT, resolveDeskText, resolveServiceName } from "@/lib/desk-i18n";
@@ -432,6 +434,24 @@ export function DeskFinancialReportView({
               layout="inline"
               primaryClass="font-bold text-sm sm:text-base"
             />
+          </Button>
+
+          <Button
+            asChild
+            size="lg"
+            variant="outline"
+            className="h-14 sm:h-16 px-4 sm:px-5 text-sm sm:text-base font-bold border border-border/80 bg-card hover:bg-muted text-foreground gap-2 rounded-2xl shadow-xs cursor-pointer"
+            title="Open printable bank statement"
+          >
+            <Link href={`/admin/reports?year=${selectedYear}&month=${selectedMonth}&from=desk`}>
+              <FileText className="h-5 w-5 text-foreground shrink-0" />
+              <DeskText
+                text={DESK_DICT.statement.statementActionBtn}
+                mode={languageMode}
+                layout="inline"
+                primaryClass="font-bold text-sm sm:text-base"
+              />
+            </Link>
           </Button>
 
           <Button
