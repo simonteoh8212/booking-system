@@ -59,7 +59,9 @@ import {
   Scissors,
   ChevronLeft,
   ChevronRight,
+  ShieldAlert,
 } from "lucide-react";
+import { EmergencyClosureModal } from "./EmergencyClosureModal";
 
 interface AdminBookingsManagerProps {
   initialBookings: BookingDto[];
@@ -113,6 +115,7 @@ export function AdminBookingsManager({
   const [cancelModalBooking, setCancelModalBooking] = useState<BookingDto | null>(null);
   const [copiedRef, setCopiedRef] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [isEmergencyModalOpen, setIsEmergencyModalOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
 
   // Listen for background updates from AdminNav notification clicks
@@ -367,12 +370,27 @@ export function AdminBookingsManager({
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Emergency Closure & Mass Reschedule Trigger */}
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setIsEmergencyModalOpen(true)}
+            className="h-9 gap-1.5 text-xs font-bold border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-400 rounded-xl cursor-pointer"
+            title="Emergency shop closure or stylist sick leave"
+          >
+            <ShieldAlert className="h-3.5 w-3.5" />
+            <span suppressHydrationWarning>
+              {resolveLabel({ zh: "突发闭店/批量改约", en: "Emergency Closure" }, langMode)}
+            </span>
+          </Button>
+
           <Button
             variant="outline"
             size="sm"
             onClick={() => refetchBookings(activeTab, searchQuery)}
             disabled={isPending}
-            className="h-9 gap-1.5 text-xs font-semibold"
+            className="h-9 gap-1.5 text-xs font-semibold rounded-xl"
           >
             <RotateCcw className={cn("h-3.5 w-3.5", isPending && "animate-spin")} />
             <span suppressHydrationWarning>
@@ -451,7 +469,9 @@ export function AdminBookingsManager({
           {/* Timeframe Selector */}
           <Select
             value={timeframe}
-            onValueChange={(val: BookingTimeframe) => handleTimeframeChange(val)}
+            onValueChange={(val) => {
+              if (val) handleTimeframeChange(val as BookingTimeframe);
+            }}
           >
             <SelectTrigger className="w-[145px] sm:w-[160px] h-10 rounded-xl bg-card text-xs font-semibold shrink-0 cursor-pointer">
               <CalendarDays className="h-3.5 w-3.5 mr-1.5 text-muted-foreground shrink-0" />
@@ -972,6 +992,17 @@ export function AdminBookingsManager({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Emergency Closure & Mass Reschedule Modal */}
+      <EmergencyClosureModal
+        isOpen={isEmergencyModalOpen}
+        onClose={() => {
+          setIsEmergencyModalOpen(false);
+          refetchBookings(activeTab, searchQuery);
+        }}
+        langMode={langMode}
+        currencySymbol={currencySymbol}
+      />
     </div>
   );
 }

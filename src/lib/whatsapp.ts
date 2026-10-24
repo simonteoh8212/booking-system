@@ -182,3 +182,84 @@ export function buildWhatsAppUrl(details: WhatsAppBookingDetails): string {
   const encoded = encodeURIComponent(message);
   return `https://wa.me/${phone}?text=${encoded}`;
 }
+
+export interface EmergencyApologyDetails {
+  customerName: string;
+  customerPhone: string;
+  referenceCode: string;
+  serviceName: string;
+  startDatetime: Date | string;
+  depositDueCents?: number | null;
+  reason: string;
+  businessName?: string;
+  language?: "en" | "zh";
+}
+
+/**
+ * Builds a direct 1-click WhatsApp apology and reschedule URL to the customer.
+ */
+export function buildEmergencyApologyWhatsAppUrl(details: EmergencyApologyDetails): string {
+  const {
+    customerName,
+    customerPhone,
+    referenceCode,
+    serviceName,
+    startDatetime,
+    depositDueCents,
+    reason,
+    businessName = process.env.NEXT_PUBLIC_BUSINESS_NAME || "Our Salon",
+    language = "zh",
+  } = details;
+
+  const dateObj = typeof startDatetime === "string" ? new Date(startDatetime) : startDatetime;
+  const isZh = language === "zh";
+
+  const formattedDate = new Intl.DateTimeFormat(isZh ? "zh-CN" : "en-US", {
+    timeZone: "Asia/Kuala_Lumpur",
+    month: isZh ? "numeric" : "short",
+    day: "numeric",
+    weekday: isZh ? "short" : "short",
+  }).format(dateObj);
+
+  const formattedTime = new Intl.DateTimeFormat(isZh ? "zh-CN" : "en-US", {
+    timeZone: "Asia/Kuala_Lumpur",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  }).format(dateObj);
+
+  let msg = "";
+  if (isZh) {
+    msg = [
+      `您好 ${customerName}！这里是 *${businessName}*。`,
+      ``,
+      `非常抱歉地通知您，由于本店突发状况（*${reason}*），原定于 *${formattedDate} ${formattedTime}* 的预约（*${serviceName}* / 单号：${referenceCode}）无法正常接待。`,
+      ``,
+      depositDueCents && depositDueCents > 0
+        ? `💰 *关于定金：* 您已付的定金已妥善记录，您可以直接在此回复告知方便改期的新时间，或者我们将立刻为您办理全额退款。`
+        : `📅 *关于改期：* 您可以直接在此回复告知您方便改约的新日期与时段，我们将优先为您安排！`,
+      ``,
+      `对您造成的不便，我们深表歉意，敬请谅解！🙏`,
+    ].join("\n");
+  } else {
+    msg = [
+      `Hi ${customerName}! This is *${businessName}*.`,
+      ``,
+      `We sincerely apologize, but due to an unexpected situation today (*${reason}*), we are unable to fulfill your scheduled appointment for *${serviceName}* on *${formattedDate} at ${formattedTime}* (Ref: ${referenceCode}).`,
+      ``,
+      depositDueCents && depositDueCents > 0
+        ? `💰 *Your Deposit:* Your deposit is 100% safe. You can reply directly here with your preferred new date/time to reschedule, or request an immediate full refund.`
+        : `📅 *Rescheduling:* Please reply directly here with your preferred new date and time, and we will prioritize your booking!`,
+      ``,
+      `We truly apologize for the disruption and appreciate your understanding! 🙏`,
+    ].join("\n");
+  }
+
+  let cleanPhone = customerPhone.replace(/\D/g, "");
+  if (cleanPhone.startsWith("0")) {
+    cleanPhone = "60" + cleanPhone.slice(1);
+  }
+
+  return `https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`;
+}
+

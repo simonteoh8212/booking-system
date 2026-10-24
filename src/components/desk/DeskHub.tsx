@@ -28,6 +28,8 @@ import { DeskPinUnlockDialog } from "./DeskPinUnlockDialog";
 import { DeskLanguageSwitcher } from "./DeskLanguageSwitcher";
 import { DeskLanguageFirstTimeModal } from "./DeskLanguageFirstTimeModal";
 import { DeskText } from "./DeskText";
+import { RushModeControl } from "@/components/admin/RushModeControl";
+import { EmergencyClosureModal } from "@/components/admin/EmergencyClosureModal";
 import {
   DESK_DICT,
   resolveServiceName,
@@ -51,6 +53,7 @@ import {
   ChevronRight,
   ChevronDown,
   ChevronUp,
+  ShieldAlert,
 } from "lucide-react";
 import {
   Sheet,
@@ -84,6 +87,7 @@ export function DeskHub({
     initialSummary.deskLanguage || "ONLY_EN"
   );
   const [showFirstTimeLangModal, setShowFirstTimeLangModal] = useState(false);
+  const [isEmergencyModalOpen, setIsEmergencyModalOpen] = useState(false);
   // Backend visibility flags controlled in Admin Settings
   const isTodayCardVisible = summary.showTodaySales !== false;
   const isYesterdayCardVisible = summary.showYesterdaySales !== false;
@@ -744,6 +748,9 @@ export function DeskHub({
 
 
 
+          {/* Rush Mode Fast Control */}
+          <RushModeControl langMode={languageMode} />
+
           {/* Quick Language Switcher Dropdown */}
           <DeskLanguageSwitcher
             currentMode={languageMode}
@@ -1201,6 +1208,26 @@ export function DeskHub({
 
               <Separator className="my-2" />
 
+              {/* Emergency Closure Action in Mobile Drawer */}
+              <button
+                type="button"
+                onClick={() => {
+                  setIsMobileMenuOpen(false);
+                  setIsEmergencyModalOpen(true);
+                }}
+                className="w-full h-12 px-3.5 rounded-xl border border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-400 font-bold text-sm flex items-center justify-between cursor-pointer transition-colors"
+              >
+                <div className="flex items-center gap-2.5">
+                  <ShieldAlert className="h-4 w-4" />
+                  <span>
+                    {languageMode === "ONLY_ZH" ? "突发闭店 / 批量改约" : "Emergency Closure / Reschedule"}
+                  </span>
+                </div>
+                <ChevronRight className="h-4 w-4 text-amber-600" />
+              </button>
+
+              <Separator className="my-2" />
+
               {/* Currency Display */}
               <div className="w-full h-12 px-3.5 rounded-xl border border-border/80 bg-muted/30 font-bold text-sm flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
@@ -1323,6 +1350,17 @@ export function DeskHub({
         open={showFirstTimeLangModal}
         currentMode={languageMode}
         onSelect={handleFirstTimeLangSelect}
+      />
+
+      {/* Emergency Closure & Mass Reschedule Modal */}
+      <EmergencyClosureModal
+        isOpen={isEmergencyModalOpen}
+        onClose={() => {
+          setIsEmergencyModalOpen(false);
+          refreshData();
+        }}
+        langMode={languageMode}
+        currencySymbol={currencySymbol}
       />
     </div>
     </>

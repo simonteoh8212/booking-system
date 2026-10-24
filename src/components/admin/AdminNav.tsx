@@ -32,6 +32,7 @@ import {
   updateBookingStatus,
   type PendingBookingItemSummary,
 } from "@/actions/admin-bookings";
+import { RushModeControl } from "./RushModeControl";
 import type { DeskLanguageMode } from "@/types";
 
 interface NavItem {
@@ -271,6 +272,9 @@ export function AdminNav({ initialLanguage = "ONLY_EN" }: AdminNavProps = {}) {
           </nav>
 
           <div className="ml-auto flex items-center gap-2">
+            {/* Rush Mode (Pause online booking for walk-in rush) */}
+            <RushModeControl langMode={langMode} compact />
+
             {/* Notification with Counter Badge (Pending customer bookings) */}
             <div className="relative" ref={notifRef}>
               <Button

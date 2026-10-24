@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { getActiveServices } from "@/actions/services";
 import { getDepositSetting } from "@/actions/deposit";
+import { getRushModeStatus } from "@/actions/emergency";
 import { BookingFunnel } from "@/components/booking/BookingFunnel";
 import { CustomerLanguageProvider } from "@/components/booking/CustomerLanguageContext";
 import { CustomerHeader } from "@/components/booking/CustomerHeader";
@@ -23,13 +24,15 @@ export default async function BookingPage() {
   }
 
   await connection();
-  const [servicesResult, depositResult] = await Promise.all([
+  const [servicesResult, depositResult, rushStatusRes] = await Promise.all([
     getActiveServices(),
     getDepositSetting(),
+    getRushModeStatus(),
   ]);
 
   const services = servicesResult.success ? servicesResult.data : [];
   const currencySymbol = depositResult.success ? depositResult.data.currencySymbol : "RM";
+  const rushStatus = rushStatusRes.success ? rushStatusRes.data : null;
   const businessName = process.env.NEXT_PUBLIC_BUSINESS_NAME ?? "Our Salon";
 
   return (
@@ -47,7 +50,11 @@ export default async function BookingPage() {
               <p className="text-sm">Please check back later or contact us directly.</p>
             </div>
           ) : (
-            <BookingFunnel services={services} currencySymbol={currencySymbol} />
+            <BookingFunnel
+              services={services}
+              currencySymbol={currencySymbol}
+              rushStatus={rushStatus}
+            />
           )}
         </main>
 

@@ -8,17 +8,22 @@ import { StepDateTimePicker } from "./StepDateTimePicker";
 import { StepCustomerForm } from "./StepCustomerForm";
 import { StepPaymentInstructions } from "./StepPaymentInstructions";
 import { BookingConfirmation } from "./BookingConfirmation";
+import { Flame } from "lucide-react";
+import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import type { ServiceDto } from "@/types";
+import type { RushModeStatus } from "@/actions/emergency";
 
 interface BookingFunnelProps {
   services: ServiceDto[];
   currencySymbol?: string;
+  rushStatus?: RushModeStatus | null;
 }
 
 export function BookingFunnel({
   services,
   currencySymbol = "RM",
+  rushStatus,
 }: BookingFunnelProps) {
   const { currentStep, confirmation, setCurrencySymbol } = useBookingStore();
   const { language, t } = useCustomerLanguage();
@@ -51,6 +56,27 @@ export function BookingFunnel({
 
   return (
     <div className="max-w-md mx-auto px-4 pb-32 pt-6">
+      {/* Rush Mode Active Alert */}
+      {rushStatus?.isActive && (
+        <div className="mb-6 p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-950 dark:text-amber-200 shadow-xs flex items-start gap-3">
+          <Flame className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
+          <div className="text-xs space-y-1">
+            <p className="font-bold text-sm text-foreground">
+              {language === "zh" ? "🔥 客满高峰期提示" : "🔥 Peak Rush Hour Notice"}
+            </p>
+            <p className="leading-relaxed">
+              {language === "zh"
+                ? `本店目前现场客满，线上预约已暂时暂停接单，预计将于 ${
+                    rushStatus.expiresAt ? format(new Date(rushStatus.expiresAt), "HH:mm") : ""
+                  } 重新开放。如有急需欢迎直接到店或 WhatsApp 咨询。`
+                : `Our studio is currently at peak capacity for walk-in clients. Online bookings are temporarily paused until ${
+                    rushStatus.expiresAt ? format(new Date(rushStatus.expiresAt), "h:mm a") : ""
+                  }. Please contact us via WhatsApp for urgent appointments.`}
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Step indicator */}
       <div className="flex items-center justify-between mb-8 select-none">
         {steps.map((step, i) => {
