@@ -151,6 +151,7 @@ export interface EmergencyDayBookingItem {
   endDatetime: string;
   totalPriceCents: number;
   depositDueCents: number | null;
+  isPast: boolean;
 }
 
 export async function getEmergencyDayBookings(
@@ -160,6 +161,10 @@ export async function getEmergencyDayBookings(
     date: string;
     isDayBlocked: boolean;
     blockoutReason: string | null;
+    isToday: boolean;
+    isTodayPastClosing: boolean;
+    upcomingBookings: EmergencyDayBookingItem[];
+    pastBookings: EmergencyDayBookingItem[];
     bookings: EmergencyDayBookingItem[];
   }>
 > {
@@ -171,7 +176,35 @@ export async function getEmergencyDayBookings(
       createBusinessDateTime(dateStr, "23:59").getTime() + 59999
     );
 
-    const [bookings, existingBlockout] = await Promise.all([
+    const now = new Date();
+    const todayStr = toBusinessDateString(now.toISOString());
+    const isToday = dateStr === todayStr;
+
+    // Check if today's business schedule closeTime has passed
+    let isTodayPastClosing = false;
+    if (isToday) {
+      const dayOfWeek = now.getDay();
+      const schedule = await prisma.businessSchedule.findUnique({
+        where: { dayOfWeek },
+      });
+      if (schedule) {
+        if (schedule.isClosed) {
+          isTodayPastClosing = true;
+        } else {
+          const closingTime = createBusinessDateTime(dateStr, schedule.closeTime);
+          if (now >= closingTime) {
+            isTodayPastClosing = true;
+          }
+        }
+      } else {
+        // Fallback default: past 6 PM (18:00)
+        if (now.getHours() >= 18) {
+          isTodayPastClosing = true;
+        }
+      }
+    }
+
+    const [allBookings, existingBlockout] = await Promise.all([
       prisma.booking.findMany({
         where: {
           startDatetime: { lte: endOfDay },
@@ -193,24 +226,43 @@ export async function getEmergencyDayBookings(
       }),
     ]);
 
+    const mapped: EmergencyDayBookingItem[] = allBookings.map((b) => {
+      let isPast = false;
+      if (isToday) {
+        isPast = b.endDatetime <= now;
+      } else if (dateStr < todayStr) {
+        isPast = true;
+      }
+
+      return {
+        id: b.id,
+        referenceCode: b.referenceCode,
+        status: b.status,
+        customerName: b.customer.name,
+        phoneNumber: b.customer.phoneNumber,
+        serviceName: b.service.name,
+        startDatetime: b.startDatetime.toISOString(),
+        endDatetime: b.endDatetime.toISOString(),
+        totalPriceCents: b.totalPriceCents,
+        depositDueCents: b.depositDueCents,
+        isPast,
+      };
+    });
+
+    const upcomingBookings = mapped.filter((b) => !b.isPast);
+    const pastBookings = mapped.filter((b) => b.isPast);
+
     return {
       success: true,
       data: {
         date: dateStr,
         isDayBlocked: !!existingBlockout,
         blockoutReason: existingBlockout?.reason?.replace(EMERGENCY_CLOSURE_PREFIX, "").trim() || null,
-        bookings: bookings.map((b) => ({
-          id: b.id,
-          referenceCode: b.referenceCode,
-          status: b.status,
-          customerName: b.customer.name,
-          phoneNumber: b.customer.phoneNumber,
-          serviceName: b.service.name,
-          startDatetime: b.startDatetime.toISOString(),
-          endDatetime: b.endDatetime.toISOString(),
-          totalPriceCents: b.totalPriceCents,
-          depositDueCents: b.depositDueCents,
-        })),
+        isToday,
+        isTodayPastClosing,
+        upcomingBookings,
+        pastBookings,
+        bookings: upcomingBookings,
       },
     };
   } catch (error) {
@@ -234,6 +286,10 @@ export async function blockDayForEmergency(
       createBusinessDateTime(dateStr, "23:59").getTime() + 59999
     );
 
+    const now = new Date();
+    const todayStr = toBusinessDateString(now.toISOString());
+    const isToday = dateStr === todayStr;
+
     // Delete existing emergency blockouts for this date first
     await prisma.timeBlockout.deleteMany({
       where: {
@@ -243,9 +299,12 @@ export async function blockDayForEmergency(
       },
     });
 
+    // If blocking today mid-day, block from now until end of day; otherwise full day
+    const blockStart = isToday ? now : startOfDay;
+
     await prisma.timeBlockout.create({
       data: {
-        startDatetime: startOfDay,
+        startDatetime: blockStart,
         endDatetime: endOfDay,
         reason: `${EMERGENCY_CLOSURE_PREFIX} ${reason.trim()}`,
       },
