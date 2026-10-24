@@ -19,7 +19,7 @@ export function DeskText({
   text,
   zh,
   en,
-  mode = "BILINGUAL_ZH_FIRST",
+  mode = "ONLY_EN",
   layout = "stack",
   primaryClass = "",
   secondaryClass = "text-xs text-muted-foreground font-normal",
@@ -31,12 +31,16 @@ export function DeskText({
   const resolved = resolveDeskText({ zh: itemZh, en: itemEn }, mode);
 
   if (!resolved.secondary) {
-    return <span className={`${primaryClass} ${className}`}>{resolved.primary}</span>;
+    return (
+      <span suppressHydrationWarning className={`${primaryClass} ${className}`}>
+        {resolved.primary}
+      </span>
+    );
   }
 
   if (layout === "inline") {
     return (
-      <span className={`inline-flex items-baseline gap-1.5 ${className}`}>
+      <span suppressHydrationWarning className={`inline-flex items-baseline gap-1.5 ${className}`}>
         <span className={primaryClass}>{resolved.primary}</span>
         <span className={secondaryClass}>({resolved.secondary})</span>
       </span>
@@ -45,7 +49,7 @@ export function DeskText({
 
   if (layout === "badge") {
     return (
-      <span className={`inline-flex items-center gap-1.5 ${className}`}>
+      <span suppressHydrationWarning className={`inline-flex items-center gap-1.5 ${className}`}>
         <span className={primaryClass}>{resolved.primary}</span>
         <span className="opacity-70 text-[0.8em] font-normal">{resolved.secondary}</span>
       </span>
@@ -54,7 +58,7 @@ export function DeskText({
 
   // Default "stack" layout (primary prominent, secondary below)
   return (
-    <div className={`flex flex-col leading-tight ${className}`}>
+    <div suppressHydrationWarning className={`flex flex-col leading-tight ${className}`}>
       <span className={primaryClass}>{resolved.primary}</span>
       <span className={`mt-0.5 ${secondaryClass}`}>{resolved.secondary}</span>
     </div>

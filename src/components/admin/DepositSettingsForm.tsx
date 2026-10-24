@@ -15,6 +15,7 @@ import { Separator } from "@/components/ui/separator";
 import type { DepositSettingDto, DeskLanguageMode } from "@/types";
 import { DESK_LANGUAGE_OPTIONS, resolveLabel } from "@/lib/desk-i18n";
 import { useDeskLanguage, saveDeskLanguage } from "@/lib/use-desk-language";
+import { FloatingSaveBtn } from "@/components/admin/FloatingSaveBtn";
 import jsQR from "jsqr";
 import {
   Wallet,
@@ -38,10 +39,10 @@ interface DepositSettingsFormProps {
 export function DepositSettingsForm({ initialSetting }: DepositSettingsFormProps) {
   const router = useRouter();
   const { langMode, setLangMode } = useDeskLanguage(initialSetting.deskLanguage);
-  const [currency, setCurrency] = useState<string>(initialSetting.currency || "MYR");
-  const [currencySymbol, setCurrencySymbol] = useState<string>(initialSetting.currencySymbol || "RM");
+  const currency = "MYR";
+  const currencySymbol = "RM";
   const [deskLanguage, setDeskLanguage] = useState<DeskLanguageMode>(
-    langMode || initialSetting.deskLanguage || "BILINGUAL_ZH_FIRST"
+    langMode || initialSetting.deskLanguage || "ONLY_EN"
   );
 
   // Keep deskLanguage synchronized with active global language mode
@@ -64,6 +65,70 @@ export function DepositSettingsForm({ initialSetting }: DepositSettingsFormProps
   const [recipientName, setRecipientName] = useState(
     initialSetting.recipientName || "TEOH CHUN SEONG"
   );
+
+  // Baseline state to track dirty / unsaved changes
+  const [savedSetting, setSavedSetting] = useState({
+    isEnabled: initialSetting.isEnabled,
+    type: initialSetting.type,
+    amountRm: (initialSetting.amountCents / 100).toFixed(2),
+    percentage: String(initialSetting.percentage || 20),
+    duitnowPayload: initialSetting.duitnowPayload || DEFAULT_DUITNOW_PAYLOAD,
+    qrImageUrl: initialSetting.qrImageUrl || null,
+    recipientName: initialSetting.recipientName || "TEOH CHUN SEONG",
+    currency: initialSetting.currency || "MYR",
+    currencySymbol: initialSetting.currencySymbol || "RM",
+    deskLanguage: (langMode || initialSetting.deskLanguage || "ONLY_EN") as DeskLanguageMode,
+  });
+
+  // Sync baseline if initialSetting prop changes from parent
+  useEffect(() => {
+    const updated = {
+      isEnabled: initialSetting.isEnabled,
+      type: initialSetting.type,
+      amountRm: (initialSetting.amountCents / 100).toFixed(2),
+      percentage: String(initialSetting.percentage || 20),
+      duitnowPayload: initialSetting.duitnowPayload || DEFAULT_DUITNOW_PAYLOAD,
+      qrImageUrl: initialSetting.qrImageUrl || null,
+      recipientName: initialSetting.recipientName || "TEOH CHUN SEONG",
+      currency: "MYR",
+      currencySymbol: "RM",
+      deskLanguage: (initialSetting.deskLanguage || "ONLY_EN") as DeskLanguageMode,
+    };
+    setIsEnabled(updated.isEnabled);
+    setType(updated.type);
+    setAmountRm(updated.amountRm);
+    setPercentage(updated.percentage);
+    setDuitnowPayload(updated.duitnowPayload);
+    setQrImageUrl(updated.qrImageUrl);
+    setRecipientName(updated.recipientName);
+    setDeskLanguage(updated.deskLanguage);
+    setSavedSetting(updated);
+  }, [initialSetting]);
+
+  // Compute if any field has been modified
+  const hasChanges =
+    isEnabled !== savedSetting.isEnabled ||
+    type !== savedSetting.type ||
+    amountRm !== savedSetting.amountRm ||
+    percentage !== savedSetting.percentage ||
+    duitnowPayload !== savedSetting.duitnowPayload ||
+    qrImageUrl !== savedSetting.qrImageUrl ||
+    recipientName !== savedSetting.recipientName ||
+    currency !== savedSetting.currency ||
+    currencySymbol !== savedSetting.currencySymbol ||
+    deskLanguage !== savedSetting.deskLanguage;
+
+  function handleDiscard() {
+    setIsEnabled(savedSetting.isEnabled);
+    setType(savedSetting.type);
+    setAmountRm(savedSetting.amountRm);
+    setPercentage(savedSetting.percentage);
+    setDuitnowPayload(savedSetting.duitnowPayload);
+    setQrImageUrl(savedSetting.qrImageUrl);
+    setRecipientName(savedSetting.recipientName);
+    setDeskLanguage(savedSetting.deskLanguage);
+    setStatusMessage(null);
+  }
 
   const [previewQrUrl, setPreviewQrUrl] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<{
@@ -209,6 +274,18 @@ export function DepositSettingsForm({ initialSetting }: DepositSettingsFormProps
       });
 
       if (res.success) {
+        setSavedSetting({
+          isEnabled,
+          type,
+          amountRm,
+          percentage,
+          duitnowPayload,
+          qrImageUrl,
+          recipientName,
+          currency,
+          currencySymbol,
+          deskLanguage,
+        });
         toast.success(
           deskLanguage === "ONLY_ZH"
             ? "设置保存成功！"
@@ -269,55 +346,23 @@ export function DepositSettingsForm({ initialSetting }: DepositSettingsFormProps
         </CardHeader>
 
         <CardContent className="space-y-6">
-          {/* Country & Currency Selector */}
+          {/* Country & Currency Display */}
           <div className="space-y-2 p-4 rounded-xl border bg-muted/20">
             <Label className="text-xs font-semibold uppercase text-muted-foreground tracking-wider">
               {resolveLabel({ zh: "国家与结算货币", en: "Country & Currency" }, deskLanguage)}
             </Label>
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                type="button"
-                onClick={() => {
-                  setCurrency("MYR");
-                  setCurrencySymbol("RM");
-                }}
-                className={`p-3.5 rounded-xl border-2 text-left flex items-center justify-between transition-all cursor-pointer ${
-                  currency === "MYR"
-                    ? "border-primary bg-primary/10 shadow-xs"
-                    : "border-border bg-card hover:bg-muted text-muted-foreground"
-                }`}
-              >
+            <div className="p-3.5 rounded-xl border-2 border-primary/40 bg-card flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">🇲🇾</span>
                 <div>
-                  <p className="font-bold text-sm text-foreground">🇲🇾 Malaysia</p>
-                  <p className="text-xs text-muted-foreground">RM (MYR)</p>
+                  <p className="font-bold text-sm text-foreground">Malaysia</p>
+                  <p className="text-xs text-muted-foreground">RM (MYR) · DuitNow QR & Ringgit</p>
                 </div>
-                {currency === "MYR" && <CheckCircle2 className="h-5 w-5 text-primary" />}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setCurrency("AUD");
-                  setCurrencySymbol("$");
-                }}
-                className={`p-3.5 rounded-xl border-2 text-left flex items-center justify-between transition-all cursor-pointer ${
-                  currency === "AUD"
-                    ? "border-primary bg-primary/10 shadow-xs"
-                    : "border-border bg-card hover:bg-muted text-muted-foreground"
-                }`}
-              >
-                <div>
-                  <p className="font-bold text-sm text-foreground">🇦🇺 Australia</p>
-                  <p className="text-xs text-muted-foreground">$ (AUD)</p>
-                </div>
-                {currency === "AUD" && <CheckCircle2 className="h-5 w-5 text-primary" />}
-              </button>
+              </div>
+              <Badge variant="outline" className="font-mono text-xs font-bold text-primary border-primary/40 bg-primary/5">
+                Fixed (MYR)
+              </Badge>
             </div>
-            {currency === "AUD" && (
-              <p className="text-[11px] text-muted-foreground pt-1">
-                🇦🇺 Australian Mode: Currency displays as <strong>$</strong>. Customers pay via Cash, Card, or PayID.
-              </p>
-            )}
           </div>
 
           {/* Desk Language & Priority Selector */}
@@ -477,8 +522,8 @@ export function DepositSettingsForm({ initialSetting }: DepositSettingsFormProps
                   <p className="text-xs text-muted-foreground">
                     {resolveLabel(
                       {
-                        zh: `无论服务金额多少，顾客固定预付 ${currencySymbol === "$" ? `$${parseFloat(amountRm || "0").toFixed(2)}` : `RM ${parseFloat(amountRm || "0").toFixed(2)}`} 定金。`,
-                        en: `Regardless of service price, customer will pay exactly ${currencySymbol === "$" ? `$${parseFloat(amountRm || "0").toFixed(2)}` : `RM ${parseFloat(amountRm || "0").toFixed(2)}`} deposit.`,
+                        zh: `无论服务金额多少，顾客固定预付 RM ${parseFloat(amountRm || "0").toFixed(2)} 定金。`,
+                        en: `Regardless of service price, customer will pay exactly RM ${parseFloat(amountRm || "0").toFixed(2)} deposit.`,
                       },
                       deskLanguage
                     )}
@@ -508,8 +553,8 @@ export function DepositSettingsForm({ initialSetting }: DepositSettingsFormProps
                   <p className="text-xs text-muted-foreground">
                     {resolveLabel(
                       {
-                        zh: `例如 $120 的服务，${percentage}% 定金即为 ${currencySymbol === "$" ? `$${((120 * (parseFloat(percentage) || 0)) / 100).toFixed(2)}` : `RM ${((120 * (parseFloat(percentage) || 0)) / 100).toFixed(2)}`}。`,
-                        en: `For example, on a ${currencySymbol === "$" ? "$120.00" : "RM 120.00"} service, a ${percentage}% deposit equals ${currencySymbol === "$" ? `$${((120 * (parseFloat(percentage) || 0)) / 100).toFixed(2)}` : `RM ${((120 * (parseFloat(percentage) || 0)) / 100).toFixed(2)}`}.`,
+                        zh: `例如 RM 120 的服务，${percentage}% 定金即为 RM ${((120 * (parseFloat(percentage) || 0)) / 100).toFixed(2)}。`,
+                        en: `For example, on a RM 120.00 service, a ${percentage}% deposit equals RM ${((120 * (parseFloat(percentage) || 0)) / 100).toFixed(2)}.`,
                       },
                       deskLanguage
                     )}
@@ -697,22 +742,27 @@ export function DepositSettingsForm({ initialSetting }: DepositSettingsFormProps
             </div>
           )}
 
-          {/* Save Button */}
+          {/* In-Card Save Button */}
           <Button
             type="button"
             onClick={handleSave}
-            disabled={isPending || isScanningQr}
-            className="w-full gap-2"
+            disabled={isPending || isScanningQr || !hasChanges}
+            className="w-full gap-2 transition-all cursor-pointer"
           >
             {isPending ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin" />
                 {resolveLabel({ zh: "正在保存设置…", en: "Saving settings…" }, deskLanguage)}
               </>
-            ) : (
+            ) : hasChanges ? (
               <>
                 <CheckCircle2 className="h-4 w-4" />
                 {resolveLabel({ zh: "保存设置", en: "Save Settings" }, deskLanguage)}
+              </>
+            ) : (
+              <>
+                <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                {resolveLabel({ zh: "已保存（无需更改）", en: "Saved (No Changes)" }, deskLanguage)}
               </>
             )}
           </Button>
@@ -750,11 +800,9 @@ export function DepositSettingsForm({ initialSetting }: DepositSettingsFormProps
               <p className="text-2xl font-black text-primary font-mono tracking-tight mt-0.5">
                 {isEnabled
                   ? type === "FIXED"
-                    ? (currencySymbol === "$" ? `$${parseFloat(amountRm || "10").toFixed(2)}` : `RM ${parseFloat(amountRm || "10").toFixed(2)}`)
-                    : (currencySymbol === "$"
-                        ? `$${((100 * (parseFloat(percentage) || 20)) / 100).toFixed(2)}`
-                        : `RM ${((100 * (parseFloat(percentage) || 20)) / 100).toFixed(2)}`) + ` (${percentage}%)`
-                  : (currencySymbol === "$" ? "$100.00 (Full Amount)" : "RM 100.00 (Full Amount)")}
+                    ? `RM ${parseFloat(amountRm || "10").toFixed(2)}`
+                    : `RM ${((100 * (parseFloat(percentage) || 20)) / 100).toFixed(2)} (${percentage}%)`
+                  : "RM 100.00 (Full Amount)"}
               </p>
               <p className="text-[11px] text-primary/80 mt-1 flex items-center justify-center gap-1">
                 <CheckCircle2 className="h-3 w-3 inline" />
@@ -793,8 +841,8 @@ export function DepositSettingsForm({ initialSetting }: DepositSettingsFormProps
               <p className="text-[11px] leading-relaxed">
                 {resolveLabel(
                   {
-                    zh: `顾客使用 Touch 'n Go、MAE 或任何银行 App 扫描此二维码时，App 自动预填好 ${isEnabled ? (type === "FIXED" ? (currencySymbol === "$" ? `$${parseFloat(amountRm || "10").toFixed(2)}` : `RM ${parseFloat(amountRm || "10").toFixed(2)}`) : `${percentage}% 定金`) : "全额"} 及流水参考号，顾客无法漏付或篡改金额。`,
-                    en: `When a customer opens Touch 'n Go, MAE, or CIMB and scans this QR, their app immediately opens the transfer screen with ${isEnabled ? (type === "FIXED" ? (currencySymbol === "$" ? `$${parseFloat(amountRm || "10").toFixed(2)}` : `RM ${parseFloat(amountRm || "10").toFixed(2)}`) : `${percentage}% deposit`) : "full amount"} and reference code already entered. They cannot accidentally underpay!`,
+                    zh: `顾客使用 Touch 'n Go、MAE 或任何银行 App 扫描此二维码时，App 自动预填好 ${isEnabled ? (type === "FIXED" ? `RM ${parseFloat(amountRm || "10").toFixed(2)}` : `${percentage}% 定金`) : "全额"} 及流水参考号，顾客无法漏付或篡改金额。`,
+                    en: `When a customer opens Touch 'n Go, MAE, or CIMB and scans this QR, their app immediately opens the transfer screen with ${isEnabled ? (type === "FIXED" ? `RM ${parseFloat(amountRm || "10").toFixed(2)}` : `${percentage}% deposit`) : "full amount"} and reference code already entered. They cannot accidentally underpay!`,
                   },
                   deskLanguage
                 )}
@@ -803,6 +851,17 @@ export function DepositSettingsForm({ initialSetting }: DepositSettingsFormProps
           </CardContent>
         </Card>
       </div>
+
+      {/* Floating Save Changes Dock */}
+      <FloatingSaveBtn
+        show={hasChanges}
+        onSave={handleSave}
+        onDiscard={handleDiscard}
+        isPending={isPending}
+        disabled={isScanningQr}
+        langMode={deskLanguage}
+        saveText={resolveLabel({ zh: "保存设置", en: "Save Settings" }, deskLanguage)}
+      />
     </div>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import toast from "react-hot-toast";
 import { upsertBusinessSchedule } from "@/actions/schedule";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,7 @@ import type { BusinessScheduleDto } from "@/types";
 import { cn } from "@/lib/utils";
 import { useDeskLanguage } from "@/lib/use-desk-language";
 import { resolveLabel } from "@/lib/desk-i18n";
+import { FloatingSaveBtn } from "@/components/admin/FloatingSaveBtn";
 
 const DAY_LABELS = [
   { zh: "星期日", en: "Sunday" },
@@ -44,14 +45,74 @@ function buildRows(schedules: BusinessScheduleDto[]): ScheduleRow[] {
 
 export function BusinessHoursForm({ initialSchedules }: BusinessHoursFormProps) {
   const { langMode } = useDeskLanguage();
-  const [rows, setRows] = useState<ScheduleRow[]>(buildRows(initialSchedules));
+  const [savedRows, setSavedRows] = useState<ScheduleRow[]>(() => buildRows(initialSchedules));
+  const [rows, setRows] = useState<ScheduleRow[]>(() => buildRows(initialSchedules));
   const [isPending, startTransition] = useTransition();
   const [savedIdx, setSavedIdx] = useState<number | null>(null);
+
+  useEffect(() => {
+    const fresh = buildRows(initialSchedules);
+    setSavedRows(fresh);
+    setRows(fresh);
+  }, [initialSchedules]);
+
+  const hasChanges = rows.some((row, i) => {
+    const orig = savedRows[i];
+    return (
+      orig &&
+      (row.openTime !== orig.openTime ||
+        row.closeTime !== orig.closeTime ||
+        row.isClosed !== orig.isClosed)
+    );
+  });
+
+  function handleDiscard() {
+    setRows(savedRows.map((r) => ({ ...r })));
+  }
 
   function updateRow(dayOfWeek: number, updates: Partial<ScheduleRow>) {
     setRows((prev) =>
       prev.map((r) => (r.dayOfWeek === dayOfWeek ? { ...r, ...updates } : r))
     );
+  }
+
+  function handleSaveAll() {
+    startTransition(async () => {
+      const changedRows = rows.filter((row, i) => {
+        const orig = savedRows[i];
+        return (
+          orig &&
+          (row.openTime !== orig.openTime ||
+            row.closeTime !== orig.closeTime ||
+            row.isClosed !== orig.isClosed)
+        );
+      });
+
+      if (changedRows.length === 0) return;
+
+      const results = await Promise.all(
+        changedRows.map((r) =>
+          upsertBusinessSchedule(r.dayOfWeek, {
+            openTime: r.openTime,
+            closeTime: r.closeTime,
+            isClosed: r.isClosed,
+          })
+        )
+      );
+
+      const allOk = results.every((r) => r.success);
+      if (allOk) {
+        setSavedRows(rows.map((r) => ({ ...r })));
+        toast.success(
+          resolveLabel(
+            { zh: "所有营业时间已更新！", en: "Business hours updated!" },
+            langMode
+          )
+        );
+      } else {
+        toast.error("Failed to update some business hours.");
+      }
+    });
   }
 
   function handleSave(row: ScheduleRow) {
@@ -63,6 +124,9 @@ export function BusinessHoursForm({ initialSchedules }: BusinessHoursFormProps) 
       });
       if (result.success) {
         setSavedIdx(row.dayOfWeek);
+        setSavedRows((prev) =>
+          prev.map((r) => (r.dayOfWeek === row.dayOfWeek ? { ...row } : r))
+        );
         const dayName = resolveLabel(DAY_LABELS[row.dayOfWeek], langMode);
         toast.success(
           resolveLabel(
@@ -147,6 +211,15 @@ export function BusinessHoursForm({ initialSchedules }: BusinessHoursFormProps) 
           </Button>
         </div>
       ))}
+
+      {/* Floating Save Changes Dock */}
+      <FloatingSaveBtn
+        show={hasChanges}
+        onSave={handleSaveAll}
+        onDiscard={handleDiscard}
+        isPending={isPending}
+        langMode={langMode}
+      />
     </div>
   );
 }

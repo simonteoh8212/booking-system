@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useTransition } from "react";
 import { useBookingStore } from "@/stores/bookingStore";
 import { createBookingHold } from "@/actions/booking";
 import { Button } from "@/components/ui/button";
@@ -11,8 +12,8 @@ import { Separator } from "@/components/ui/separator";
 import { formatPrice } from "@/lib/utils";
 import { format } from "date-fns";
 import { ArrowLeft, ArrowRight, User, Loader2, AlertCircle } from "lucide-react";
-import { useState, useTransition } from "react";
 import { useCustomerLanguage } from "./CustomerLanguageContext";
+import { FloatingActionBtns } from "./FloatingActionBtns";
 
 export function StepCustomerForm() {
   const {
@@ -57,6 +58,7 @@ export function StepCustomerForm() {
         customerName: customerDetails.name,
         phoneNumber: customerDetails.phoneNumber.replace(/[\s-]/g, ""),
         notes: customerDetails.notes || undefined,
+        language,
       });
 
       if (result.success) {
@@ -173,39 +175,32 @@ export function StepCustomerForm() {
         </div>
       )}
 
-      {/* Floating Navigation Bar (like Desk Count Sales) */}
-      <div className="fixed bottom-3 inset-x-0 z-30 max-w-md mx-auto px-4 pointer-events-none">
-        <div className="p-3 sm:p-3.5 rounded-2xl border border-border/80 bg-card/95 backdrop-blur-md shadow-lg flex gap-3 pointer-events-auto">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={prevStep}
-            disabled={isPending}
-            className="flex-1 h-12 text-sm sm:text-base font-bold rounded-xl cursor-pointer border-border/80 bg-card hover:bg-muted"
-          >
+      {/* Floating Navigation Dock */}
+      <FloatingActionBtns
+        onBack={prevStep}
+        backDisabled={isPending}
+        backText={
+          <>
             <ArrowLeft className="h-4 w-4 mr-1.5" />
             {t.step3.back[language]}
-          </Button>
-          <Button
-            type="button"
-            onClick={handleContinue}
-            disabled={isPending}
-            className="flex-1 h-12 text-sm sm:text-base font-bold rounded-xl shadow-xs cursor-pointer"
-          >
-            {isPending ? (
-              <>
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                {t.step3.holding[language]}
-              </>
-            ) : (
-              <>
-                {t.step3.holdSlotAndPay[language]}
-                <ArrowRight className="h-4 w-4 ml-1.5" />
-              </>
-            )}
-          </Button>
-        </div>
-      </div>
+          </>
+        }
+        onAction={handleContinue}
+        actionDisabled={isPending}
+        isPending={isPending}
+        pendingText={
+          <>
+            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            {t.step3.holding[language]}
+          </>
+        }
+        actionText={
+          <>
+            {t.step3.holdSlotAndPay[language]}
+            <ArrowRight className="h-4 w-4 ml-1.5" />
+          </>
+        }
+      />
     </div>
   );
 }

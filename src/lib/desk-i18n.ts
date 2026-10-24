@@ -17,13 +17,12 @@ export interface LanguageOption {
 
 export const DESK_LANGUAGE_OPTIONS: LanguageOption[] = [
   {
-    id: "BILINGUAL_ZH_FIRST",
-    label: "中文优先 (双语)",
-    subLabel: "Chinese Priority",
-    flag: "🇨🇳",
-    description: "大号中文醒目突出，下方配小号英文注释（适合华人老板与多元化员工）",
-    previewPrimary: "收款开单",
-    previewSecondary: "Count Sales",
+    id: "ONLY_EN",
+    label: "English Only",
+    subLabel: "纯英文",
+    flag: "🇬🇧",
+    description: "Pure English interface without Chinese characters",
+    previewPrimary: "Count Sales",
   },
   {
     id: "BILINGUAL_EN_FIRST",
@@ -35,20 +34,21 @@ export const DESK_LANGUAGE_OPTIONS: LanguageOption[] = [
     previewSecondary: "收款开单",
   },
   {
+    id: "BILINGUAL_ZH_FIRST",
+    label: "中文优先 (双语)",
+    subLabel: "Chinese Priority",
+    flag: "🇨🇳",
+    description: "大号中文醒目突出，下方配小号英文注释（适合华人老板与多元化员工）",
+    previewPrimary: "收款开单",
+    previewSecondary: "Count Sales",
+  },
+  {
     id: "ONLY_ZH",
     label: "纯中文",
     subLabel: "Chinese Only",
     flag: "🇨🇳",
     description: "界面完全只显示中文，字体清晰简洁，无英文干扰",
     previewPrimary: "收款开单",
-  },
-  {
-    id: "ONLY_EN",
-    label: "English Only",
-    subLabel: "纯英文",
-    flag: "🇬🇧",
-    description: "Pure English interface without Chinese characters",
-    previewPrimary: "Count Sales",
   },
 ];
 
@@ -57,7 +57,7 @@ export const DESK_LANGUAGE_OPTIONS: LanguageOption[] = [
  */
 export function resolveDeskText(
   text: BilingualText,
-  mode: DeskLanguageMode = "BILINGUAL_ZH_FIRST"
+  mode: DeskLanguageMode = "ONLY_EN"
 ): { primary: string; secondary?: string } {
   switch (mode) {
     case "ONLY_ZH":
@@ -81,7 +81,7 @@ export function resolveDeskText(
  */
 export function resolveLabel(
   text: BilingualText,
-  mode: DeskLanguageMode = "BILINGUAL_ZH_FIRST"
+  mode: DeskLanguageMode = "ONLY_EN"
 ): string {
   switch (mode) {
     case "ONLY_ZH":
@@ -106,7 +106,7 @@ export function resolveLabel(
  */
 export function resolveServiceName(
   rawName: string,
-  mode: DeskLanguageMode = "BILINGUAL_ZH_FIRST"
+  mode: DeskLanguageMode = "ONLY_EN"
 ): { primary: string; secondary?: string } {
   let zh = rawName;
   let en = rawName;
@@ -267,9 +267,7 @@ export const DESK_DICT = {
     pmCash: { zh: "现金", en: "Cash" },
     pmTransfer: { zh: "转账", en: "Transfer" },
     pmTransferDuitnow: { zh: "转账", en: "DuitNow QR" },
-    pmTransferPayid: { zh: "转账", en: "PayID / QR" },
     pmCard: { zh: "刷卡", en: "Card" },
-    pmCardEftpos: { zh: "刷卡", en: "Card / EFTPOS" },
     totalToCollect: { zh: "应收总额", en: "Total to Collect" },
     confirmSaleBtn: { zh: "确认开单", en: "Review & Confirm Sale" },
     selectScheduledClient: {

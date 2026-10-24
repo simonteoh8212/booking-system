@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useRef } from "react";
 import { getBookings } from "@/actions/admin-bookings";
 import { AgendaCard } from "./AgendaCard";
 import { Button } from "@/components/ui/button";
@@ -30,6 +30,7 @@ import {
   ChevronLeft,
   ChevronRight,
   CalendarDays,
+  ArrowUp,
 } from "lucide-react";
 import type { BookingDto } from "@/types";
 import { cn, toBusinessDateString } from "@/lib/utils";
@@ -52,6 +53,7 @@ export function AgendaView({
   const [bookings, setBookings] = useState<BookingDto[]>(initialBookings);
   const [viewMode, setViewMode] = useState<"calendar" | "agenda">("calendar");
   const [isPending, startTransition] = useTransition();
+  const detailsRef = useRef<HTMLDivElement>(null);
 
   // Load bookings for a given month window
   function loadMonthBookings(month: Date) {
@@ -115,6 +117,19 @@ export function AgendaView({
     }
   }
 
+  function handleCalendarDayClick(day: Date) {
+    setSelectedDate(day);
+    if (!isSameMonth(day, currentMonth)) {
+      const newMonth = startOfMonth(day);
+      setCurrentMonth(newMonth);
+      loadMonthBookings(newMonth);
+    }
+    // Smoothly scroll down to the appointments details section below the calendar
+    setTimeout(() => {
+      detailsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 50);
+  }
+
   function handleUpdate(updated: BookingDto) {
     setBookings((prev) =>
       prev.map((b) => (b.id === updated.id ? updated : b))
@@ -172,7 +187,16 @@ export function AgendaView({
               <Calendar
                 mode="single"
                 selected={selectedDate}
-                onSelect={(d) => d && handleDateSelect(d)}
+                onSelect={(d) => {
+                  if (d) {
+                    handleDateSelect(d);
+                    if (viewMode === "calendar") {
+                      setTimeout(() => {
+                        detailsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+                      }, 50);
+                    }
+                  }
+                }}
               />
             </PopoverContent>
           </Popover>
@@ -277,7 +301,12 @@ export function AgendaView({
                 return (
                   <div
                     key={day.toISOString()}
-                    onClick={() => setSelectedDate(day)}
+                    onClick={() => handleCalendarDayClick(day)}
+                    title={
+                      count > 0
+                        ? `${count} appointment${count > 1 ? "s" : ""} · Click to view details below`
+                        : format(day, "d MMMM yyyy")
+                    }
                     className={cn(
                       "min-h-[75px] sm:min-h-[96px] p-2 flex flex-col justify-between cursor-pointer transition-all relative select-none",
                       !isCurrentMonth && "bg-muted/15 text-muted-foreground/45",
@@ -330,18 +359,32 @@ export function AgendaView({
           </div>
 
           {/* Selected Day Agenda Drawer below the Calendar */}
-          <div className="space-y-3 pt-1">
-            <div className="flex items-center justify-between">
+          <div ref={detailsRef} className="space-y-3 pt-1 scroll-mt-20">
+            <div className="flex items-center justify-between flex-wrap gap-2">
               <div className="flex items-center gap-2">
                 <CalendarDays className="h-4 w-4 text-primary" />
                 <h3 className="font-bold text-sm">
                   Appointments for {format(selectedDate, "EEEE, d MMMM yyyy")}
                 </h3>
               </div>
-              <span className="text-xs text-muted-foreground bg-muted px-2.5 py-1 rounded-full font-medium">
-                {selectedDayBookings.length}{" "}
-                {selectedDayBookings.length === 1 ? "booking" : "bookings"}
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground bg-muted px-2.5 py-1 rounded-full font-medium">
+                  {selectedDayBookings.length}{" "}
+                  {selectedDayBookings.length === 1 ? "booking" : "bookings"}
+                </span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    window.scrollTo({ top: 0, behavior: "smooth" });
+                  }}
+                  className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground gap-1"
+                  title="Scroll back up to calendar"
+                >
+                  <ArrowUp className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">Top</span>
+                </Button>
+              </div>
             </div>
 
             {selectedDayBookings.length === 0 ? (

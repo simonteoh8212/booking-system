@@ -70,10 +70,16 @@ export async function getDepositSetting(): Promise<ActionResult<DepositSettingDt
   try {
     const setting = await getOrEnsurePrimaryDepositSetting();
 
-    const currency = setting.currency || process.env.NEXT_PUBLIC_CURRENCY_CODE || "MYR";
-    const currencySymbol =
-      setting.currencySymbol ||
-      (currency === "AUD" ? "$" : (process.env.NEXT_PUBLIC_CURRENCY_SYMBOL || "RM"));
+    const currency = "MYR";
+    const currencySymbol = "RM";
+
+    // Auto-heal DB if it previously had AUD or $
+    if (setting.currency === "AUD" || setting.currencySymbol === "$") {
+      await prisma.depositSetting.update({
+        where: { id: setting.id },
+        data: { currency: "MYR", currencySymbol: "RM" },
+      });
+    }
 
     return {
       success: true,
@@ -120,8 +126,8 @@ export async function updateDepositSetting(
       recipientName = parsed.recipientName;
     }
 
-    const currency = input.currency === "AUD" ? "AUD" : "MYR";
-    const currencySymbol = currency === "AUD" ? "$" : (input.currencySymbol || "RM");
+    const currency = "MYR";
+    const currencySymbol = "RM";
     const deskLanguage = input.deskLanguage || "BILINGUAL_ZH_FIRST";
 
     // Find primary canonical row
@@ -211,8 +217,8 @@ export async function updateDeskLanguageSetting(
  * Fast direct updater for Desk currency (used by quick switcher or settings)
  */
 export async function updateDeskCurrencySetting(
-  currency: "MYR" | "AUD",
-  currencySymbol: "RM" | "$"
+  currency: string = "MYR",
+  currencySymbol: string = "RM"
 ): Promise<ActionResult<{ currency: string; currencySymbol: string }>> {
   await requireAdmin();
   try {
@@ -220,7 +226,7 @@ export async function updateDeskCurrencySetting(
 
     const updated = await prisma.depositSetting.update({
       where: { id: primary.id },
-      data: { currency, currencySymbol },
+      data: { currency: "MYR", currencySymbol: "RM" },
     });
 
     revalidatePath("/admin/desk", "page");

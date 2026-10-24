@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { KeyRound, Eye, EyeOff, Loader2, ShieldCheck } from "lucide-react";
 import { useDeskLanguage } from "@/lib/use-desk-language";
 import { resolveLabel } from "@/lib/desk-i18n";
+import { FloatingSaveBtn } from "@/components/admin/FloatingSaveBtn";
 
 interface AdminPinSettingsFormProps {
   currentPin: string;
@@ -197,61 +198,21 @@ export function AdminPinSettingsForm({ currentPin: initialPin }: AdminPinSetting
       </Card>
 
       {/* Floating Save Changes Dock */}
-      <div
-        className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 w-[calc(100%-2rem)] max-w-xl transition-all duration-300 ease-out ${
-          hasChanges
-            ? "translate-y-0 opacity-100 scale-100 pointer-events-auto"
-            : "translate-y-12 opacity-0 scale-95 pointer-events-none"
-        }`}
-      >
-        <div className="bg-foreground text-background dark:bg-card dark:text-foreground dark:border dark:border-border shadow-2xl rounded-2xl p-3 sm:px-5 sm:py-3.5 flex items-center justify-between gap-3 backdrop-blur-xl ring-1 ring-black/10 dark:ring-white/10">
-          <div className="flex items-center gap-3 min-w-0">
-            <span className="relative flex h-2.5 w-2.5 shrink-0">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500"></span>
-            </span>
-            <div className="min-w-0">
-              <p className="text-xs sm:text-sm font-bold truncate">
-                {resolveLabel({ zh: "未保存的新密码", en: "Unsaved Changes" }, langMode)}
-              </p>
-              <p className="text-[11px] opacity-70 hidden sm:block truncate">
-                {newPin.length === 4 && confirmPin.length === 4
-                  ? resolveLabel({ zh: "新 4 位密码已就绪，点击保存生效。", en: "New 4-digit passcode ready to save." }, langMode)
-                  : resolveLabel({ zh: "请输入并确认 4 位数字密码。", en: "Enter and confirm your 4-digit PIN." }, langMode)}
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 shrink-0">
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              disabled={isPending}
-              onClick={handleDiscard}
-              className="h-9 px-3 text-xs sm:text-sm font-semibold opacity-80 hover:opacity-100 hover:bg-background/10 dark:hover:bg-muted cursor-pointer rounded-xl text-inherit"
-            >
-              {resolveLabel({ zh: "放弃", en: "Discard" }, langMode)}
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              onClick={() => handleSubmit()}
-              disabled={isPending || newPin.length !== 4 || confirmPin.length !== 4}
-              className="h-9 sm:h-10 px-4 sm:px-5 rounded-xl font-bold bg-background text-foreground hover:bg-background/90 dark:bg-primary dark:text-primary-foreground dark:hover:bg-primary/90 shadow-sm cursor-pointer gap-2 disabled:opacity-50"
-            >
-              {isPending ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  {resolveLabel({ zh: "保存中…", en: "Saving..." }, langMode)}
-                </>
-              ) : (
-                resolveLabel({ zh: "保存新密码", en: "Save Changes" }, langMode)
-              )}
-            </Button>
-          </div>
-        </div>
-      </div>
+      <FloatingSaveBtn
+        show={hasChanges}
+        onSave={() => handleSubmit()}
+        onDiscard={handleDiscard}
+        isPending={isPending}
+        disabled={newPin.length !== 4 || confirmPin.length !== 4}
+        title={resolveLabel({ zh: "未保存的新密码", en: "Unsaved Changes" }, langMode)}
+        description={
+          newPin.length === 4 && confirmPin.length === 4
+            ? resolveLabel({ zh: "新 4 位密码已就绪，点击保存生效。", en: "New 4-digit passcode ready to save." }, langMode)
+            : resolveLabel({ zh: "请输入并确认 4 位数字密码。", en: "Enter and confirm your 4-digit PIN." }, langMode)
+        }
+        saveText={resolveLabel({ zh: "保存新密码", en: "Save Changes" }, langMode)}
+        langMode={langMode}
+      />
     </>
   );
 }

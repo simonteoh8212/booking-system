@@ -130,9 +130,14 @@ export async function updateAdminPin(newPin: string): Promise<ActionResult<void>
 // ----------------------------------------------------------------
 // Admin logout / Lock Desk
 // ----------------------------------------------------------------
-export async function adminLogout(): Promise<void> {
-  await clearSession();
-  redirect("/admin/login");
+export async function adminLogout(): Promise<ActionResult<void>> {
+  try {
+    await clearSession();
+    return { success: true, data: undefined };
+  } catch (error) {
+    console.error("[adminLogout]", error);
+    return { success: false, error: "Logout failed" };
+  }
 }
 
 export async function lockDeskSession(): Promise<void> {

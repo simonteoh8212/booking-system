@@ -53,9 +53,13 @@ export default async function BookingPage() {
 
         {/* Footer */}
         <footer className="text-center text-xs text-muted-foreground pb-8 mt-4 space-y-2">
-          <p>
+          <p className="flex items-center justify-center gap-3">
             <Link href="/check-booking" className="hover:underline text-primary font-medium">
               Track an existing booking / 查询已有预约
+            </Link>
+            <span>•</span>
+            <Link href="/demo" className="hover:underline text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1">
+              <span>▶ Watch Demo Video / 功能演示视频</span>
             </Link>
           </p>
           <p>Secure booking powered by BookEase</p>

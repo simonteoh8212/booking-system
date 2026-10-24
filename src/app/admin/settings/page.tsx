@@ -49,7 +49,7 @@ export default async function SettingsPage() {
         recipientName: "TEOH CHUN SEONG",
         currency: "MYR",
         currencySymbol: "RM",
-        deskLanguage: "BILINGUAL_ZH_FIRST" as const,
+        deskLanguage: "ONLY_EN" as const,
         showTodaySales: true,
         showYesterdaySales: true,
         showMonthlySales: true,
@@ -62,7 +62,7 @@ export default async function SettingsPage() {
   const cookieStore = await cookies();
   const cookieLang = cookieStore.get("app_desk_language")?.value as DeskLanguageMode | undefined;
   const activeLang: DeskLanguageMode =
-    cookieLang || depositSetting.deskLanguage || "BILINGUAL_ZH_FIRST";
+    cookieLang || depositSetting.deskLanguage || "ONLY_EN";
 
   return (
     <div className="space-y-8">

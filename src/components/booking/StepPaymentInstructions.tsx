@@ -10,6 +10,7 @@ import { formatPrice, cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { getOperatingHoursInfo } from "@/lib/operating-hours";
 import { useCustomerLanguage } from "./CustomerLanguageContext";
+import { FloatingActionBtns } from "./FloatingActionBtns";
 import {
   ArrowLeft,
   Loader2,
@@ -84,7 +85,7 @@ export function StepPaymentInstructions() {
 
     startTransition(async () => {
       setSubmitError(null);
-      const result = await confirmBookingReceipt(pendingHold.referenceCode);
+      const result = await confirmBookingReceipt(pendingHold.referenceCode, language);
 
       if (result.success) {
         setConfirmation(result.data);
@@ -99,9 +100,13 @@ export function StepPaymentInstructions() {
 
   // Pre-filled fallback WhatsApp message for reschedule/refund if timer expired but money was sent
   const fallbackHelpUrl = `https://wa.me/${MERCHANT_WHATSAPP.replace(/\D/g, "")}?text=${encodeURIComponent(
-    `Hi, I made a booking for ${selectedService?.name ?? "appointment"} (${
-      selectedSlotStart ? format(new Date(selectedSlotStart), "d MMM yyyy, h:mm a") : ""
-    }), Reference: ${pendingHold?.referenceCode ?? "N/A"}. My session timed out. Please assist me.`
+    language === "zh"
+      ? `您好，我预约了 ${selectedService?.name ?? "服务"} (${
+          selectedSlotStart ? format(new Date(selectedSlotStart), "yyyy年M月d日 h:mm a") : ""
+        })，预约单号: ${pendingHold?.referenceCode ?? "无"}。付款倒计时已过期，请协助我处理。谢谢！`
+      : `Hi, I made a booking for ${selectedService?.name ?? "appointment"} (${
+          selectedSlotStart ? format(new Date(selectedSlotStart), "d MMM yyyy, h:mm a") : ""
+        }), Reference: ${pendingHold?.referenceCode ?? "N/A"}. My session timed out. Please assist me.`
   )}`;
 
   return (
@@ -501,69 +506,57 @@ export function StepPaymentInstructions() {
         </div>
       )}
 
-      {/* Navigation Buttons */}
-      <div className="flex gap-3">
-        {isExpired ? (
-          <Button
-            variant="outline"
-            onClick={() => goToStep(2)}
-            className="w-full gap-2 font-semibold"
-          >
-            <RotateCcw className="h-4 w-4" />
-            {language === "zh" ? "重新选择预约时段" : "Pick Another Time Slot"}
-          </Button>
-        ) : (
-          <>
-            <Button
-              variant="outline"
-              onClick={prevStep}
-              disabled={isPending}
-              className="flex-1"
-            >
-              <ArrowLeft className="h-4 w-4 mr-2" />
+      {/* Floating Navigation Dock */}
+      {isExpired ? (
+        <FloatingActionBtns
+          onAction={() => goToStep(2)}
+          actionVariant="outline"
+          actionText={
+            <>
+              <RotateCcw className="h-4 w-4 mr-2" />
+              {language === "zh" ? "重新选择预约时段" : "Pick Another Time Slot"}
+            </>
+          }
+        />
+      ) : (
+        <FloatingActionBtns
+          onBack={prevStep}
+          backDisabled={isPending}
+          backText={
+            <>
+              <ArrowLeft className="h-4 w-4 mr-1.5" />
               {t.step2.back[language]}
-            </Button>
-
-            {isDepositExempt ? (
-              <Button
-                onClick={handleConfirmReceipt}
-                disabled={isPending || isExpired}
-                className="flex-1 bg-amber-600 hover:bg-amber-700 text-white font-bold h-12 gap-2 shadow-md"
-              >
-                {isPending ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    {t.step4.submitting[language]}
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle2 className="h-4 w-4" />
-                    {t.step4.vipConfirmBtn[language]}
-                  </>
-                )}
-              </Button>
+            </>
+          }
+          onAction={handleConfirmReceipt}
+          actionDisabled={isPending || isExpired}
+          isPending={isPending}
+          pendingText={
+            <>
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              {t.step4.submitting[language]}
+            </>
+          }
+          actionClassName={
+            isDepositExempt
+              ? "bg-amber-600 hover:bg-amber-700 text-white font-bold"
+              : "bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow-md"
+          }
+          actionText={
+            isDepositExempt ? (
+              <>
+                <CheckCircle2 className="h-4 w-4 mr-2" />
+                {t.step4.vipConfirmBtn[language]}
+              </>
             ) : (
-              <Button
-                onClick={handleConfirmReceipt}
-                disabled={isPending || isExpired}
-                className="flex-1 bg-green-600 hover:bg-green-700 text-white font-bold h-12 gap-2 shadow-md"
-              >
-                {isPending ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    {t.step4.submitting[language]}
-                  </>
-                ) : (
-                  <>
-                    <MessageCircle className="h-4 w-4" />
-                    {t.step4.ivePaidBtn[language]}
-                  </>
-                )}
-              </Button>
-            )}
-          </>
-        )}
-      </div>
+              <>
+                <MessageCircle className="h-4 w-4 mr-2" />
+                {t.step4.ivePaidBtn[language]}
+              </>
+            )
+          }
+        />
+      )}
 
       {/* Full-Screen QR Zoom Modal */}
       {isQrZoomed && pendingHold?.qrImageUrl && (

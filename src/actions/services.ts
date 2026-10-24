@@ -82,10 +82,22 @@ export async function updateService(
 export async function deleteService(id: string): Promise<ActionResult<void>> {
   await requireAdmin();
   try {
-    await prisma.service.delete({ where: { id } });
+    await prisma.$transaction(async (tx) => {
+      // 1. Delete associated booking items first (foreign key constraint)
+      await tx.bookingItem.deleteMany({ where: { serviceId: id } });
+      // 2. Delete any bookings referencing this service directly
+      await tx.booking.deleteMany({ where: { serviceId: id } });
+      // 3. Delete the service itself
+      await tx.service.delete({ where: { id } });
+    });
+
     revalidatePath("/admin/services");
+    revalidatePath("/admin/bookings");
+    revalidatePath("/admin");
     return { success: true, data: undefined };
-  } catch {
-    return { success: false, error: "Failed to delete service." };
+  } catch (error) {
+    console.error("[deleteService]", error);
+    const msg = error instanceof Error ? error.message : "Failed to delete service.";
+    return { success: false, error: msg };
   }
 }

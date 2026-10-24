@@ -68,7 +68,13 @@ function CheckBookingContent() {
     setTimeout(() => setIsCooldown(false), 1200);
 
     startTransition(async () => {
-      const result = await lookupBookingStatus(searchQuery, honeypot);
+      let lang: "en" | "zh" = "en";
+      try {
+        const stored = localStorage.getItem("customer_language");
+        if (stored === "zh" || stored === "en") lang = stored;
+      } catch {}
+
+      const result = await lookupBookingStatus(searchQuery, honeypot, lang);
       if (result.success) {
         setBooking(result.data);
       } else {

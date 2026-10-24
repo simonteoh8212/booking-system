@@ -6,6 +6,7 @@ import type { ServiceDto } from "@/types";
 import { Button } from "@/components/ui/button";
 import { ArrowRight, Sparkles } from "lucide-react";
 import { useCustomerLanguage } from "./CustomerLanguageContext";
+import { FloatingActionBtns } from "./FloatingActionBtns";
 
 interface StepServiceSelectProps {
   services: ServiceDto[];
@@ -63,21 +64,18 @@ export function StepServiceSelect({ services }: StepServiceSelectProps) {
         ))}
       </div>
 
-      {/* Floating Continue Bar (like Desk Count Sales) */}
-      <div className="fixed bottom-3 inset-x-0 z-30 max-w-md mx-auto px-4 pointer-events-none">
-        <div className="p-3 sm:p-3.5 rounded-2xl border border-border/80 bg-card/95 backdrop-blur-md shadow-lg pointer-events-auto">
-          <Button
-            type="button"
-            onClick={nextStep}
-            disabled={!selectedService}
-            className="w-full h-12 text-base font-bold rounded-xl shadow-xs cursor-pointer"
-            size="lg"
-          >
+      {/* Floating Continue Dock */}
+      <FloatingActionBtns
+        showBack={false}
+        onAction={nextStep}
+        actionDisabled={!selectedService}
+        actionText={
+          <>
             {t.step2.continue[language]}
             <ArrowRight className="h-4 w-4 ml-2" />
-          </Button>
-        </div>
-      </div>
+          </>
+        }
+      />
     </div>
   );
 }

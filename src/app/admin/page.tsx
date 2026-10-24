@@ -36,7 +36,7 @@ export default async function AdminDashboardPage() {
         monthLabel: "This Month",
         currency: "MYR",
         currencySymbol: "RM",
-        deskLanguage: "BILINGUAL_ZH_FIRST" as const,
+        deskLanguage: "ONLY_EN" as const,
         showTodaySales: true,
         showYesterdaySales: true,
         showMonthlySales: true,
@@ -46,7 +46,7 @@ export default async function AdminDashboardPage() {
         showBookedCheckout: true,
         servicesBreakdown: [],
       };
-
+      console.log("ADMIN")
   return (
     <div className="space-y-8">
       {/* Top Sales KPI Cards: Today, Yesterday, Monthly */}

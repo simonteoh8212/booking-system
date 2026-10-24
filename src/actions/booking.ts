@@ -157,12 +157,13 @@ interface CreateBookingInput {
   customerName: string;
   phoneNumber: string;
   notes?: string;
+  language?: "en" | "zh";
 }
 
 export async function createBookingHold(
   input: CreateBookingInput
 ): Promise<ActionResult<BookingConfirmation>> {
-  const { serviceId, startDatetimeIso, customerName, phoneNumber, notes } = input;
+  const { serviceId, startDatetimeIso, customerName, phoneNumber, notes, language } = input;
 
   try {
     const service = await prisma.service.findUnique({ where: { id: serviceId } });
@@ -173,17 +174,26 @@ export async function createBookingHold(
     const startDatetime = new Date(startDatetimeIso);
     const endDatetime = addMinutes(startDatetime, service.durationMinutes);
 
-    // Check deposit configuration & regular customer exemption
+    // Check deposit configuration & regular customer exemption safely
     const normalizedPhone = normalizePhoneNumber(phoneNumber);
 
-    const [depositSetting, exemptCustomer] = await Promise.all([
-      prisma.depositSetting.findFirst({
+    let depositSetting = null;
+    let exemptCustomer = null;
+    try {
+      depositSetting = await prisma.depositSetting.findFirst({
         orderBy: { updatedAt: "desc" },
-      }),
-      prisma.depositExemptCustomer.findFirst({
+      });
+    } catch (err) {
+      console.warn("[createBookingHold] depositSetting query notice:", err);
+    }
+
+    try {
+      exemptCustomer = await prisma.depositExemptCustomer.findFirst({
         where: { phoneNumber: normalizedPhone, isActive: true },
-      }),
-    ]);
+      });
+    } catch (err) {
+      console.warn("[createBookingHold] depositExemptCustomer query notice:", err);
+    }
 
     const isDepositExempt = Boolean(exemptCustomer);
 
@@ -205,10 +215,7 @@ export async function createBookingHold(
 
     // Re-validate slot availability inside transaction to prevent race conditions
     const result = await prisma.$transaction(async (tx) => {
-      // 1. Acquire transaction-level advisory lock to serialize concurrent reservation attempts
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('booking_reservation_lock'))`;
-
-      // 2. Auto-release expired unsubmitted PENDING holds (older than 7 minutes)
+      // 1. Auto-release expired unsubmitted PENDING holds (older than 7 minutes)
       const holdCutoff = subMinutes(new Date(), HOLD_DURATION_MINUTES);
       await tx.booking.updateMany({
         where: {
@@ -322,6 +329,7 @@ export async function createBookingHold(
       depositDueCents: result.booking.depositDueCents,
       balanceDueCents: result.booking.balanceDueCents,
       isDepositExempt,
+      language: language ?? "en",
     });
 
     const confirmation: BookingConfirmation = {
@@ -358,8 +366,16 @@ export async function createBookingHold(
         };
       }
     }
+
     console.error("[createBookingHold]", error);
-    return { success: false, error: "Failed to hold slot. Please try again." };
+    const detail = error instanceof Error ? error.message : "Failed to hold slot. Please try again.";
+    return {
+      success: false,
+      error:
+        process.env.NODE_ENV === "development"
+          ? `Failed to hold slot: ${detail}`
+          : "Failed to hold slot. Please try again.",
+    };
   }
 }
 
@@ -374,7 +390,8 @@ export async function createBooking(
 // confirmBookingReceipt (Stage 2: Customer submitted receipt — permanently locked)
 // ----------------------------------------------------------------
 export async function confirmBookingReceipt(
-  referenceCode: string
+  referenceCode: string,
+  language: "en" | "zh" = "en"
 ): Promise<ActionResult<BookingConfirmation>> {
   try {
     const booking = await prisma.booking.findUnique({
@@ -416,6 +433,7 @@ export async function confirmBookingReceipt(
       depositDueCents: updated.depositDueCents,
       balanceDueCents: updated.balanceDueCents,
       isDepositExempt: isExempt,
+      language,
     });
 
     return {
@@ -459,7 +477,8 @@ async function getClientIp(): Promise<string> {
 // ----------------------------------------------------------------
 export async function lookupBookingStatus(
   query: string,
-  honeypot?: string
+  honeypot?: string,
+  language: "en" | "zh" = "en"
 ): Promise<ActionResult<CustomerBookingLookupDto>> {
   try {
     // 1. Bot Trap (Honeypot check)
@@ -582,6 +601,7 @@ export async function lookupBookingStatus(
       totalPriceCents: booking.totalPriceCents,
       depositDueCents: booking.depositDueCents,
       balanceDueCents: booking.balanceDueCents,
+      language,
     });
 
     const phone = booking.customer.phoneNumber;

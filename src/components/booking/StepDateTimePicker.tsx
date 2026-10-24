@@ -12,6 +12,7 @@ import { ArrowLeft, ArrowRight, CalendarIcon, Clock, Loader2 } from "lucide-reac
 import { Skeleton } from "@/components/ui/skeleton";
 import type { TimeSlot } from "@/types";
 import { useCustomerLanguage } from "./CustomerLanguageContext";
+import { FloatingActionBtns } from "./FloatingActionBtns";
 
 export function StepDateTimePicker() {
   const {
@@ -144,39 +145,34 @@ export function StepDateTimePicker() {
         </div>
       )}
 
-      {/* Floating Navigation Bar (like Desk Count Sales) */}
-      <div className="fixed bottom-3 inset-x-0 z-30 max-w-md mx-auto px-4 pointer-events-none">
-        <div className="p-3 sm:p-3.5 rounded-2xl border border-border/80 bg-card/95 backdrop-blur-md shadow-lg flex flex-col gap-2 pointer-events-auto">
-          {selectedSlotStart && (
+      {/* Floating Navigation Dock */}
+      <FloatingActionBtns
+        topContent={
+          selectedSlotStart && (
             <div className="flex items-center justify-between text-xs px-1 text-muted-foreground font-medium">
               <span>{language === "zh" ? "已选时段" : "Selected slot"}</span>
               <span className="font-bold text-foreground">
                 {format(new Date(selectedSlotStart), "h:mm a")}
               </span>
             </div>
-          )}
-          <div className="flex gap-3">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={prevStep}
-              className="flex-1 h-12 text-sm sm:text-base font-bold rounded-xl cursor-pointer border-border/80 bg-card hover:bg-muted"
-            >
-              <ArrowLeft className="h-4 w-4 mr-1.5" />
-              {t.step2.back[language]}
-            </Button>
-            <Button
-              type="button"
-              onClick={nextStep}
-              disabled={!canContinue}
-              className="flex-1 h-12 text-sm sm:text-base font-bold rounded-xl shadow-xs cursor-pointer"
-            >
-              {t.step2.continue[language]}
-              <ArrowRight className="h-4 w-4 ml-1.5" />
-            </Button>
-          </div>
-        </div>
-      </div>
+          )
+        }
+        onBack={prevStep}
+        backText={
+          <>
+            <ArrowLeft className="h-4 w-4 mr-1.5" />
+            {t.step2.back[language]}
+          </>
+        }
+        onAction={nextStep}
+        actionDisabled={!canContinue}
+        actionText={
+          <>
+            {t.step2.continue[language]}
+            <ArrowRight className="h-4 w-4 ml-1.5" />
+          </>
+        }
+      />
     </div>
   );
 }

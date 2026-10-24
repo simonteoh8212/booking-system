@@ -11,7 +11,7 @@ interface PinKeypadProps {
 }
 
 export function PinKeypad({
-  onSuccessRedirect = "/admin/desk",
+  onSuccessRedirect = "/admin",
   onSwitchToPassword,
   compact = false,
 }: PinKeypadProps) {

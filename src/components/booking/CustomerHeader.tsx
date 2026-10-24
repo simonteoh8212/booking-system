@@ -24,7 +24,7 @@ export function CustomerHeader({ businessName = "Our Salon" }: CustomerHeaderPro
             <h1 className="font-black text-sm leading-tight text-foreground truncate">
               {businessName}
             </h1>
-            <p className="text-[11px] text-muted-foreground font-medium">
+            <p className="text-[11px] text-muted-foreground font-medium" suppressHydrationWarning>
               {t.header.onlineBooking[language]}
             </p>
           </div>

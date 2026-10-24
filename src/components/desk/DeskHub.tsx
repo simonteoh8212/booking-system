@@ -11,7 +11,6 @@ import {
 } from "@/actions/desk";
 import {
   updateDeskLanguageSetting,
-  updateDeskCurrencySetting,
 } from "@/actions/deposit";
 import { formatPrice, getServiceImage } from "@/lib/utils";
 import Image from "next/image";
@@ -77,25 +76,12 @@ export function DeskHub({
 }: DeskHubProps) {
   const [view, setView] = useState<"HUB" | "APPOINTMENTS" | "COUNT_SALES" | "FINANCIAL_REPORT">("HUB");
   const [isPinDialogOpen, setIsPinDialogOpen] = useState(false);
-  const [summary, setSummary] = useState<DeskDailySummary>(() => {
-    if (typeof window !== "undefined") {
-      try {
-        const raw = localStorage.getItem("desk_settings_visibility");
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          return { ...initialSummary, ...parsed };
-        }
-      } catch {}
-    }
-    return initialSummary;
-  });
+  const [summary, setSummary] = useState<DeskDailySummary>(initialSummary);
   const [appointments, setAppointments] = useState<DeskAppointmentItem[]>(initialAppointments);
   const [preSelectedAppointmentId, setPreSelectedAppointmentId] = useState<string>("");
-  const [currencySymbol, setCurrencySymbol] = useState<string>(
-    initialSummary.currencySymbol || "RM"
-  );
+  const [currencySymbol, setCurrencySymbol] = useState<string>("RM");
   const [languageMode, setLanguageMode] = useState<DeskLanguageMode>(
-    initialSummary.deskLanguage || "BILINGUAL_ZH_FIRST"
+    initialSummary.deskLanguage || "ONLY_EN"
   );
   const [showFirstTimeLangModal, setShowFirstTimeLangModal] = useState(false);
   // Backend visibility flags controlled in Admin Settings
@@ -119,15 +105,7 @@ export function DeskHub({
   const [isPending, startTransition] = useTransition();
 
   // Collapsible toggle for Today's Service Sales Breakdown (default collapsed to avoid POS button confusion)
-  const [isBreakdownExpanded, setIsBreakdownExpanded] = useState<boolean>(() => {
-    if (typeof window !== "undefined") {
-      try {
-        const stored = localStorage.getItem("desk_breakdown_expanded");
-        return stored === "true";
-      } catch {}
-    }
-    return false;
-  });
+  const [isBreakdownExpanded, setIsBreakdownExpanded] = useState<boolean>(false);
 
   function toggleBreakdownExpanded() {
     setIsBreakdownExpanded((prev) => {
@@ -175,12 +153,10 @@ export function DeskHub({
       showBookedCheckout: localVisibility.showBookedCheckout ?? (prev.showBookedCheckout === false ? false : initialSummary.showBookedCheckout),
     }));
 
-    if (initialSummary.currencySymbol) {
-      setCurrencySymbol(initialSummary.currencySymbol);
-      try {
-        localStorage.setItem("app_currency_symbol", initialSummary.currencySymbol);
-      } catch {}
-    }
+    setCurrencySymbol("RM");
+    try {
+      localStorage.setItem("app_currency_symbol", "RM");
+    } catch {}
     if (initialSummary.deskLanguage) {
       setLanguageMode(initialSummary.deskLanguage);
     }
@@ -190,10 +166,8 @@ export function DeskHub({
   useEffect(() => {
     if (typeof window !== "undefined") {
       try {
-        const storedSymbol = localStorage.getItem("app_currency_symbol");
-        if (storedSymbol === "$" || storedSymbol === "RM") {
-          setCurrencySymbol(storedSymbol);
-        }
+        setCurrencySymbol("RM");
+        localStorage.setItem("app_currency_symbol", "RM");
         const storedLang = localStorage.getItem("app_desk_language") as DeskLanguageMode | null;
         const hasSelectedBefore = localStorage.getItem("desk_language_selected");
         if (
@@ -214,6 +188,9 @@ export function DeskHub({
         const storedMonth = localStorage.getItem("desk_show_month_sales");
         if (storedMonth !== null) setRevealMonthSales(storedMonth === "true");
 
+        const storedBreakdown = localStorage.getItem("desk_breakdown_expanded");
+        if (storedBreakdown !== null) setIsBreakdownExpanded(storedBreakdown === "true");
+
         const storedVisibility = localStorage.getItem("desk_settings_visibility");
         if (storedVisibility) {
           try {
@@ -227,8 +204,7 @@ export function DeskHub({
       } catch {}
 
       const handleStorage = () => {
-        const updated = localStorage.getItem("app_currency_symbol");
-        if (updated === "$" || updated === "RM") setCurrencySymbol(updated);
+        setCurrencySymbol("RM");
       };
       const handleFocus = () => refreshData();
 
@@ -271,21 +247,6 @@ export function DeskHub({
     });
   }
 
-  // Handle fast currency toggle directly from desk header
-  function handleCurrencyToggle() {
-    const nextSymbol = currencySymbol === "$" ? "RM" : "$";
-    const nextCurr = nextSymbol === "$" ? "AUD" : "MYR";
-    setCurrencySymbol(nextSymbol);
-    setSummary((prev) => ({ ...prev, currency: nextCurr, currencySymbol: nextSymbol }));
-    if (typeof window !== "undefined") {
-      try {
-        localStorage.setItem("app_currency_symbol", nextSymbol);
-      } catch {}
-    }
-    startTransition(async () => {
-      await updateDeskCurrencySetting(nextCurr, nextSymbol);
-    });
-  }
 
   // Handle fast language switch directly from the desk header
   function handleLanguageChange(newMode: DeskLanguageMode) {
@@ -756,7 +717,7 @@ export function DeskHub({
               />
             </Badge>
           </div>
-          <p className="text-xs sm:text-base font-bold text-muted-foreground truncate">
+          <p className="text-xs sm:text-base font-bold text-muted-foreground truncate" suppressHydrationWarning>
             {format(new Date(), "EEEE, d MMMM yyyy")}
           </p>
         </div>
@@ -781,19 +742,7 @@ export function DeskHub({
             />
           </Button>
 
-          {/* Quick Currency Toggle Pill */}
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={handleCurrencyToggle}
-            disabled={isPending}
-            className="h-12 px-3.5 rounded-2xl flex items-center gap-1.5 font-bold hover:bg-muted text-sm shadow-xs border-2 cursor-pointer"
-            title="Switch Currency (AUD $ / MYR RM) / 切换货币"
-          >
-            <span suppressHydrationWarning className="text-base">{currencySymbol === "$" ? "🇦🇺" : "🇲🇾"}</span>
-            <span suppressHydrationWarning className="font-mono text-foreground">{currencySymbol}</span>
-          </Button>
+
 
           {/* Quick Language Switcher Dropdown */}
           <DeskLanguageSwitcher
@@ -1252,23 +1201,18 @@ export function DeskHub({
 
               <Separator className="my-2" />
 
-              {/* Currency Toggle */}
-              <button
-                type="button"
-                onClick={handleCurrencyToggle}
-                disabled={isPending}
-                className="w-full h-12 px-3.5 rounded-xl border border-border/80 bg-card hover:bg-muted font-bold text-sm flex items-center justify-between cursor-pointer transition-colors"
-              >
+              {/* Currency Display */}
+              <div className="w-full h-12 px-3.5 rounded-xl border border-border/80 bg-muted/30 font-bold text-sm flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
-                  <span suppressHydrationWarning className="text-base">{currencySymbol === "$" ? "🇦🇺" : "🇲🇾"}</span>
+                  <span className="text-base">🇲🇾</span>
                   <span className="text-xs text-muted-foreground">
                     {resolveDeskText(DESK_DICT.header.currency, languageMode).primary}
                   </span>
                 </div>
-                <span suppressHydrationWarning className="font-mono font-bold text-sm text-foreground bg-muted px-2.5 py-1 rounded-lg">
-                  {currencySymbol} ({currencySymbol === "$" ? "AUD" : "MYR"})
+                <span className="font-mono font-bold text-xs text-foreground bg-background border px-2 py-0.5 rounded-md">
+                  RM (MYR)
                 </span>
-              </button>
+              </div>
 
               {/* Language Switcher in Mobile Drawer */}
               <div className="pt-1">

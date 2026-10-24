@@ -223,13 +223,8 @@ export async function getDeskDailySummary(
     );
     const monthCompletedCount = monthBookings.length;
 
-    const currency =
-      depositSetting?.currency || process.env.NEXT_PUBLIC_CURRENCY_CODE || "MYR";
-    const currencySymbol =
-      depositSetting?.currencySymbol ||
-      (currency === "AUD"
-        ? "$"
-        : (process.env.NEXT_PUBLIC_CURRENCY_SYMBOL || "RM"));
+    const currency = "MYR";
+    const currencySymbol = "RM";
     const deskLanguage =
       (depositSetting?.deskLanguage as DeskLanguageMode) || "BILINGUAL_ZH_FIRST";
     const showTodaySales = depositSetting?.showTodaySales ?? true;

@@ -2,6 +2,7 @@
 
 import { useBookingStore } from "@/stores/bookingStore";
 import { formatPrice } from "@/lib/utils";
+import { buildWhatsAppUrl } from "@/lib/whatsapp";
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -35,6 +36,20 @@ export function BookingConfirmation() {
   }
 
   const isDepositExempt = !!confirmation.isDepositExempt;
+
+  // Dynamically build WhatsApp URL based on the user's active language
+  const dynamicWhatsappUrl = buildWhatsAppUrl({
+    referenceCode: confirmation.referenceCode,
+    serviceName: confirmation.serviceName,
+    startDatetime: new Date(confirmation.startDatetime),
+    customerName: confirmation.customerName,
+    totalPriceCents: confirmation.totalPriceCents,
+    depositDueCents: confirmation.depositDueCents,
+    balanceDueCents: confirmation.balanceDueCents,
+    isDepositExempt,
+    currencySymbol,
+    language,
+  });
 
   return (
     <div className="space-y-6 text-center">
@@ -241,7 +256,7 @@ export function BookingConfirmation() {
 
       {/* WhatsApp CTA */}
       <a
-        href={confirmation.whatsappUrl}
+        href={dynamicWhatsappUrl}
         target="_blank"
         rel="noopener noreferrer"
         className="block"

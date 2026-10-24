@@ -1,6 +1,6 @@
 // Service Worker for Salon POS — App Shell Cache
 // Bump CACHE_VERSION whenever you want all clients to get a fresh cache.
-const CACHE_VERSION = 'v1';
+const CACHE_VERSION = 'v2';
 const CACHE_NAME = `salon-pos-${CACHE_VERSION}`;
 
 // Assets to pre-cache on SW install.
@@ -44,16 +44,20 @@ self.addEventListener('fetch', (event) => {
   // Only handle GET requests from our own origin
   if (request.method !== 'GET' || url.origin !== self.location.origin) return;
 
-  // Never intercept API routes — always go to network for fresh data
-  if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/_next/data/')) return;
+  // Never intercept admin, login, or API routes — always go directly to network
+  if (
+    url.pathname.startsWith('/admin') ||
+    url.pathname.startsWith('/api/') ||
+    url.pathname.startsWith('/_next/data/')
+  ) {
+    return;
+  }
 
-  // ── Navigation requests (HTML page loads, e.g. tapping the home screen icon) ──
+  // ── Navigation requests for home screen launch (Root / only) ──
   // Strategy: Cache-first, then update cache in background.
-  // This is what eliminates the black screen: the cached HTML is served in ~0ms.
-  if (request.mode === 'navigate') {
+  if (request.mode === 'navigate' && url.pathname === '/') {
     event.respondWith(
       caches.open(CACHE_NAME).then(async (cache) => {
-        // Normalise to the root path so all navigations hit the same cached shell
         const cacheKey = new Request('/');
         const cached = await cache.match(cacheKey);
 

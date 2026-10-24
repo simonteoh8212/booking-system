@@ -7,7 +7,7 @@ const COOKIE_NAME = "app_desk_language";
 const STORAGE_KEY = "app_desk_language";
 
 export function getSavedDeskLanguage(): DeskLanguageMode {
-  if (typeof window === "undefined") return "BILINGUAL_ZH_FIRST";
+  if (typeof window === "undefined") return "ONLY_EN";
   try {
     const val = localStorage.getItem(STORAGE_KEY) as DeskLanguageMode | null;
     if (val && ["BILINGUAL_ZH_FIRST", "BILINGUAL_EN_FIRST", "ONLY_ZH", "ONLY_EN"].includes(val)) {
@@ -18,7 +18,7 @@ export function getSavedDeskLanguage(): DeskLanguageMode {
       return match[1] as DeskLanguageMode;
     }
   } catch {}
-  return "BILINGUAL_ZH_FIRST";
+  return "ONLY_EN";
 }
 
 export function saveDeskLanguage(mode: DeskLanguageMode): void {
@@ -32,18 +32,16 @@ export function saveDeskLanguage(mode: DeskLanguageMode): void {
 }
 
 export function useDeskLanguage(initialMode?: DeskLanguageMode) {
-  const [langMode, setLangModeState] = useState<DeskLanguageMode>(() => {
-    if (typeof window !== "undefined") {
-      const saved = getSavedDeskLanguage();
-      if (saved) return saved;
-    }
-    return initialMode || "BILINGUAL_ZH_FIRST";
-  });
+  const [langMode, setLangModeState] = useState<DeskLanguageMode>(
+    initialMode || "ONLY_EN"
+  );
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
+    setMounted(true);
     // Client-side synchronization on mount
     const saved = getSavedDeskLanguage();
-    if (saved && saved !== langMode) {
+    if (saved) {
       setLangModeState(saved);
     }
 
@@ -64,12 +62,12 @@ export function useDeskLanguage(initialMode?: DeskLanguageMode) {
       window.removeEventListener("storage", handleSync);
       window.removeEventListener("desk_language_changed", handleSync);
     };
-  }, [langMode]);
+  }, []);
 
   const changeLanguage = useCallback((newMode: DeskLanguageMode) => {
     setLangModeState(newMode);
     saveDeskLanguage(newMode);
   }, []);
 
-  return { langMode, setLangMode: changeLanguage };
+  return { langMode, setLangMode: changeLanguage, mounted };
 }

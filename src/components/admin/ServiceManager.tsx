@@ -10,13 +10,14 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { formatPrice } from "@/lib/utils";
-import { Loader2, Pencil, Trash2, Plus, Clock, DollarSign } from "lucide-react";
+import { Loader2, Pencil, Trash2, Plus, Clock, DollarSign, AlertTriangle } from "lucide-react";
 import type { ServiceDto } from "@/types";
 
 interface ServiceManagerProps {
@@ -41,6 +42,7 @@ export function ServiceManager({
   const [currencySymbol, setCurrencySymbol] = useState(initialCurrencySymbol);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<ServiceDto | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<ServiceDto | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [priceInput, setPriceInput] = useState("0.00");
   const [isPending, startTransition] = useTransition();
@@ -112,13 +114,16 @@ export function ServiceManager({
     });
   }
 
-  function handleDelete(id: string) {
-    if (!confirm("Delete this service? This cannot be undone.")) return;
+  function handleConfirmDelete() {
+    if (!deleteTarget) return;
     startTransition(async () => {
-      const result = await deleteService(id);
+      const result = await deleteService(deleteTarget.id);
       if (result.success) {
-        setServices((prev) => prev.filter((s) => s.id !== id));
+        setServices((prev) => prev.filter((s) => s.id !== deleteTarget.id));
+        setDeleteTarget(null);
         toast.success("Service deleted successfully.");
+      } else {
+        toast.error(result.error || "Failed to delete service.");
       }
     });
   }
@@ -175,8 +180,9 @@ export function ServiceManager({
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-8 w-8 text-destructive hover:bg-destructive/10"
-                onClick={() => handleDelete(service.id)}
+                className="h-8 w-8 text-destructive hover:bg-destructive/10 cursor-pointer"
+                onClick={() => setDeleteTarget(service)}
+                title="Delete service"
               >
                 <Trash2 className="h-4 w-4" />
               </Button>
@@ -268,6 +274,61 @@ export function ServiceManager({
             <Button onClick={handleSave} disabled={isPending}>
               {isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               {editTarget ? "Save Changes" : "Create Service"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog (Replaces native browser alert) */}
+      <Dialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <DialogContent className="max-w-md rounded-3xl">
+          <DialogHeader>
+            <DialogTitle className="text-destructive flex items-center gap-2">
+              <Trash2 className="h-5 w-5" />
+              <span>Delete Service</span>
+            </DialogTitle>
+            <DialogDescription className="text-xs pt-1">
+              Are you sure you want to permanently delete this service? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+
+          {deleteTarget && (
+            <div className="p-3.5 rounded-2xl bg-destructive/5 border border-destructive/20 text-xs space-y-1.5">
+              <div className="flex items-center justify-between">
+                <p className="font-bold text-sm text-foreground">{deleteTarget.name}</p>
+                {deleteTarget.category && (
+                  <Badge variant="secondary" className="text-[10px]">{deleteTarget.category}</Badge>
+                )}
+              </div>
+              {deleteTarget.description && (
+                <p className="text-muted-foreground line-clamp-2">{deleteTarget.description}</p>
+              )}
+              <div className="flex items-center gap-3 text-muted-foreground font-medium pt-1">
+                <span>⏱ {deleteTarget.durationMinutes} min</span>
+                <span>💰 {formatPrice(deleteTarget.priceCents, currencySymbol)}</span>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="gap-2 sm:gap-0 pt-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setDeleteTarget(null)}
+              disabled={isPending}
+              className="text-xs"
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              disabled={isPending}
+              onClick={handleConfirmDelete}
+              className="text-xs gap-1.5 font-bold"
+            >
+              {isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              <span>Delete Service</span>
             </Button>
           </DialogFooter>
         </DialogContent>

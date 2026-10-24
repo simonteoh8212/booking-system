@@ -79,7 +79,7 @@ export function SalesOverviewCards({ summary }: SalesOverviewCardsProps) {
           <h2 className="text-lg font-bold tracking-tight text-foreground flex items-center gap-2">
             <span>Sales Overview / 销售业绩概览</span>
             <Badge variant="outline" className="text-xs font-mono">
-              {summary.currencySymbol === "$" ? "🇦🇺 AUD ($)" : "🇲🇾 MYR (RM)"}
+              🇲🇾 MYR (RM)
             </Badge>
           </h2>
           <p className="text-xs text-muted-foreground">

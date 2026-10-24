@@ -42,7 +42,7 @@ export default async function DeskPage() {
         monthLabel: "This Month",
         currency: fallbackSetting?.currency || "MYR",
         currencySymbol: fallbackSetting?.currencySymbol || "RM",
-        deskLanguage: fallbackSetting?.deskLanguage || ("BILINGUAL_ZH_FIRST" as const),
+        deskLanguage: fallbackSetting?.deskLanguage || ("ONLY_EN" as const),
         showTodaySales: fallbackSetting?.showTodaySales ?? true,
         showYesterdaySales: fallbackSetting?.showYesterdaySales ?? true,
         showMonthlySales: fallbackSetting?.showMonthlySales ?? true,
@@ -58,7 +58,7 @@ export default async function DeskPage() {
   const businessName = process.env.NEXT_PUBLIC_BUSINESS_NAME || "Salon Desk";
 
   return (
-    <div className="min-h-screen bg-background p-4 sm:p-6 lg:p-8">
+    <div className="space-y-6">
       <DeskHub
         initialSummary={summary}
         initialAppointments={appointments}

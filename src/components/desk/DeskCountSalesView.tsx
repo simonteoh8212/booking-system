@@ -604,18 +604,12 @@ export function DeskCountSalesView({
             {
               id: "DUITNOW_QR",
               icon: "📱",
-              text:
-                currencySymbol === "$"
-                  ? DESK_DICT.countSalesView.pmTransferPayid
-                  : DESK_DICT.countSalesView.pmTransferDuitnow,
+              text: DESK_DICT.countSalesView.pmTransferDuitnow,
             },
             {
               id: "CARD",
               icon: "💳",
-              text:
-                currencySymbol === "$"
-                  ? DESK_DICT.countSalesView.pmCardEftpos
-                  : DESK_DICT.countSalesView.pmCard,
+              text: DESK_DICT.countSalesView.pmCard,
             },
           ].map((pm) => {
             const isChosen = paymentMethod === pm.id;
