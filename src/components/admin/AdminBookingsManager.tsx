@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useTransition, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { format } from "date-fns";
+import { format, addDays } from "date-fns";
 import {
   getAllBookings,
   updateBookingStatus,
@@ -37,10 +37,14 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { formatPrice, cn } from "@/lib/utils";
+import { formatPrice, cn, toBusinessDateString, formatSlotTimeRange } from "@/lib/utils";
 import { useDeskLanguage } from "@/lib/use-desk-language";
-import { resolveLabel } from "@/lib/desk-i18n";
-import type { BookingDto, BookingStatus } from "@/types";
+import { resolveLabel, DESK_DICT } from "@/lib/desk-i18n";
+import { Label } from "@/components/ui/label";
+import { createDeskAppointment } from "@/actions/desk";
+import { getAvailableSlots } from "@/actions/booking";
+import { getOperatingHoursInfo } from "@/lib/operating-hours";
+import type { BookingDto, BookingStatus, ServiceDto, TimeSlot } from "@/types";
 import {
   Search,
   CheckCircle2,
@@ -60,12 +64,16 @@ import {
   ChevronLeft,
   ChevronRight,
   ShieldAlert,
+  Plus,
+  CalendarCheck,
+  AlertCircle,
 } from "lucide-react";
 import { EmergencyClosureModal } from "./EmergencyClosureModal";
 
 interface AdminBookingsManagerProps {
   initialBookings: BookingDto[];
   initialCounts: BookingsCountsSummary;
+  services?: ServiceDto[];
   currencySymbol: string;
   initialStatus?: string;
   initialRef?: string;
@@ -84,6 +92,7 @@ const STATUS_SELECT_OPTIONS: { id: BookingStatus; labelZh: string; labelEn: stri
 export function AdminBookingsManager({
   initialBookings,
   initialCounts,
+  services = [],
   currencySymbol = "RM",
   initialStatus,
   initialRef,
@@ -117,6 +126,145 @@ export function AdminBookingsManager({
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [isEmergencyModalOpen, setIsEmergencyModalOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
+
+  // Operating hours & Date restrictions
+  const operatingHours = useMemo(() => getOperatingHoursInfo(), []);
+  const todayStr = useMemo(() => toBusinessDateString(new Date()), []);
+  const tomorrowStr = useMemo(() => toBusinessDateString(addDays(new Date(), 1)), []);
+  const minAllowedDate = operatingHours.isPastOperatingHoursToday ? tomorrowStr : todayStr;
+
+  // Manual Appointment creation modal state
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [createForm, setCreateForm] = useState({
+    name: "",
+    phone: "",
+    serviceId: services[0]?.id || "",
+    date: minAllowedDate,
+    slotStartTimeIso: "",
+    notes: "",
+  });
+  const [availableSlots, setAvailableSlots] = useState<TimeSlot[]>([]);
+  const [isLoadingSlots, setIsLoadingSlots] = useState(false);
+  const [slotLoadError, setSlotLoadError] = useState<string | null>(null);
+  const [createError, setCreateError] = useState<string | null>(null);
+
+  // Sync default serviceId when services list arrives
+  useEffect(() => {
+    if (services.length > 0 && !createForm.serviceId) {
+      setCreateForm((prev) => ({ ...prev, serviceId: services[0].id }));
+    }
+  }, [services, createForm.serviceId]);
+
+  // Fetch available slots whenever isCreateOpen, date, or serviceId changes
+  useEffect(() => {
+    if (!isCreateOpen) return;
+
+    const isToday = createForm.date === todayStr;
+    if (isToday && operatingHours.isPastOperatingHoursToday) {
+      setAvailableSlots([]);
+      setCreateForm((prev) => ({ ...prev, slotStartTimeIso: "" }));
+      return;
+    }
+
+    const selectedService = services.find((s) => s.id === createForm.serviceId) || services[0];
+    const durationMinutes = selectedService?.durationMinutes || 45;
+
+    let ignore = false;
+    setIsLoadingSlots(true);
+    setSlotLoadError(null);
+
+    getAvailableSlots(createForm.date, durationMinutes)
+      .then((res) => {
+        if (ignore) return;
+        if (res.success) {
+          setAvailableSlots(res.data);
+          setCreateForm((prev) => {
+            const hasExisting = res.data.some((s) => s.startTime === prev.slotStartTimeIso);
+            return {
+              ...prev,
+              slotStartTimeIso: hasExisting ? prev.slotStartTimeIso : (res.data[0]?.startTime || ""),
+            };
+          });
+        } else {
+          setAvailableSlots([]);
+          setSlotLoadError(res.error || "Failed to load slots");
+          setCreateForm((prev) => ({ ...prev, slotStartTimeIso: "" }));
+        }
+      })
+      .catch((err) => {
+        if (ignore) return;
+        console.error("Failed to load slots:", err);
+        setAvailableSlots([]);
+        setSlotLoadError("Network error while loading slots");
+      })
+      .finally(() => {
+        if (!ignore) setIsLoadingSlots(false);
+      });
+
+    return () => {
+      ignore = true;
+    };
+  }, [
+    isCreateOpen,
+    createForm.date,
+    createForm.serviceId,
+    todayStr,
+    operatingHours.isPastOperatingHoursToday,
+    services,
+  ]);
+
+  function handleManualCreate() {
+    setCreateError(null);
+    if (!createForm.name.trim() || !createForm.phone.trim()) {
+      setCreateError(resolveLabel(DESK_DICT.appointmentView.namePhoneRequired, langMode));
+      return;
+    }
+    if (!createForm.serviceId) {
+      setCreateError(resolveLabel(DESK_DICT.appointmentView.selectServiceRequired, langMode));
+      return;
+    }
+
+    const isToday = createForm.date === todayStr;
+    if (isToday && operatingHours.isPastOperatingHoursToday) {
+      setCreateError(resolveLabel(DESK_DICT.appointmentView.pastOperatingHoursNotice, langMode));
+      return;
+    }
+
+    if (!createForm.slotStartTimeIso) {
+      setCreateError(resolveLabel(DESK_DICT.appointmentView.selectSlotRequired, langMode));
+      return;
+    }
+
+    startTransition(async () => {
+      const res = await createDeskAppointment({
+        customerName: createForm.name.trim(),
+        phoneNumber: createForm.phone.trim(),
+        serviceId: createForm.serviceId,
+        startDatetimeIso: createForm.slotStartTimeIso,
+        notes: createForm.notes.trim() || undefined,
+      });
+
+      if (res.success) {
+        setIsCreateOpen(false);
+        setCreateForm({
+          name: "",
+          phone: "",
+          serviceId: services[0]?.id || "",
+          date: minAllowedDate,
+          slotStartTimeIso: "",
+          notes: "",
+        });
+        refetchBookings(activeTab, searchQuery);
+        showToast(
+          langMode === "ONLY_ZH"
+            ? `预约已成功录入: ${res.data.referenceCode}`
+            : `Appointment created: ${res.data.referenceCode}`
+        );
+      } else {
+        setCreateError(res.error);
+      }
+    });
+  }
 
   // Listen for background updates from AdminNav notification clicks
   useEffect(() => {
@@ -369,7 +517,31 @@ export function AdminBookingsManager({
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Manual New Appointment Creation */}
+          <Button
+            type="button"
+            size="sm"
+            onClick={() => {
+              setCreateError(null);
+              setCreateForm({
+                name: "",
+                phone: "",
+                serviceId: services[0]?.id || "",
+                date: minAllowedDate,
+                slotStartTimeIso: "",
+                notes: "",
+              });
+              setIsCreateOpen(true);
+            }}
+            className="h-9 gap-1.5 text-xs font-bold bg-primary hover:bg-primary/90 text-primary-foreground rounded-xl shadow-xs cursor-pointer"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            <span suppressHydrationWarning>
+              {resolveLabel({ zh: "添加预约", en: "Add Appointment" }, langMode)}
+            </span>
+          </Button>
+
           {/* Emergency Closure & Mass Reschedule Trigger */}
           <Button
             type="button"
@@ -1003,6 +1175,237 @@ export function AdminBookingsManager({
         langMode={langMode}
         currencySymbol={currencySymbol}
       />
+
+      {/* Manual Appointment Creation Modal */}
+      <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+        <DialogContent className="max-w-md p-6 rounded-3xl">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-bold flex items-center gap-2">
+              <CalendarCheck className="h-5 w-5 text-primary" />
+              <span suppressHydrationWarning>
+                {resolveLabel({ zh: "手动录入新预约", en: "Create Manual Appointment" }, langMode)}
+              </span>
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground">
+              <span suppressHydrationWarning>
+                {resolveLabel(
+                  {
+                    zh: "用于电话预订或现场到店预约，创建后将直接标记为已确认。",
+                    en: "For phone bookings or walk-ins. Directly saved as confirmed.",
+                  },
+                  langMode
+                )}
+              </span>
+            </DialogDescription>
+          </DialogHeader>
+
+          {createError && (
+            <div className="p-3 rounded-xl bg-destructive/10 border border-destructive/20 text-destructive text-xs flex items-center gap-2">
+              <AlertCircle className="h-4 w-4 shrink-0" />
+              <span>{createError}</span>
+            </div>
+          )}
+
+          <div className="space-y-3.5 py-1">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold">
+                <span suppressHydrationWarning>
+                  {resolveLabel({ zh: "顾客姓名 / 称呼 *", en: "Customer Name *" }, langMode)}
+                </span>
+              </Label>
+              <Input
+                placeholder="e.g. Alex Tan"
+                value={createForm.name}
+                onChange={(e) => setCreateForm({ ...createForm, name: e.target.value })}
+                className="h-10 text-sm rounded-xl"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold">
+                <span suppressHydrationWarning>
+                  {resolveLabel({ zh: "WhatsApp / 手机号码 *", en: "WhatsApp / Phone Number *" }, langMode)}
+                </span>
+              </Label>
+              <Input
+                placeholder="e.g. 0123456789"
+                type="tel"
+                value={createForm.phone}
+                onChange={(e) => setCreateForm({ ...createForm, phone: e.target.value })}
+                className="h-10 text-sm rounded-xl"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold">
+                <span suppressHydrationWarning>
+                  {resolveLabel({ zh: "美发服务项目 *", en: "Service *" }, langMode)}
+                </span>
+              </Label>
+              <select
+                value={createForm.serviceId}
+                onChange={(e) => setCreateForm({ ...createForm, serviceId: e.target.value })}
+                className="w-full h-10 rounded-xl border px-3 text-xs font-semibold bg-background border-input"
+              >
+                {services.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name} — {formatPrice(s.priceCents, currencySymbol)} ({s.durationMinutes} min)
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Same-day after hours alert banner */}
+            {createForm.date === todayStr && operatingHours.isPastOperatingHoursToday && (
+              <div className="p-3 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-800 dark:text-amber-300 flex items-start gap-2.5 text-xs">
+                <AlertCircle className="h-4 w-4 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
+                <div>
+                  <p className="font-bold">
+                    <span suppressHydrationWarning>
+                      {resolveLabel(DESK_DICT.appointmentView.pastOperatingHoursTitle, langMode)}
+                    </span>
+                  </p>
+                  <p className="text-[11px] mt-0.5 opacity-90" suppressHydrationWarning>
+                    {resolveLabel(DESK_DICT.appointmentView.pastOperatingHoursNotice, langMode)}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold">
+                  <span suppressHydrationWarning>
+                    {resolveLabel(DESK_DICT.appointmentView.date, langMode)} *
+                  </span>
+                </Label>
+                <Input
+                  type="date"
+                  min={minAllowedDate}
+                  value={createForm.date}
+                  onChange={(e) => setCreateForm({ ...createForm, date: e.target.value })}
+                  className="h-10 text-xs rounded-xl"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs font-bold">
+                    <span suppressHydrationWarning>
+                      {resolveLabel(DESK_DICT.appointmentView.timeSlot, langMode)} *
+                    </span>
+                  </Label>
+                  {isLoadingSlots ? (
+                    <span className="text-[10px] text-muted-foreground flex items-center gap-1 font-normal">
+                      <Loader2 className="h-3 w-3 animate-spin text-primary" />
+                      <span suppressHydrationWarning>
+                        {resolveLabel(DESK_DICT.appointmentView.loadingSlots, langMode)}
+                      </span>
+                    </span>
+                  ) : availableSlots.length > 0 ? (
+                    <Badge variant="outline" className="text-[10px] h-4 px-1.5 font-semibold text-emerald-600 dark:text-emerald-400 border-emerald-500/30 bg-emerald-500/10">
+                      <span suppressHydrationWarning>
+                        {availableSlots.length} {resolveLabel(DESK_DICT.appointmentView.slotsAvailableBadge, langMode)}
+                      </span>
+                    </Badge>
+                  ) : null}
+                </div>
+
+                {isLoadingSlots ? (
+                  <div className="h-10 rounded-xl border border-dashed flex items-center justify-center text-xs text-muted-foreground bg-muted/30">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5 text-primary" />
+                    <span suppressHydrationWarning>
+                      {resolveLabel(DESK_DICT.appointmentView.loadingSlots, langMode)}
+                    </span>
+                  </div>
+                ) : createForm.date === todayStr && operatingHours.isPastOperatingHoursToday ? (
+                  <div className="h-10 rounded-xl border border-destructive/20 bg-destructive/5 flex items-center px-3 text-xs text-destructive font-medium">
+                    <span suppressHydrationWarning>
+                      {resolveLabel(DESK_DICT.appointmentView.pastOperatingHoursTitle, langMode)}
+                    </span>
+                  </div>
+                ) : availableSlots.length === 0 ? (
+                  <div className="h-10 rounded-xl border border-amber-500/30 bg-amber-500/10 flex items-center px-3 text-xs text-amber-700 dark:text-amber-400 font-medium">
+                    <span suppressHydrationWarning>
+                      {resolveLabel(DESK_DICT.appointmentView.noSlots, langMode)}
+                    </span>
+                  </div>
+                ) : (
+                  <select
+                    value={createForm.slotStartTimeIso}
+                    onChange={(e) => setCreateForm({ ...createForm, slotStartTimeIso: e.target.value })}
+                    className="w-full h-10 rounded-xl border px-3 text-xs font-semibold bg-background border-input focus:outline-none focus:ring-2 focus:ring-ring"
+                  >
+                    {availableSlots.map((slot) => {
+                      const label = formatSlotTimeRange(slot.startTime, slot.endTime);
+                      return (
+                        <option key={slot.startTime} value={slot.startTime}>
+                          {label}
+                        </option>
+                      );
+                    })}
+                  </select>
+                )}
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold">
+                <span suppressHydrationWarning>
+                  {resolveLabel({ zh: "备注需求 (选填)", en: "Notes (Optional)" }, langMode)}
+                </span>
+              </Label>
+              <Input
+                placeholder="e.g. Senior Stylist, hair wash request..."
+                value={createForm.notes}
+                onChange={(e) => setCreateForm({ ...createForm, notes: e.target.value })}
+                className="h-10 text-xs rounded-xl"
+              />
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0 pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setIsCreateOpen(false)}
+              disabled={isPending}
+              className="h-10 text-xs font-semibold rounded-xl"
+            >
+              <span suppressHydrationWarning>
+                {resolveLabel({ zh: "取消", en: "Cancel" }, langMode)}
+              </span>
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              onClick={handleManualCreate}
+              disabled={
+                isPending ||
+                isLoadingSlots ||
+                availableSlots.length === 0 ||
+                !createForm.slotStartTimeIso ||
+                (createForm.date === todayStr && operatingHours.isPastOperatingHoursToday)
+              }
+              className="h-10 text-xs font-bold bg-primary hover:bg-primary/90 text-primary-foreground gap-1.5 rounded-xl cursor-pointer disabled:opacity-50"
+            >
+              {isPending ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  <span suppressHydrationWarning>
+                    {resolveLabel({ zh: "正在保存...", en: "Saving..." }, langMode)}
+                  </span>
+                </>
+              ) : (
+                <span suppressHydrationWarning>
+                  {resolveLabel({ zh: "确认录入预约", en: "Confirm Appointment" }, langMode)}
+                </span>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

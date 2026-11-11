@@ -99,14 +99,15 @@ export function StepPaymentInstructions() {
   }
 
   // Pre-filled fallback WhatsApp message for reschedule/refund if timer expired but money was sent
+  const formattedHoldTime = selectedSlotStart
+    ? format(new Date(selectedSlotStart), t.step4.fallbackHelpDateFormat[language])
+    : "";
   const fallbackHelpUrl = `https://wa.me/${MERCHANT_WHATSAPP.replace(/\D/g, "")}?text=${encodeURIComponent(
-    language === "zh"
-      ? `您好，我预约了 ${selectedService?.name ?? "服务"} (${
-          selectedSlotStart ? format(new Date(selectedSlotStart), "yyyy年M月d日 h:mm a") : ""
-        })，预约单号: ${pendingHold?.referenceCode ?? "无"}。付款倒计时已过期，请协助我处理。谢谢！`
-      : `Hi, I made a booking for ${selectedService?.name ?? "appointment"} (${
-          selectedSlotStart ? format(new Date(selectedSlotStart), "d MMM yyyy, h:mm a") : ""
-        }), Reference: ${pendingHold?.referenceCode ?? "N/A"}. My session timed out. Please assist me.`
+    t.step4.fallbackHelpMessage(
+      selectedService?.name ?? "",
+      formattedHoldTime,
+      pendingHold?.referenceCode ?? ""
+    )[language]
   )}`;
 
   return (
@@ -120,21 +121,17 @@ export function StepPaymentInstructions() {
             <CreditCard className="h-5 w-5" />
           )}
           <span className="text-sm font-medium uppercase tracking-wider">
-            {language === "zh" ? "第 4 步 / 共 4 步" : "Step 4 of 4"}
+            {t.step4.stepIndicator[language]}
           </span>
         </div>
         <h2 className="text-2xl font-bold">
           {isDepositExempt
-            ? language === "zh"
-              ? "确认预约 (熟客免付定金)"
-              : "Confirm Booking (Deposit Waived)"
+            ? t.step4.vipHeader[language]
             : t.step4.title[language]}
         </h2>
         <p className="text-muted-foreground">
           {isDepositExempt
-            ? language === "zh"
-              ? "尊贵熟客无需支付定金，直接确认预约"
-              : "As our valued regular customer, no online deposit is required"
+            ? t.step4.vipSubtitle[language]
             : t.step4.subtitle[language]}
         </p>
       </div>
@@ -151,9 +148,8 @@ export function StepPaymentInstructions() {
                 {t.step4.vipTitle[language]}
               </h3>
               <p className="text-xs text-amber-800/90 dark:text-amber-300/90">
-                {language === "zh"
-                  ? `已识别熟客手机号: ${customerDetails.phoneNumber}`
-                  : `Recognized regular customer: ${customerDetails.phoneNumber}`}
+                {t.step4.vipCustomerRecognized[language]}
+                {customerDetails.phoneNumber}
               </p>
             </div>
           </div>
@@ -177,21 +173,13 @@ export function StepPaymentInstructions() {
           <div>
             <p className="font-semibold text-sm">
               {isExpired
-                ? language === "zh"
-                  ? "预约已超时"
-                  : "Reservation Expired"
-                : language === "zh"
-                ? "时段已为您临时锁定"
-                : "Slot Temporarily Held"}
+                ? t.step4.expiredTitle[language]
+                : t.step4.heldTitle[language]}
             </p>
             <p className="text-xs opacity-90">
               {isExpired
-                ? language === "zh"
-                  ? "该时段已释放给其他顾客。"
-                  : "This slot has been released for others."
-                : language === "zh"
-                ? "请在倒计时结束前完成确认"
-                : "Complete confirmation before timer reaches 00:00"}
+                ? t.step4.expiredDesc[language]
+                : t.step4.heldDesc[language]}
             </p>
           </div>
         </div>
@@ -209,27 +197,18 @@ export function StepPaymentInstructions() {
             <Moon className="h-4 w-4 text-indigo-600 dark:text-indigo-400 mt-0.5 shrink-0" />
             <div className="space-y-1 text-xs">
               <p className="font-semibold text-indigo-950 dark:text-indigo-200">
-                {language === "zh" ? "非营业时间预约提醒" : "After-Hours Booking Notice"}
+                {t.step4.afterHoursNoticeTitle[language]}
               </p>
               <p className="text-indigo-800 dark:text-indigo-300 leading-relaxed">
-                {language === "zh" ? (
-                  <>
-                    当前为沙龙非营业时间 ({operatingHours.displayDays}, {operatingHours.displayHours})。
-                    <br />
-                    <strong>您仍可正常提交预约！</strong> 点击确认后，您的时段将{" "}
-                    <strong>永久锁定</strong>，不会被他人抢订。我们将在{" "}
-                    {operatingHours.nextOpenDayNotice} 优先确认您的预约。
-                  </>
-                ) : (
-                  <>
-                    We are currently outside our operating hours ({operatingHours.displayDays},{" "}
-                    {operatingHours.displayHours}).
-                    <br />
-                    <strong>You can still proceed!</strong> Once confirmed, your slot is{" "}
-                    <strong>securely locked</strong>. Our team will verify and confirm your booking{" "}
-                    {operatingHours.nextOpenDayNotice}.
-                  </>
-                )}
+                {t.step4.afterHoursNoticeLine1(
+                  operatingHours.displayDays,
+                  operatingHours.displayHours
+                )[language]}
+                <br />
+                <strong>{t.step4.afterHoursNoticeLine2[language]}</strong>{" "}
+                {t.step4.afterHoursNoticeLine3[language]}{" "}
+                <strong>{t.step4.afterHoursNoticeLine4[language]}</strong>
+                {t.step4.afterHoursNoticeLine5(operatingHours.nextOpenDayNotice)[language]}
               </p>
             </div>
           </div>
@@ -242,7 +221,7 @@ export function StepPaymentInstructions() {
           <CardContent className="p-4 space-y-2">
             <div className="flex justify-between items-center">
               <h4 className="text-sm font-semibold text-primary">
-                {language === "zh" ? "已锁定时段概览" : "Your Held Reservation"}
+                {t.step4.heldReservation[language]}
               </h4>
               {pendingHold && (
                 <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-primary/10 text-primary">
@@ -281,7 +260,7 @@ export function StepPaymentInstructions() {
                       🌟 {t.step4.depositDue[language]}
                     </span>
                     <span className="font-bold text-amber-700 dark:text-amber-400">
-                      {language === "zh" ? "免付 (熟客专属)" : "Waived (VIP Regular)"}
+                      {t.step4.vipWaivedBadge[language]}
                     </span>
                   </div>
                   <div className="flex justify-between text-xs text-muted-foreground">
@@ -300,7 +279,7 @@ export function StepPaymentInstructions() {
                     <span className="font-semibold text-foreground flex items-center gap-1.5">
                       {t.step4.depositDue[language]}
                       <span className="text-[10px] bg-primary/15 text-primary px-1.5 py-0.5 rounded font-mono font-bold">
-                        {language === "zh" ? "需付定金" : "Deposit"}
+                        {t.step4.depositBadge[language]}
                       </span>
                     </span>
                     <span className="font-bold text-primary text-base tabular-nums">
@@ -342,12 +321,12 @@ export function StepPaymentInstructions() {
               <div className="flex items-center gap-2">
                 <QrCode className="h-5 w-5 text-primary" />
                 <h3 className="font-semibold text-sm">
-                  {language === "zh" ? "支付步骤指引" : "How to Pay"}
+                  {t.step4.howToPay[language]}
                 </h3>
               </div>
               {pendingHold?.recipientName && (
                 <span className="text-xs text-muted-foreground font-medium">
-                  {language === "zh" ? "收款商户: " : "Payee: "}
+                  {t.step4.payee[language]}
                   <strong className="text-foreground">{pendingHold.recipientName}</strong>
                 </span>
               )}
@@ -442,9 +421,7 @@ export function StepPaymentInstructions() {
                 <div className="w-48 h-48 rounded-xl border-2 border-dashed border-border flex flex-col items-center justify-center text-muted-foreground gap-2">
                   <QrCode className="h-12 w-12 opacity-30" />
                   <p className="text-xs text-center px-2">
-                    {language === "zh"
-                      ? "管理员暂未配置收款二维码"
-                      : "DuitNow QR not yet configured in Admin Settings."}
+                    {t.step4.qrNotConfigured[language]}
                   </p>
                 </div>
               )}
@@ -459,12 +436,10 @@ export function StepPaymentInstructions() {
               <CheckCircle2 className="h-6 w-6" />
             </div>
             <h3 className="font-bold text-base text-foreground">
-              {language === "zh" ? "免收定金 · 一键确认" : "Deposit Waived · 1-Click Confirmation"}
+              {t.step4.vipGuidanceTitle[language]}
             </h3>
             <p className="text-xs text-muted-foreground max-w-sm mx-auto leading-relaxed">
-              {language === "zh"
-                ? "您无需扫码或转账，点击下方绿色按钮即可立刻锁定此预约时段。全额可在到店享受服务后再付款。"
-                : "No payment is required right now. Simply click the button below to secure your appointment. You can settle the full amount after your salon service."}
+              {t.step4.vipGuidanceDesc[language]}
             </p>
           </CardContent>
         </Card>
@@ -477,10 +452,7 @@ export function StepPaymentInstructions() {
             <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
             <div className="flex-1">
               <p>
-                {submitError ||
-                  (language === "zh"
-                    ? "您的 7 分钟预约临时保留已超时。"
-                    : "Your 7-minute reservation hold has expired.")}
+                {submitError || t.step4.expiredNotice[language]}
               </p>
             </div>
           </div>
@@ -488,10 +460,8 @@ export function StepPaymentInstructions() {
           {/* Fallback Help Button */}
           <div className="p-3 bg-muted/50 rounded-lg text-xs space-y-2 border text-left">
             <p className="text-muted-foreground">
-              <strong>{language === "zh" ? "已经转账付款？" : "Already transferred money?"}</strong>{" "}
-              {language === "zh"
-                ? "请放心！点击下方按钮直接在 WhatsApp 将收据发送给沙龙客服，我们将优先为您保留时段或协助退款："
-                : "Don't worry! Click below to send your receipt directly to our team via WhatsApp for priority rescheduling or refund:"}
+              <strong>{t.step4.alreadyPaidTitle[language]}</strong>{" "}
+              {t.step4.alreadyPaidDesc[language]}
             </p>
             <a
               href={fallbackHelpUrl}
@@ -500,7 +470,7 @@ export function StepPaymentInstructions() {
               className="inline-flex items-center gap-1.5 text-primary font-semibold hover:underline"
             >
               <MessageCircle className="h-3.5 w-3.5" />
-              {language === "zh" ? "WhatsApp 联系沙龙客服协助" : "WhatsApp Merchant for Help / Refund"}
+              {t.step4.whatsappAssistBtn[language]}
             </a>
           </div>
         </div>
@@ -514,7 +484,7 @@ export function StepPaymentInstructions() {
           actionText={
             <>
               <RotateCcw className="h-4 w-4 mr-2" />
-              {language === "zh" ? "重新选择预约时段" : "Pick Another Time Slot"}
+              {t.step4.pickAnotherSlotBtn[language]}
             </>
           }
         />
@@ -590,9 +560,7 @@ export function StepPaymentInstructions() {
 
             <div className="w-full space-y-2">
               <p className="text-xs text-gray-500">
-                {language === "zh"
-                  ? "支持长按保存图片或使用另一台手机/App直接扫码"
-                  : "Long-press to save image, or scan using your banking app"}
+                {t.step4.qrSaveHint[language]}
               </p>
               <div className="flex gap-2">
                 <a
@@ -601,7 +569,7 @@ export function StepPaymentInstructions() {
                   className="flex-1 inline-flex items-center justify-center gap-1.5 py-2.5 px-4 rounded-xl bg-gray-900 text-white text-xs font-bold hover:bg-black transition-colors"
                 >
                   <Download className="h-3.5 w-3.5" />
-                  {language === "zh" ? "下载保存二维码" : "Save / Download QR"}
+                  {t.step4.qrSaveBtn[language]}
                 </a>
                 <Button
                   variant="outline"
@@ -609,7 +577,7 @@ export function StepPaymentInstructions() {
                   onClick={() => setIsQrZoomed(false)}
                   className="py-2.5 px-4 text-xs font-bold"
                 >
-                  {language === "zh" ? "关闭" : "Close"}
+                  {t.step4.qrCloseBtn[language]}
                 </Button>
               </div>
             </div>

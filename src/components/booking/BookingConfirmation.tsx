@@ -20,6 +20,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { getOperatingHoursInfo } from "@/lib/operating-hours";
 import { useCustomerLanguage } from "./CustomerLanguageContext";
+import { getDateFnsLocale } from "@/lib/customer-i18n";
 
 export function BookingConfirmation() {
   const { confirmation, reset, currencySymbol } = useBookingStore();
@@ -75,16 +76,12 @@ export function BookingConfirmation() {
             }`}
           >
             {isDepositExempt
-              ? language === "zh"
-                ? "熟客预约已锁定！"
-                : "Appointment Confirmed!"
+              ? t.confirmation.vipTitle[language]
               : t.confirmation.title[language]}
           </h2>
           <p className="text-muted-foreground text-sm mt-1">
             {isDepositExempt
-              ? language === "zh"
-                ? "🌟 感谢您的支持，本次预约已免除定金，到店直接享受服务！"
-                : "🌟 As our valued regular customer, deposit is waived. See you at the salon!"
+              ? t.confirmation.vipSubtitle[language]
               : t.confirmation.subtitle[language]}
           </p>
         </div>
@@ -105,7 +102,7 @@ export function BookingConfirmation() {
       </div>
       {copied && (
         <p className="text-xs text-green-600 font-semibold -mt-3">
-          {language === "zh" ? "已复制到剪贴板！" : "Copied to clipboard!"}
+          {t.confirmation.copied[language]}
         </p>
       )}
 
@@ -115,7 +112,7 @@ export function BookingConfirmation() {
           <div className="flex items-center gap-2 mb-3">
             <CalendarCheck className="h-4 w-4 text-primary" />
             <h3 className="font-semibold text-sm">
-              {language === "zh" ? "预约信息明细" : "Appointment Details"}
+              {t.confirmation.detailsTitle[language]}
             </h3>
           </div>
           <Separator />
@@ -131,9 +128,11 @@ export function BookingConfirmation() {
             <div className="flex justify-between">
               <span className="text-muted-foreground">{t.confirmation.dateTime[language]}</span>
               <span className="font-medium text-right">
-                {language === "zh"
-                  ? format(new Date(confirmation.startDatetime), "yyyy年M月d日 (EEEE) h:mm a")
-                  : format(new Date(confirmation.startDatetime), "EEEE, d MMMM yyyy, h:mm a")}
+                {format(
+                  new Date(confirmation.startDatetime),
+                  t.confirmation.dateTimeFormat[language],
+                  { locale: getDateFnsLocale(language) }
+                )}
               </span>
             </div>
             <div className="flex justify-between">
@@ -150,7 +149,7 @@ export function BookingConfirmation() {
                     🌟 {t.confirmation.depositWaived[language]}
                   </span>
                   <span className="font-bold text-amber-700 dark:text-amber-400 text-right">
-                    {language === "zh" ? "已免收 (RM 0.00)" : "Waived ($0.00)"}
+                    {t.confirmation.waivedAmount[language]}
                   </span>
                 </div>
                 <div className="flex justify-between">
@@ -191,23 +190,15 @@ export function BookingConfirmation() {
         <Card className="bg-indigo-50/80 border-indigo-200 text-left dark:bg-indigo-950/20 dark:border-indigo-800">
           <CardContent className="p-4 space-y-1.5">
             <h4 className="font-semibold text-indigo-900 dark:text-indigo-300 text-sm flex items-center gap-1.5">
-              🌙 {language === "zh" ? "时段已锁定！非营业时间通知" : "Slot Locked & Reserved!"}
+              🌙 {t.confirmation.afterHoursTitle[language]}
             </h4>
             <p className="text-indigo-800 dark:text-indigo-200 text-sm leading-relaxed">
-              {language === "zh" ? (
-                <>
-                  您在非营业时间提交了预约 ({operatingHours.displayDays}, {operatingHours.displayHours})。
-                  <strong>您的预约时段已被系统安全锁定</strong>，沙龙团队将在{" "}
-                  {operatingHours.nextOpenDayNotice} 优先核对并为您确认。
-                </>
-              ) : (
-                <>
-                  You submitted your booking outside operating hours ({operatingHours.displayDays},{" "}
-                  {operatingHours.displayHours}). <strong>Your slot is securely locked</strong> and
-                  will be reviewed and confirmed {operatingHours.nextOpenDayNotice} once our team
-                  verifies your submission.
-                </>
-              )}
+              {t.confirmation.afterHoursLine1(
+                operatingHours.displayDays,
+                operatingHours.displayHours
+              )[language]}{" "}
+              <strong>{t.confirmation.afterHoursLine2[language]}</strong>
+              {t.confirmation.afterHoursLine3(operatingHours.nextOpenDayNotice)[language]}
             </p>
           </CardContent>
         </Card>
@@ -228,12 +219,8 @@ export function BookingConfirmation() {
               }
             >
               {isDepositExempt
-                ? language === "zh"
-                  ? "🌟 熟客特权名额已锁定！"
-                  : "🌟 VIP Appointment Secured!"
-                : language === "zh"
-                ? "✅ 预约名额已成功锁定！"
-                : "✅ Slot Successfully Reserved!"}
+                ? t.confirmation.vipSecuredTitle[language]
+                : t.confirmation.regularSecuredTitle[language]}
             </h4>
             <p
               className={
@@ -243,12 +230,8 @@ export function BookingConfirmation() {
               }
             >
               {isDepositExempt
-                ? language === "zh"
-                  ? "由于您是我们的常客，无需审核定金。您可以点击下方按钮直接打开 WhatsApp 向沙龙发送预约提醒。"
-                  : "As a trusted regular, your booking is pre-approved! Click below to send a quick WhatsApp note to our team."
-                : language === "zh"
-                ? "请在打开的 WhatsApp 聊天窗口中附上转账收据截图。沙龙团队核实后将尽快完成最终确认。"
-                : "Please attach your payment receipt screenshot in the WhatsApp chat. Our team will verify and confirm your appointment shortly."}
+                ? t.confirmation.vipNotice[language]
+                : t.confirmation.regularNotice[language]}
             </p>
           </CardContent>
         </Card>
@@ -267,9 +250,7 @@ export function BookingConfirmation() {
         >
           <MessageCircle className="h-5 w-5" />
           {isDepositExempt
-            ? language === "zh"
-              ? "打开 WhatsApp 发送预约通知"
-              : "Open WhatsApp to Notify Salon"
+            ? t.confirmation.vipOpenWhatsApp[language]
             : t.confirmation.openWhatsApp[language]}
         </Button>
       </a>
@@ -281,9 +262,7 @@ export function BookingConfirmation() {
           className="inline-flex items-center gap-1.5 text-xs text-primary hover:underline font-semibold"
         >
           <Search className="h-3.5 w-3.5" />
-          {language === "zh"
-            ? "随时在线追踪您的预约状态"
-            : "Track your booking status online anytime"}
+          {t.confirmation.trackStatus[language]}
         </Link>
       </div>
 

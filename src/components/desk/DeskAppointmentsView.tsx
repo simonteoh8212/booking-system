@@ -1,13 +1,13 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useEffect, useMemo } from "react";
 import {
   updateDeskAppointmentStatus,
   createDeskAppointment,
   type DeskAppointmentItem,
 } from "@/actions/desk";
-import { formatPrice } from "@/lib/utils";
-import { format } from "date-fns";
+import { formatPrice, toBusinessDateString, formatSlotTimeRange } from "@/lib/utils";
+import { format, addDays } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -21,12 +21,14 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
-import type { ServiceDto, BookingStatus, DeskLanguageMode } from "@/types";
+import type { ServiceDto, BookingStatus, DeskLanguageMode, TimeSlot } from "@/types";
 import {
   DESK_DICT,
   resolveServiceName,
   resolveDeskText,
 } from "@/lib/desk-i18n";
+import { getAvailableSlots } from "@/actions/booking";
+import { getOperatingHoursInfo } from "@/lib/operating-hours";
 import { DeskText } from "./DeskText";
 import {
   ArrowLeft,
@@ -68,18 +70,88 @@ export function DeskAppointmentsView({
     format(new Date(), "yyyy-MM-dd")
   );
 
+  // Operating hours & Date restrictions
+  const operatingHours = useMemo(() => getOperatingHoursInfo(), []);
+  const todayStr = useMemo(() => toBusinessDateString(new Date()), []);
+  const tomorrowStr = useMemo(() => toBusinessDateString(addDays(new Date(), 1)), []);
+  const minAllowedDate = operatingHours.isPastOperatingHoursToday ? tomorrowStr : todayStr;
+
   // New Appointment modal
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [addForm, setAddForm] = useState({
     name: "",
     phone: "",
     serviceId: services[0]?.id || "",
-    time: "10:00",
-    date: format(new Date(), "yyyy-MM-dd"),
+    date: minAllowedDate,
+    slotStartTimeIso: "",
     notes: "",
   });
+  const [availableSlots, setAvailableSlots] = useState<TimeSlot[]>([]);
+  const [isLoadingSlots, setIsLoadingSlots] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+
+  // Sync default serviceId when services arrive
+  useEffect(() => {
+    if (services.length > 0 && !addForm.serviceId) {
+      setAddForm((prev) => ({ ...prev, serviceId: services[0].id }));
+    }
+  }, [services, addForm.serviceId]);
+
+  // Fetch available slots whenever isAddOpen, date, or serviceId changes
+  useEffect(() => {
+    if (!isAddOpen) return;
+
+    const isToday = addForm.date === todayStr;
+    if (isToday && operatingHours.isPastOperatingHoursToday) {
+      setAvailableSlots([]);
+      setAddForm((prev) => ({ ...prev, slotStartTimeIso: "" }));
+      return;
+    }
+
+    const selectedService = services.find((s) => s.id === addForm.serviceId) || services[0];
+    const durationMinutes = selectedService?.durationMinutes || 45;
+
+    let ignore = false;
+    setIsLoadingSlots(true);
+
+    getAvailableSlots(addForm.date, durationMinutes)
+      .then((res) => {
+        if (ignore) return;
+        if (res.success) {
+          setAvailableSlots(res.data);
+          setAddForm((prev) => {
+            const hasExisting = res.data.some((s) => s.startTime === prev.slotStartTimeIso);
+            return {
+              ...prev,
+              slotStartTimeIso: hasExisting ? prev.slotStartTimeIso : (res.data[0]?.startTime || ""),
+            };
+          });
+        } else {
+          setAvailableSlots([]);
+          setAddForm((prev) => ({ ...prev, slotStartTimeIso: "" }));
+        }
+      })
+      .catch((err) => {
+        if (ignore) return;
+        console.error("Failed to load slots:", err);
+        setAvailableSlots([]);
+      })
+      .finally(() => {
+        if (!ignore) setIsLoadingSlots(false);
+      });
+
+    return () => {
+      ignore = true;
+    };
+  }, [
+    isAddOpen,
+    addForm.date,
+    addForm.serviceId,
+    todayStr,
+    operatingHours.isPastOperatingHoursToday,
+    services,
+  ]);
 
   // Handle 1-Tap status change
   function handleMarkStatus(bookingId: string, status: BookingStatus) {
@@ -96,20 +168,38 @@ export function DeskAppointmentsView({
     setAddError(null);
     if (!addForm.name.trim() || !addForm.phone.trim()) {
       setAddError(
-        languageMode === "ONLY_ZH"
-          ? "请填写顾客姓名与手机号码"
-          : "Customer name and phone number are required."
+        resolveDeskText(DESK_DICT.appointmentView.namePhoneRequired, languageMode).primary
+      );
+      return;
+    }
+    if (!addForm.serviceId) {
+      setAddError(
+        resolveDeskText(DESK_DICT.appointmentView.selectServiceRequired, languageMode).primary
+      );
+      return;
+    }
+
+    const isToday = addForm.date === todayStr;
+    if (isToday && operatingHours.isPastOperatingHoursToday) {
+      setAddError(
+        resolveDeskText(DESK_DICT.appointmentView.pastOperatingHoursNotice, languageMode).primary
+      );
+      return;
+    }
+
+    if (!addForm.slotStartTimeIso) {
+      setAddError(
+        resolveDeskText(DESK_DICT.appointmentView.selectSlotRequired, languageMode).primary
       );
       return;
     }
 
     startTransition(async () => {
-      const startIso = new Date(`${addForm.date}T${addForm.time}:00`).toISOString();
       const res = await createDeskAppointment({
         customerName: addForm.name.trim(),
         phoneNumber: addForm.phone.trim(),
         serviceId: addForm.serviceId,
-        startDatetimeIso: startIso,
+        startDatetimeIso: addForm.slotStartTimeIso,
         notes: addForm.notes.trim() || undefined,
       });
 
@@ -119,8 +209,8 @@ export function DeskAppointmentsView({
           name: "",
           phone: "",
           serviceId: services[0]?.id || "",
-          time: "10:00",
-          date: format(new Date(), "yyyy-MM-dd"),
+          date: minAllowedDate,
+          slotStartTimeIso: "",
           notes: "",
         });
         onRefresh();
@@ -152,7 +242,18 @@ export function DeskAppointmentsView({
 
         <Button
           type="button"
-          onClick={() => setIsAddOpen(true)}
+          onClick={() => {
+            setAddError(null);
+            setAddForm({
+              name: "",
+              phone: "",
+              serviceId: services[0]?.id || "",
+              date: minAllowedDate,
+              slotStartTimeIso: "",
+              notes: "",
+            });
+            setIsAddOpen(true);
+          }}
           size="lg"
           className="h-14 sm:h-16 px-6 text-base sm:text-lg font-bold bg-primary hover:bg-primary/90 text-primary-foreground gap-2 rounded-2xl shadow-md cursor-pointer"
         >
@@ -511,36 +612,118 @@ export function DeskAppointmentsView({
               </select>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            {/* Same-day after hours alert banner */}
+            {addForm.date === todayStr && operatingHours.isPastOperatingHoursToday && (
+              <div className="p-3.5 rounded-2xl bg-amber-500/15 border border-amber-500/30 text-amber-800 dark:text-amber-300 flex items-start gap-2.5 text-sm">
+                <AlertCircle className="h-5 w-5 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
+                <div>
+                  <p className="font-bold">
+                    <DeskText
+                      text={DESK_DICT.appointmentView.pastOperatingHoursTitle}
+                      mode={languageMode}
+                      layout="inline"
+                    />
+                  </p>
+                  <p className="text-xs mt-0.5 opacity-90">
+                    <DeskText
+                      text={DESK_DICT.appointmentView.pastOperatingHoursNotice}
+                      mode={languageMode}
+                      layout="inline"
+                    />
+                  </p>
+                </div>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label className="text-sm font-bold">
                   <DeskText
                     text={DESK_DICT.appointmentView.date}
                     mode={languageMode}
                     layout="inline"
-                  />
+                  /> *
                 </Label>
                 <Input
                   type="date"
+                  min={minAllowedDate}
                   value={addForm.date}
                   onChange={(e) => setAddForm({ ...addForm, date: e.target.value })}
                   className="h-12 text-base rounded-xl"
                 />
               </div>
+
               <div className="space-y-1.5">
-                <Label className="text-sm font-bold">
-                  <DeskText
-                    text={DESK_DICT.appointmentView.time}
-                    mode={languageMode}
-                    layout="inline"
-                  />
-                </Label>
-                <Input
-                  type="time"
-                  value={addForm.time}
-                  onChange={(e) => setAddForm({ ...addForm, time: e.target.value })}
-                  className="h-12 text-base rounded-xl"
-                />
+                <div className="flex items-center justify-between">
+                  <Label className="text-sm font-bold">
+                    <DeskText
+                      text={DESK_DICT.appointmentView.timeSlot}
+                      mode={languageMode}
+                      layout="inline"
+                    /> *
+                  </Label>
+                  {isLoadingSlots ? (
+                    <span className="text-xs text-muted-foreground flex items-center gap-1 font-normal">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+                      <DeskText
+                        text={DESK_DICT.appointmentView.loadingSlots}
+                        mode={languageMode}
+                        layout="inline"
+                      />
+                    </span>
+                  ) : availableSlots.length > 0 ? (
+                    <Badge variant="outline" className="text-xs h-5 px-2 font-semibold text-emerald-600 dark:text-emerald-400 border-emerald-500/30 bg-emerald-500/10">
+                      {availableSlots.length}{" "}
+                      <DeskText
+                        text={DESK_DICT.appointmentView.slotsAvailableBadge}
+                        mode={languageMode}
+                        layout="inline"
+                      />
+                    </Badge>
+                  ) : null}
+                </div>
+
+                {isLoadingSlots ? (
+                  <div className="h-12 rounded-xl border border-dashed flex items-center justify-center text-sm text-muted-foreground bg-muted/30">
+                    <Loader2 className="h-4 w-4 animate-spin mr-2 text-primary" />
+                    <DeskText
+                      text={DESK_DICT.appointmentView.loadingSlots}
+                      mode={languageMode}
+                      layout="inline"
+                    />
+                  </div>
+                ) : addForm.date === todayStr && operatingHours.isPastOperatingHoursToday ? (
+                  <div className="h-12 rounded-xl border border-destructive/20 bg-destructive/5 flex items-center px-3.5 text-sm text-destructive font-medium">
+                    <DeskText
+                      text={DESK_DICT.appointmentView.pastOperatingHoursTitle}
+                      mode={languageMode}
+                      layout="inline"
+                    />
+                  </div>
+                ) : availableSlots.length === 0 ? (
+                  <div className="h-12 rounded-xl border border-amber-500/30 bg-amber-500/10 flex items-center px-3.5 text-sm text-amber-700 dark:text-amber-400 font-medium">
+                    <DeskText
+                      text={DESK_DICT.appointmentView.noSlots}
+                      mode={languageMode}
+                      layout="inline"
+                    />
+                  </div>
+                ) : (
+                  <select
+                    value={addForm.slotStartTimeIso}
+                    onChange={(e) => setAddForm({ ...addForm, slotStartTimeIso: e.target.value })}
+                    className="w-full h-12 rounded-xl border px-3 text-sm font-semibold bg-background border-input focus:outline-none focus:ring-2 focus:ring-ring"
+                  >
+                    {availableSlots.map((slot) => {
+                      const label = formatSlotTimeRange(slot.startTime, slot.endTime);
+                      return (
+                        <option key={slot.startTime} value={slot.startTime}>
+                          {label}
+                        </option>
+                      );
+                    })}
+                  </select>
+                )}
               </div>
             </div>
           </div>
@@ -562,8 +745,14 @@ export function DeskAppointmentsView({
             <Button
               type="button"
               onClick={handleCreateAppointment}
-              disabled={isPending}
-              className="h-12 text-base font-bold bg-primary hover:bg-primary/90 text-primary-foreground gap-2 rounded-xl"
+              disabled={
+                isPending ||
+                isLoadingSlots ||
+                availableSlots.length === 0 ||
+                !addForm.slotStartTimeIso ||
+                (addForm.date === todayStr && operatingHours.isPastOperatingHoursToday)
+              }
+              className="h-12 text-base font-bold bg-primary hover:bg-primary/90 text-primary-foreground gap-2 rounded-xl disabled:opacity-50"
             >
               {isPending ? (
                 <>

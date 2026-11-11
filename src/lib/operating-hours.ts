@@ -1,6 +1,7 @@
 export interface OperatingHoursInfo {
   isOutside: boolean;
   isClosedDay: boolean;
+  isPastOperatingHoursToday: boolean;
   displayHours: string;
   displayDays: string;
   startHourDisplay: string;
@@ -26,14 +27,15 @@ export function getOperatingHoursInfo(): OperatingHoursInfo {
 
   const now = new Date();
 
-  // Current hour in Asia/Kuala_Lumpur (0-23)
-  const currentHourMYT = Number(
-    new Intl.DateTimeFormat("en-US", {
-      timeZone: "Asia/Kuala_Lumpur",
-      hour: "numeric",
-      hour12: false,
-    }).format(now)
-  );
+  // Current hour and minute in Asia/Kuala_Lumpur (0-23)
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Kuala_Lumpur",
+    hour: "numeric",
+    minute: "numeric",
+    hourCycle: "h23",
+  });
+  const parts = formatter.formatToParts(now);
+  const currentHourMYT = Number(parts.find((p) => p.type === "hour")?.value ?? 0);
 
   // Current weekday in Asia/Kuala_Lumpur (0=Sun, 1=Mon, ..., 6=Sat)
   const dayStr = new Intl.DateTimeFormat("en-US", {
@@ -56,6 +58,10 @@ export function getOperatingHoursInfo(): OperatingHoursInfo {
   const isOutsideHours = currentHourMYT < startHour || currentHourMYT >= endHour;
   const isOutside = isClosedDay || isOutsideHours;
 
+  // Has operating hours for today already ended?
+  // Evaluates to true if today is a closed day, or current hour is >= endHour
+  const isPastOperatingHoursToday = isClosedDay || currentHourMYT >= endHour;
+
   // Format startHour nicely (e.g. 9 -> "9:00 AM")
   const startHourDate = new Date();
   startHourDate.setHours(startHour, 0, 0, 0);
@@ -75,9 +81,14 @@ export function getOperatingHoursInfo(): OperatingHoursInfo {
   return {
     isOutside,
     isClosedDay,
+    isPastOperatingHoursToday,
     displayHours,
     displayDays,
     startHourDisplay,
     nextOpenDayNotice,
   };
+}
+
+export function isTodayPastOperatingHours(): boolean {
+  return getOperatingHoursInfo().isPastOperatingHoursToday;
 }

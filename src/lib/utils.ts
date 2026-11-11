@@ -82,6 +82,29 @@ export function roundUpToInterval(date: Date, intervalMinutes: number): Date {
 }
 
 /**
+ * Format slot time range nicely in business timezone (Asia/Kuala_Lumpur).
+ * e.g. "10:00 AM – 10:45 AM"
+ */
+export function formatSlotTimeRange(
+  startTimeIso: string,
+  endTimeIso?: string
+): string {
+  const start = new Date(startTimeIso);
+  const timeFormatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: BUSINESS_TIMEZONE,
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+
+  if (!endTimeIso) {
+    return timeFormatter.format(start);
+  }
+  const end = new Date(endTimeIso);
+  return `${timeFormatter.format(start)} – ${timeFormatter.format(end)}`;
+}
+
+/**
  * Standardize phone numbers to match consistently across customer input formats.
  * e.g. "+60 12-345 6789", "60123456789", "0123456789" -> "0123456789"
  */

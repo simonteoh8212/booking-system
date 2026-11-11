@@ -35,13 +35,13 @@ export function StepCustomerForm() {
   function validate() {
     const newErrors: Record<string, string> = {};
     if (!customerDetails.name.trim()) {
-      newErrors.name = language === "zh" ? "请输入您的姓名或称呼" : "Name is required.";
+      newErrors.name = t.step3.errors.nameRequired[language];
     }
     const cleanPhone = customerDetails.phoneNumber.replace(/[\s-]/g, "");
     if (!cleanPhone) {
-      newErrors.phoneNumber = language === "zh" ? "请输入 WhatsApp 手机号码" : "WhatsApp number is required.";
+      newErrors.phoneNumber = t.step3.errors.phoneRequired[language];
     } else if (cleanPhone.length < 8) {
-      newErrors.phoneNumber = language === "zh" ? "请输入有效的手机号码" : "Enter a valid phone number.";
+      newErrors.phoneNumber = t.step3.errors.phoneInvalid[language];
     }
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -76,7 +76,7 @@ export function StepCustomerForm() {
         <div className="flex items-center justify-center gap-2 text-primary mb-2">
           <User className="h-5 w-5" />
           <span className="text-sm font-medium uppercase tracking-wider">
-            {language === "zh" ? "第 3 步 / 共 4 步" : "Step 3 of 4"}
+            {t.step3.stepIndicator[language]}
           </span>
         </div>
         <h2 className="text-2xl font-bold">{t.step3.title[language]}</h2>

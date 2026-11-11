@@ -1,4 +1,10 @@
+import { zhCN, enUS } from "date-fns/locale";
+
 export type CustomerLanguage = "en" | "zh";
+
+export function getDateFnsLocale(language: CustomerLanguage) {
+  return language === "zh" ? zhCN : enUS;
+}
 
 export const CUSTOMER_I18N = {
   header: {
@@ -20,7 +26,16 @@ export const CUSTOMER_I18N = {
     step3: { en: "Details", zh: "顾客资料" },
     step4: { en: "Payment", zh: "支付确认" },
   },
+  funnel: {
+    rushHourTitle: { en: "🔥 Peak Rush Hour Notice", zh: "🔥 客满高峰期提示" },
+    rushHourDesc: (time: string) => ({
+      en: `Our studio is currently at peak capacity for walk-in clients. Online bookings are temporarily paused until ${time}. Please contact us via WhatsApp for urgent appointments.`,
+      zh: `本店目前现场客满，线上预约已暂时暂停接单，预计将于 ${time} 重新开放。如有急需欢迎直接到店或 WhatsApp 咨询。`,
+    }),
+    timeFormat: { en: "h:mm a", zh: "HH:mm" },
+  },
   step1: {
+    stepIndicator: { en: "Step 1 of 4", zh: "第 1 步 / 共 4 步" },
     title: { en: "Choose a Service", zh: "选择服务项目" },
     subtitle: { en: "Select the service you would like to book", zh: "请选择您想要预约的美发项目" },
     select: { en: "Select", zh: "选择项目" },
@@ -30,17 +45,34 @@ export const CUSTOMER_I18N = {
     checkBack: { en: "Please check back later or contact us directly.", zh: "请稍后再试或直接联系沙龙。" },
   },
   step2: {
+    stepIndicator: { en: "Step 2 of 4", zh: "第 2 步 / 共 4 步" },
     title: { en: "Select Date & Time", zh: "选择预约日期与时间" },
     subtitle: { en: "Choose an available appointment slot", zh: "请选择您方便到店的时间段" },
+    showingSlotsFor: { en: "Showing slots for: ", zh: "已选项目：" },
     slotsAvailable: { en: "available slots", zh: "个可用时段" },
+    availableTimesFor: { en: "Available times for", zh: "可用时段" },
+    dateFormat: { en: "EEEE, d MMMM", zh: "M月d日 (EEEE)" },
+    availableTimesForDate: (formattedDate: string) => ({
+      en: `Available times for ${formattedDate}`,
+      zh: `${formattedDate} 可用时段`,
+    }),
+    allSessions: { en: "All", zh: "全部" },
+    daySession: { en: "Day", zh: "日间" },
+    nightSession: { en: "Night", zh: "晚间" },
+    daySessionTooltip: { en: "Daytime session", zh: "日间时段" },
+    nightSessionTooltip: { en: "Night session (6:00 PM onwards)", zh: "晚间时段 (6:00 PM 起)" },
     morning: { en: "Morning", zh: "上午" },
     afternoon: { en: "Afternoon", zh: "下午" },
     evening: { en: "Evening", zh: "傍晚/晚上" },
+    loadingSlots: { en: "Loading available slots…", zh: "正在查询可用时段…" },
     noSlots: { en: "No available slots on this date. Please pick another day.", zh: "此日期已无空余时段，请选择其他日期。" },
+    noFilteredSlots: { en: "No slots available for the selected session filter.", zh: "当前筛选条件下无空余时段" },
+    selectedSlot: { en: "Selected slot", zh: "已选时段" },
     back: { en: "Back", zh: "返回" },
     continue: { en: "Continue", zh: "下一步" },
   },
   step3: {
+    stepIndicator: { en: "Step 3 of 4", zh: "第 3 步 / 共 4 步" },
     title: { en: "Your Details", zh: "填写顾客资料" },
     subtitle: { en: "We'll use this to confirm your appointment", zh: "用于发送预约凭证与确认到店" },
     summary: { en: "Booking Summary", zh: "预约概览" },
@@ -55,12 +87,18 @@ export const CUSTOMER_I18N = {
     phoneNotice: { en: "We'll send the confirmation via WhatsApp.", zh: "我们将通过 WhatsApp 发送预约凭证。" },
     notes: { en: "Notes (Optional)", zh: "备注需求 (选填)" },
     notesPlaceholder: { en: "Any special requests or preferences for the stylist…", zh: "有任何发型需求或特殊要求可在此填写…" },
+    errors: {
+      nameRequired: { en: "Name is required.", zh: "请输入您的姓名或称呼" },
+      phoneRequired: { en: "WhatsApp number is required.", zh: "请输入 WhatsApp 手机号码" },
+      phoneInvalid: { en: "Enter a valid phone number.", zh: "请输入有效的手机号码" },
+    },
     back: { en: "Back", zh: "返回" },
     holdSlotAndPay: { en: "Hold Slot & Pay", zh: "锁定名额并付款" },
     holdSlotVIP: { en: "Confirm Appointment (Deposit Waived)", zh: "确认预约 (熟客免定金)" },
     holding: { en: "Holding slot…", zh: "正在锁定名额…" },
   },
   step4: {
+    stepIndicator: { en: "Step 4 of 4", zh: "第 4 步 / 共 4 步" },
     title: { en: "Complete Payment", zh: "完成定金支付" },
     subtitle: { en: "Transfer deposit to secure your appointment", zh: "转账定金即可永久锁定名额" },
     totalService: { en: "Total Service", zh: "项目总价" },
@@ -79,12 +117,72 @@ export const CUSTOMER_I18N = {
     submitting: { en: "Confirming booking…", zh: "正在确认预约…" },
     // VIP Exempt View
     vipTitle: { en: "🌟 VIP Regular Customer — Deposit Waived", zh: "🌟 熟客专属特权 — 免付定金" },
+    vipHeader: { en: "Confirm Booking (Deposit Waived)", zh: "确认预约 (熟客免付定金)" },
+    vipSubtitle: { en: "As our valued regular customer, no online deposit is required", zh: "尊贵熟客无需支付定金，直接确认预约" },
+    vipCustomerRecognized: { en: "Recognized regular customer: ", zh: "已识别熟客手机号: " },
     vipDesc: { en: "As our valued regular customer, you do not need to pay a deposit online. Click below to confirm your appointment immediately.", zh: "作为我们的尊贵熟客，您的本次预约已获免除定金。点击下方按钮即可直接确认并锁定您的预约时段。" },
     vipConfirmBtn: { en: "Confirm Appointment & Send WhatsApp Notification", zh: "直接确认预约并通过 WhatsApp 发送通知" },
+    vipWaivedBadge: { en: "Waived (VIP Regular)", zh: "免付 (熟客专属)" },
+    depositBadge: { en: "Deposit", zh: "需付定金" },
+    howToPay: { en: "How to Pay", zh: "支付步骤指引" },
+    payee: { en: "Payee: ", zh: "收款商户: " },
+    qrNotConfigured: { en: "DuitNow QR not yet configured in Admin Settings.", zh: "管理员暂未配置收款二维码" },
+    vipGuidanceTitle: { en: "Deposit Waived · 1-Click Confirmation", zh: "免收定金 · 一键确认" },
+    vipGuidanceDesc: { en: "No payment is required right now. Simply click the button below to secure your appointment. You can settle the full amount after your salon service.", zh: "您无需扫码或转账，点击下方绿色按钮即可立刻锁定此预约时段。全额可在到店享受服务后再付款。" },
+    expiredTitle: { en: "Reservation Expired", zh: "预约已超时" },
+    heldTitle: { en: "Slot Temporarily Held", zh: "时段已为您临时锁定" },
+    expiredDesc: { en: "This slot has been released for others.", zh: "该时段已释放给其他顾客。" },
+    heldDesc: { en: "Complete confirmation before timer reaches 00:00", zh: "请在倒计时结束前完成确认" },
+    expiredNotice: { en: "Your 7-minute reservation hold has expired.", zh: "您的 7 分钟预约临时保留已超时。" },
+    alreadyPaidTitle: { en: "Already transferred money?", zh: "已经转账付款？" },
+    alreadyPaidDesc: { en: "Don't worry! Click below to send your receipt directly to our team via WhatsApp for priority rescheduling or refund:", zh: "请放心！点击下方按钮直接在 WhatsApp 将收据发送给沙龙客服，我们将优先为您保留时段或协助退款：" },
+    whatsappAssistBtn: { en: "WhatsApp Merchant for Help / Refund", zh: "WhatsApp 联系沙龙客服协助" },
+    pickAnotherSlotBtn: { en: "Pick Another Time Slot", zh: "重新选择预约时段" },
+    heldReservation: { en: "Your Held Reservation", zh: "已锁定时段概览" },
+    afterHoursNoticeTitle: { en: "After-Hours Booking Notice", zh: "非营业时间预约提醒" },
+    afterHoursNoticeLine1: (days: string, hours: string) => ({
+      en: `We are currently outside our operating hours (${days}, ${hours}).`,
+      zh: `当前为沙龙非营业时间 (${days}, ${hours})。`,
+    }),
+    afterHoursNoticeLine2: { en: "You can still proceed!", zh: "您仍可正常提交预约！" },
+    afterHoursNoticeLine3: { en: "Once confirmed, your slot is", zh: "点击确认后，您的时段将" },
+    afterHoursNoticeLine4: { en: "securely locked", zh: "永久锁定" },
+    afterHoursNoticeLine5: (nextNotice: string) => ({
+      en: `. Our team will verify and confirm your booking ${nextNotice}.`,
+      zh: `，不会被他人抢订。我们将在 ${nextNotice} 优先确认您的预约。`,
+    }),
+    fallbackHelpDateFormat: { en: "d MMM yyyy, h:mm a", zh: "yyyy年M月d日 h:mm a" },
+    fallbackHelpMessage: (serviceName: string, datetime: string, refCode: string) => ({
+      en: `Hi, I made a booking for ${serviceName} (${datetime}), Reference: ${refCode}. My session timed out. Please assist me.`,
+      zh: `您好，我预约了 ${serviceName} (${datetime})，预约单号: ${refCode}。付款倒计时已过期，请协助我处理。谢谢！`,
+    }),
+    qrSaveHint: { en: "Long-press to save image, or scan using your banking app", zh: "支持长按保存图片或使用另一台手机/App直接扫码" },
+    qrSaveBtn: { en: "Save / Download QR", zh: "下载保存二维码" },
+    qrCloseBtn: { en: "Close", zh: "关闭" },
   },
   confirmation: {
     title: { en: "Booking Confirmed!", zh: "预约已确认！" },
     subtitle: { en: "We look forward to seeing you at our salon.", zh: "感谢您的预约，我们期待在沙龙为您服务。" },
+    vipTitle: { en: "Appointment Confirmed!", zh: "熟客预约已锁定！" },
+    vipSubtitle: { en: "🌟 As our valued regular customer, deposit is waived. See you at the salon!", zh: "🌟 感谢您的支持，本次预约已免除定金，到店直接享受服务！" },
+    copied: { en: "Copied to clipboard!", zh: "已复制到剪贴板！" },
+    detailsTitle: { en: "Appointment Details", zh: "预约信息明细" },
+    dateTimeFormat: { en: "EEEE, d MMMM yyyy, h:mm a", zh: "yyyy年M月d日 (EEEE) h:mm a" },
+    waivedAmount: { en: "Waived ($0.00)", zh: "已免收 (RM 0.00)" },
+    afterHoursTitle: { en: "Slot Locked & Reserved!", zh: "时段已锁定！非营业时间通知" },
+    afterHoursLine1: (days: string, hours: string) => ({
+      en: `You submitted your booking outside operating hours (${days}, ${hours}).`,
+      zh: `您在非营业时间提交了预约 (${days}, ${hours})。`,
+    }),
+    afterHoursLine2: { en: "Your slot is securely locked", zh: "您的预约时段已被系统安全锁定" },
+    afterHoursLine3: (nextNotice: string) => ({
+      en: ` and will be reviewed and confirmed ${nextNotice} once our team verifies your submission.`,
+      zh: `，沙龙团队将在 ${nextNotice} 优先核对并为您确认。`,
+    }),
+    vipSecuredTitle: { en: "🌟 VIP Appointment Secured!", zh: "🌟 熟客特权名额已锁定！" },
+    regularSecuredTitle: { en: "✅ Slot Successfully Reserved!", zh: "✅ 预约名额已成功锁定！" },
+    vipNotice: { en: "As a trusted regular, your booking is pre-approved! Click below to send a quick WhatsApp note to our team.", zh: "由于您是我们的常客，无需审核定金。您可以点击下方按钮直接打开 WhatsApp 向沙龙发送预约提醒。" },
+    regularNotice: { en: "Please attach your payment receipt screenshot in the WhatsApp chat. Our salon team will confirm your appointment shortly.", zh: "请在打开的 WhatsApp 聊天窗口中附上转账收据截图。沙龙团队核实后将尽快完成最终确认。" },
     refCode: { en: "Booking Reference", zh: "预约编号" },
     service: { en: "Service", zh: "预约项目" },
     dateTime: { en: "Date & Time", zh: "预约时间" },
@@ -94,6 +192,8 @@ export const CUSTOMER_I18N = {
     depositWaived: { en: "Deposit Waived (VIP Regular)", zh: "已免定金 (熟客专属)" },
     balanceDue: { en: "Balance Due at Salon", zh: "到店到付余款" },
     openWhatsApp: { en: "Message Salon on WhatsApp", zh: "打开 WhatsApp 联系门店" },
+    vipOpenWhatsApp: { en: "Open WhatsApp to Notify Salon", zh: "打开 WhatsApp 发送预约通知" },
+    trackStatus: { en: "Track your booking status online anytime", zh: "随时在线追踪您的预约状态" },
     newBooking: { en: "Book Another Appointment", zh: "预约其他时段" },
   },
 };

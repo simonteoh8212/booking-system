@@ -62,16 +62,14 @@ export function BookingFunnel({
           <Flame className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
           <div className="text-xs space-y-1">
             <p className="font-bold text-sm text-foreground">
-              {language === "zh" ? "🔥 客满高峰期提示" : "🔥 Peak Rush Hour Notice"}
+              {t.funnel.rushHourTitle[language]}
             </p>
             <p className="leading-relaxed">
-              {language === "zh"
-                ? `本店目前现场客满，线上预约已暂时暂停接单，预计将于 ${
-                    rushStatus.expiresAt ? format(new Date(rushStatus.expiresAt), "HH:mm") : ""
-                  } 重新开放。如有急需欢迎直接到店或 WhatsApp 咨询。`
-                : `Our studio is currently at peak capacity for walk-in clients. Online bookings are temporarily paused until ${
-                    rushStatus.expiresAt ? format(new Date(rushStatus.expiresAt), "h:mm a") : ""
-                  }. Please contact us via WhatsApp for urgent appointments.`}
+              {t.funnel.rushHourDesc(
+                rushStatus.expiresAt
+                  ? format(new Date(rushStatus.expiresAt), t.funnel.timeFormat[language])
+                  : ""
+              )[language]}
             </p>
           </div>
         </div>

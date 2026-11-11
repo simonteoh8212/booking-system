@@ -15,12 +15,10 @@ function LoginContent() {
   const searchParams = useSearchParams();
   const rawFrom = searchParams.get("from");
   const isInternal = isInternalAppMode();
-  console.log("isInternal",isInternal)
   // Default destination based on app mode:
   // - Internal mode (staff kiosk): /admin/desk
   // - External mode (dashboard): /admin
   const defaultDestination = isInternal ? "/admin/desk" : "/admin";
-  console.log("defaultDestination",defaultDestination)
   const fromUrl = isInternal
     ? (rawFrom && rawFrom !== "/admin" && rawFrom !== "/" ? rawFrom : defaultDestination)
     : (rawFrom && rawFrom !== "/" ? rawFrom : defaultDestination);

@@ -1,50 +1,57 @@
-version: "3.9"
-
 services:
-  # ──────────────────────────────────────────────────────────────
-  # PostgreSQL — local development database
-  # (In production, replace DATABASE_URL with your Supabase/VPS DSN
-  #  and remove this service entirely)
-  # ──────────────────────────────────────────────────────────────
-  postgres:
-    image: postgres:16-alpine
-    container_name: bookease_db
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: bookingdb
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # ──────────────────────────────────────────────────────────────
-  # Next.js application
-  # ──────────────────────────────────────────────────────────────
-  app:
+  web:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: bookease_app
+      args:
+        NEXT_PUBLIC_APP_MODE: ${NEXT_PUBLIC_APP_MODE:-external}
+        NEXT_PUBLIC_BUSINESS_NAME: ${NEXT_PUBLIC_BUSINESS_NAME:-BookEase}
+        NEXT_PUBLIC_MERCHANT_WHATSAPP: ${NEXT_PUBLIC_MERCHANT_WHATSAPP:-60123456789}
+        NEXT_PUBLIC_PAYMENT_QR_URL: ${NEXT_PUBLIC_PAYMENT_QR_URL:-}
+        NEXT_PUBLIC_BOOKING_REF_PREFIX: ${NEXT_PUBLIC_BOOKING_REF_PREFIX:-BK}
+        NEXT_PUBLIC_OPERATING_HOUR_START: ${NEXT_PUBLIC_OPERATING_HOUR_START:-9}
+        NEXT_PUBLIC_OPERATING_HOUR_END: ${NEXT_PUBLIC_OPERATING_HOUR_END:-19}
+        NEXT_PUBLIC_CLOSED_DAYS: ${NEXT_PUBLIC_CLOSED_DAYS:-0}
+        NEXT_PUBLIC_OPERATING_DAYS_DESCRIPTION: ${NEXT_PUBLIC_OPERATING_DAYS_DESCRIPTION:-Mon – Sat}
+        NEXT_PUBLIC_OPERATING_HOURS_DISPLAY: ${NEXT_PUBLIC_OPERATING_HOURS_DISPLAY:-9:00 AM – 7:00 PM}
+        NEXT_PUBLIC_CURRENCY_SYMBOL: ${NEXT_PUBLIC_CURRENCY_SYMBOL:-RM}
+        NEXT_PUBLIC_CURRENCY_CODE: ${NEXT_PUBLIC_CURRENCY_CODE:-MYR}
+        NEXT_PUBLIC_BUSINESS_TIMEZONE: ${NEXT_PUBLIC_BUSINESS_TIMEZONE:-Asia/Kuala_Lumpur}
+    container_name: salon-prod
     restart: unless-stopped
     ports:
-      - "3000:3000"
-    environment:
-      NODE_ENV: production
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/bookingdb
-      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
-      NEXT_PUBLIC_BUSINESS_NAME: ${NEXT_PUBLIC_BUSINESS_NAME:-BookEase}
-      NEXT_PUBLIC_MERCHANT_WHATSAPP: ${NEXT_PUBLIC_MERCHANT_WHATSAPP:-60123456789}
-      NEXT_PUBLIC_PAYMENT_QR_URL: ${NEXT_PUBLIC_PAYMENT_QR_URL:-}
+      # Bound to localhost on 3001 (avoids conflict with existing app on 3000);
+      # point your reverse proxy (Nginx / Caddy / Cloudflare Tunnel) to 127.0.0.1:3001
+      - "127.0.0.1:${APP_PORT:-3001}:3000"
+    env_file:
+      - .env.prod
     depends_on:
-      postgres:
+      db:
         condition: service_healthy
+    networks:
+      - salon-net
+
+  db:
+    image: postgres:16-alpine
+    container_name: salon-db
+    restart: unless-stopped
+    env_file:
+      - .env.prod
+    volumes:
+      - salon_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-bookingdb}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - salon-net
+    # Do NOT map port 5432 to 0.0.0.0 to prevent brute-force attacks over the internet
 
 volumes:
-  postgres_data:
+  salon_postgres_data:
+    driver: local
+
+networks:
+  salon-net:
+    driver: bridge

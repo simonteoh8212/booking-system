@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { getAllBookings, type BookingTimeframe } from "@/actions/admin-bookings";
+import { getActiveServices } from "@/actions/services";
 import { AdminBookingsManager } from "@/components/admin/AdminBookingsManager";
 import { prisma } from "@/lib/prisma";
 import { connection } from "next/server";
@@ -23,7 +24,7 @@ export default async function BookingsPage({ searchParams }: BookingsPageProps) 
   const searchParam = params.search || params.ref || undefined;
   const timeframeParam = (params.timeframe as BookingTimeframe) || "6_MONTHS";
 
-  const [result, depositSetting] = await Promise.all([
+  const [result, depositSetting, servicesRes] = await Promise.all([
     getAllBookings({
       status: statusParam,
       search: searchParam,
@@ -33,12 +34,14 @@ export default async function BookingsPage({ searchParams }: BookingsPageProps) 
     prisma.depositSetting.findFirst({
       orderBy: { updatedAt: "desc" },
     }),
+    getActiveServices(),
   ]);
 
   const bookings = result.success ? result.data.bookings : [];
   const counts = result.success
     ? result.data.counts
     : { all: 0, pending: 0, confirmed: 0, completed: 0, cancelled: 0, noShow: 0 };
+  const services = servicesRes.success ? servicesRes.data : [];
 
   const currencySymbol = "RM";
 
@@ -46,6 +49,7 @@ export default async function BookingsPage({ searchParams }: BookingsPageProps) 
     <AdminBookingsManager
       initialBookings={bookings}
       initialCounts={counts}
+      services={services}
       currencySymbol={currencySymbol}
       initialStatus={params.status}
       initialRef={params.ref}

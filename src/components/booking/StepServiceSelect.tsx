@@ -34,7 +34,7 @@ export function StepServiceSelect({ services }: StepServiceSelectProps) {
         <div className="flex items-center justify-center gap-2 text-primary mb-2">
           <Sparkles className="h-5 w-5" />
           <span className="text-sm font-medium uppercase tracking-wider">
-            {language === "zh" ? "第 1 步 / 共 4 步" : "Step 1 of 4"}
+            {t.step1.stepIndicator[language]}
           </span>
         </div>
         <h2 className="text-2xl font-bold">{t.step1.title[language]}</h2>
