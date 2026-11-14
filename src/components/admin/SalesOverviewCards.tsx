@@ -104,7 +104,7 @@ export function SalesOverviewCards({ summary }: SalesOverviewCardsProps) {
               className="rounded-xl font-bold gap-2 shadow-xs bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"
             >
               <Scissors className="h-4 w-4" />
-              <span>Open Salon Desk (POS) / 柜台收银</span>
+              <span>POS</span>
               <ArrowRight className="h-3.5 w-3.5" />
             </Button>
           </Link>
