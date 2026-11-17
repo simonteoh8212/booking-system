@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
+import { useScrollHide } from "@/lib/use-scroll-hide";
 import type { BilingualText } from "@/lib/desk-i18n";
 
 export interface FloatingNavItem {
@@ -135,53 +136,12 @@ export function FloatingBottomNav({
   }>({ left: 0, width: 0, ready: false });
   const [isGliding, setIsGliding] = useState(false);
 
-  // Smooth vertical settling when scrolling or when mobile browser toolbar resizes viewport
-  const [isScrolledDown, setIsScrolledDown] = useState(false);
-  const [viewportShiftY, setViewportShiftY] = useState(0);
-
-  useEffect(() => {
-    let lastY = window.scrollY;
-    const onScroll = () => {
-      const y = window.scrollY;
-      if (y <= 12) {
-        setIsScrolledDown(false);
-      } else if (y > lastY + 6) {
-        setIsScrolledDown(true);
-      } else if (y < lastY - 6) {
-        setIsScrolledDown(false);
-      }
-      lastY = y;
-    };
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
-  }, []);
-
-  useEffect(() => {
-    const vv = window.visualViewport;
-    if (!vv) return;
-    let prevBottom = vv.offsetTop + vv.height;
-    let rafId = 0;
-
-    const onResize = () => {
-      const nextBottom = vv.offsetTop + vv.height;
-      const delta = nextBottom - prevBottom;
-      prevBottom = nextBottom;
-      if (Math.abs(delta) > 2 && Math.abs(delta) < 160) {
-        // Counter-shift by the viewport delta on the current frame, then glide to 0
-        setViewportShiftY(-delta);
-        cancelAnimationFrame(rafId);
-        rafId = requestAnimationFrame(() => {
-          rafId = requestAnimationFrame(() => setViewportShiftY(0));
-        });
-      }
-    };
-
-    vv.addEventListener("resize", onResize);
-    return () => {
-      vv.removeEventListener("resize", onResize);
-      cancelAnimationFrame(rafId);
-    };
-  }, []);
+  const isHidden = useScrollHide({
+    resetKey: activeId,
+    hideThreshold: 12,
+    revealThreshold: 30,
+    topLockPx: 16,
+  });
 
   useLayoutEffect(() => {
     const activeEl = itemRefs.current[activeId];
@@ -217,22 +177,23 @@ export function FloatingBottomNav({
     };
   }, [activeId, items.length]);
 
-  const verticalOffset = viewportShiftY !== 0 ? viewportShiftY : isScrolledDown ? 6 : 0;
-
   return (
-    <div
-      className="md:hidden fixed inset-x-4 bottom-[calc(14px+env(safe-area-inset-bottom))] z-40 pointer-events-none"
-      style={{
-        transform: `translate3d(0, ${verticalOffset}px, 0)`,
-        transition:
-          viewportShiftY !== 0
-            ? "none"
-            : "transform 280ms cubic-bezier(0.22, 1, 0.36, 1)",
-      }}
-    >
+    <div className="md:hidden fixed inset-x-4 bottom-[calc(14px+env(safe-area-inset-bottom))] z-40 pointer-events-none">
       <nav
         aria-label="Primary mobile navigation"
-        className="pointer-events-auto mx-auto max-w-md rounded-full bg-[#242526]/95 backdrop-blur-md border border-white/10 shadow-[0_8px_28px_rgba(0,0,0,0.38)] p-[6px]"
+        aria-hidden={isHidden}
+        className={cn(
+          "mx-auto max-w-md rounded-full bg-[#242526]/95 backdrop-blur-md border border-white/10 shadow-[0_8px_28px_rgba(0,0,0,0.38)] p-[6px] will-change-transform",
+          isHidden ? "pointer-events-none" : "pointer-events-auto"
+        )}
+        style={{
+          transform: isHidden
+            ? "translate3d(0, calc(100% + 24px + env(safe-area-inset-bottom)), 0)"
+            : "translate3d(0, 0, 0)",
+          opacity: isHidden ? 0.9 : 1,
+          transition:
+            "transform 240ms cubic-bezier(0.22, 1, 0.36, 1), opacity 240ms cubic-bezier(0.22, 1, 0.36, 1)",
+        }}
       >
         <div ref={trackRef} className="relative flex items-center justify-between gap-1">
           {/* Single Shared Sliding Active Pill */}
@@ -278,6 +239,7 @@ export function FloatingBottomNav({
                 <Link
                   key={item.id}
                   href={item.href}
+                  tabIndex={isHidden ? -1 : undefined}
                   onClick={item.onClick}
                   ref={(el) => {
                     itemRefs.current[item.id] = el;
@@ -295,6 +257,7 @@ export function FloatingBottomNav({
               <button
                 key={item.id}
                 type="button"
+                tabIndex={isHidden ? -1 : undefined}
                 ref={(el) => {
                   itemRefs.current[item.id] = el;
                 }}
