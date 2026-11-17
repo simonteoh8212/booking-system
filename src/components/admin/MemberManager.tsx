@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useRef, useEffect } from "react";
 import toast from "react-hot-toast";
 import {
   getMembers,
@@ -52,6 +52,7 @@ import {
   ShoppingBag,
   Scissors,
   ChevronRight,
+  X,
 } from "lucide-react";
 import type {
   MemberDto,
@@ -78,7 +79,66 @@ export function MemberManager({
   const [promos, setPromos] = useState<PromoPackageDto[]>(initialPromos);
   const [searchQuery, setSearchQuery] = useState("");
   const [includeNonMembers, setIncludeNonMembers] = useState(false);
+  const [mobileQuickAddOpen, setMobileQuickAddOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
+  const searchSectionRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const focusScrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const viewportCleanupRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (focusScrollTimerRef.current) clearTimeout(focusScrollTimerRef.current);
+      viewportCleanupRef.current?.();
+    };
+  }, []);
+
+  function alignSearchIntoView(behavior: ScrollBehavior) {
+    const el = searchSectionRef.current;
+    if (!el || typeof window === "undefined") return;
+    // Sticky mobile header is 48px (h-12); leave 8px breathing room below it.
+    const headerOffset = 56;
+    const rect = el.getBoundingClientRect();
+    const targetTop = Math.max(0, window.scrollY + rect.top - headerOffset);
+    window.scrollTo({ top: targetTop, behavior });
+  }
+
+  function handleSearchFocus() {
+    if (typeof window === "undefined" || window.innerWidth >= 768) return;
+
+    if (focusScrollTimerRef.current) {
+      clearTimeout(focusScrollTimerRef.current);
+      focusScrollTimerRef.current = null;
+    }
+    viewportCleanupRef.current?.();
+    viewportCleanupRef.current = null;
+
+    // Move view immediately toward the search bar
+    alignSearchIntoView("smooth");
+
+    // Re-align after the mobile soft keyboard finishes opening & resizing visualViewport
+    const vv = window.visualViewport;
+    let alignedByViewport = false;
+    if (vv) {
+      const onViewportResize = () => {
+        alignedByViewport = true;
+        alignSearchIntoView("smooth");
+        vv.removeEventListener("resize", onViewportResize);
+        viewportCleanupRef.current = null;
+      };
+      vv.addEventListener("resize", onViewportResize, { once: true });
+      viewportCleanupRef.current = () => vv.removeEventListener("resize", onViewportResize);
+    }
+
+    focusScrollTimerRef.current = setTimeout(() => {
+      if (!alignedByViewport) {
+        alignSearchIntoView("smooth");
+      }
+      viewportCleanupRef.current?.();
+      viewportCleanupRef.current = null;
+      focusScrollTimerRef.current = null;
+    }, 320);
+  }
 
   // Quick Create Member
   const [quickName, setQuickName] = useState("");
@@ -163,6 +223,7 @@ export function MemberManager({
         setQuickName("");
         setQuickPhone("");
         setQuickNotes("");
+        setMobileQuickAddOpen(false);
         refreshMembers();
       } else {
         toast.error(res.error);
@@ -451,7 +512,27 @@ export function MemberManager({
           </button>
         </div>
 
-        {activeTab === "PROMOS" && (
+        {activeTab === "MEMBERS" ? (
+          <Button
+            type="button"
+            size="sm"
+            variant={mobileQuickAddOpen ? "secondary" : "default"}
+            onClick={() => setMobileQuickAddOpen((prev) => !prev)}
+            className="sm:hidden rounded-lg font-semibold gap-1.5 cursor-pointer"
+          >
+            {mobileQuickAddOpen ? (
+              <>
+                <X className="h-4 w-4" />
+                <span>Close</span>
+              </>
+            ) : (
+              <>
+                <UserPlus className="h-4 w-4" />
+                <span>Add Member</span>
+              </>
+            )}
+          </Button>
+        ) : (
           <Button
             size="sm"
             onClick={openCreatePromo}
@@ -467,18 +548,20 @@ export function MemberManager({
       {/* TAB 1: MEMBERS                                                    */}
       {/* ================================================================= */}
       {activeTab === "MEMBERS" && (
-        <div className="space-y-4">
-          {/* Inline Quick-Add Strip */}
+        <div className="flex flex-col gap-4">
+          {/* Inline Quick-Add Strip (collapsed on mobile by default, top on desktop) */}
           <form
             onSubmit={handleQuickCreate}
-            className="p-3 rounded-xl border border-border bg-card grid grid-cols-1 sm:grid-cols-12 gap-2.5"
+            className={`sm:order-1 p-3 rounded-xl border border-border bg-card grid-cols-1 sm:grid-cols-12 gap-2.5 ${
+              mobileQuickAddOpen ? "grid" : "hidden sm:grid"
+            }`}
           >
             <div className="sm:col-span-4">
               <Input
                 placeholder="Phone (e.g. 0123456789)"
                 value={quickPhone}
                 onChange={(e) => setQuickPhone(e.target.value)}
-                className="h-9 rounded-lg text-sm"
+                className="h-9 rounded-lg text-base sm:text-sm"
               />
             </div>
             <div className="sm:col-span-4">
@@ -486,7 +569,7 @@ export function MemberManager({
                 placeholder="Member Name"
                 value={quickName}
                 onChange={(e) => setQuickName(e.target.value)}
-                className="h-9 rounded-lg text-sm"
+                className="h-9 rounded-lg text-base sm:text-sm"
               />
             </div>
             <div className="sm:col-span-2">
@@ -494,7 +577,7 @@ export function MemberManager({
                 placeholder="Note"
                 value={quickNotes}
                 onChange={(e) => setQuickNotes(e.target.value)}
-                className="h-9 rounded-lg text-sm"
+                className="h-9 rounded-lg text-base sm:text-sm"
               />
             </div>
             <div className="sm:col-span-2">
@@ -514,20 +597,40 @@ export function MemberManager({
             </div>
           </form>
 
-          {/* Search & Toggle */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+          {/* Search & Toggle (first on mobile, aligns below sticky top header on focus) */}
+          <div
+            ref={searchSectionRef}
+            className="sm:order-2 scroll-mt-14 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5"
+          >
             <div className="relative flex-1">
-              <Search className="h-4 w-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
+              <Search className="h-4 w-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
               <Input
+                ref={searchInputRef}
+                enterKeyHint="search"
                 placeholder="Search name or phone..."
                 value={searchQuery}
+                onFocus={handleSearchFocus}
                 onChange={(e) => {
                   const val = e.target.value;
                   setSearchQuery(val);
                   refreshMembers(val, includeNonMembers);
                 }}
-                className="pl-9 h-9 rounded-lg text-sm bg-card"
+                className="pl-9 pr-9 h-10 sm:h-9 rounded-lg text-base sm:text-sm bg-card"
               />
+              {searchQuery && (
+                <button
+                  type="button"
+                  aria-label="Clear search"
+                  onClick={() => {
+                    setSearchQuery("");
+                    refreshMembers("", includeNonMembers);
+                    searchInputRef.current?.focus();
+                  }}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-md text-muted-foreground hover:text-foreground cursor-pointer"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
             </div>
             <label className="flex items-center gap-2 text-xs font-medium text-muted-foreground cursor-pointer select-none px-3 h-9 rounded-lg border border-border bg-card">
               <input
@@ -546,12 +649,12 @@ export function MemberManager({
 
           {/* Members Table / List */}
           {members.length === 0 ? (
-            <div className="text-center py-14 border border-border rounded-xl bg-card text-muted-foreground space-y-1.5">
+            <div className="sm:order-3 text-center py-14 border border-border rounded-xl bg-card text-muted-foreground space-y-1.5">
               <Users className="h-8 w-8 mx-auto opacity-30" />
               <p className="text-sm font-semibold text-foreground">No members yet</p>
             </div>
           ) : (
-            <div className="rounded-xl border border-border bg-card overflow-hidden divide-y divide-border">
+            <div className="sm:order-3 rounded-xl border border-border bg-card overflow-hidden divide-y divide-border">
               {/* Desktop Header */}
               <div className="hidden md:grid md:grid-cols-12 gap-3 px-4 py-2.5 bg-muted/40 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                 <div className="col-span-4">Member</div>

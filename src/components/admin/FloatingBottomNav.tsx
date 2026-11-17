@@ -10,6 +10,7 @@ export interface FloatingNavItem {
   id: string;
   href?: string;
   label: BilingualText;
+  shortLabel?: BilingualText;
   exact?: boolean;
   badgeCount?: number;
   avatarUrl?: string;
@@ -50,11 +51,11 @@ function TabIcon({
   switch (id) {
     case "desk":
       return active ? (
-        <svg viewBox="0 0 24 24" className={cn("h-5.5 w-5.5", colorClass)} fill="currentColor" aria-hidden="true">
+        <svg viewBox="0 0 24 24" className={cn("h-5 w-5", colorClass)} fill="currentColor" aria-hidden="true">
           <path d="M4.5 3A1.5 1.5 0 0 0 3 4.5v2.25a3.75 3.75 0 0 0 6.53 2.51 3.74 3.74 0 0 0 4.94 0A3.75 3.75 0 0 0 21 6.75V4.5A1.5 1.5 0 0 0 19.5 3h-15ZM4.5 11.9a5.23 5.23 0 0 1-.75-.06V19.5A1.5 1.5 0 0 0 5.25 21h4.5v-5.25a1.5 1.5 0 0 1 1.5-1.5h1.5a1.5 1.5 0 0 1 1.5 1.5V21h4.5a1.5 1.5 0 0 0 1.5-1.5v-7.66a5.23 5.23 0 0 1-.75.06 5.23 5.23 0 0 1-3.75-1.58 5.24 5.24 0 0 1-7.5 0A5.23 5.23 0 0 1 4.5 11.9Z" />
         </svg>
       ) : (
-        <svg viewBox="0 0 24 24" className={cn("h-5.5 w-5.5", colorClass)} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <svg viewBox="0 0 24 24" className={cn("h-5 w-5", colorClass)} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <path d="M3 9l1.5-5h15L21 9" />
           <path d="M3 9a3 3 0 0 0 6 0 3 3 0 0 0 6 0 3 3 0 0 0 6 0" />
           <path d="M5 12v8a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-8" />
@@ -64,12 +65,12 @@ function TabIcon({
 
     case "dashboard":
       return active ? (
-        <svg viewBox="0 0 24 24" className={cn("h-5.5 w-5.5", colorClass)} fill="currentColor" aria-hidden="true">
+        <svg viewBox="0 0 24 24" className={cn("h-5 w-5", colorClass)} fill="currentColor" aria-hidden="true">
           <path d="M11.47 3.84a.75.75 0 0 1 1.06 0l8.69 8.69a.75.75 0 1 0 1.06-1.06l-8.689-8.69a2.25 2.25 0 0 0-3.182 0l-8.69 8.69a.75.75 0 0 0 1.061 1.06l8.69-8.69Z" />
           <path d="m12 5.432 8.159 8.159c.03.03.06.058.091.086v6.198c0 1.035-.84 1.875-1.875 1.875H15a.75.75 0 0 1-.75-.75v-4.5a.75.75 0 0 0-.75-.75h-3a.75.75 0 0 0-.75.75V21a.75.75 0 0 1-.75.75H5.625a1.875 1.875 0 0 1-1.875-1.875v-6.198a2.29 2.29 0 0 0 .091-.086L12 5.432Z" />
         </svg>
       ) : (
-        <svg viewBox="0 0 24 24" className={cn("h-5.5 w-5.5", colorClass)} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <svg viewBox="0 0 24 24" className={cn("h-5 w-5", colorClass)} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <path d="M3 10.5 12 3l9 7.5" />
           <path d="M5 9.5V20a1 1 0 0 0 1 1h4v-5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v5h4a1 1 0 0 0 1-1V9.5" />
         </svg>
@@ -77,11 +78,11 @@ function TabIcon({
 
     case "bookings":
       return active ? (
-        <svg viewBox="0 0 24 24" className={cn("h-5.5 w-5.5", colorClass)} fill="currentColor" aria-hidden="true">
+        <svg viewBox="0 0 24 24" className={cn("h-5 w-5", colorClass)} fill="currentColor" aria-hidden="true">
           <path d="M6.75 2.25A.75.75 0 0 1 7.5 3v1.5h9V3A.75.75 0 0 1 18 3v1.5h.75a3 3 0 0 1 3 3v11.25a3 3 0 0 1-3 3H5.25a3 3 0 0 1-3-3V7.5a3 3 0 0 1 3-3H6V3a.75.75 0 0 1 .75-.75Zm13.5 9a1.5 1.5 0 0 0-1.5-1.5H5.25a1.5 1.5 0 0 0-1.5 1.5v7.5a1.5 1.5 0 0 0 1.5 1.5h13.5a1.5 1.5 0 0 0 1.5-1.5v-7.5Z" />
         </svg>
       ) : (
-        <svg viewBox="0 0 24 24" className={cn("h-5.5 w-5.5", colorClass)} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <svg viewBox="0 0 24 24" className={cn("h-5 w-5", colorClass)} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <rect x="3" y="4" width="18" height="17" rx="2" />
           <path d="M16 2v4M8 2v4M3 10h18" />
         </svg>
@@ -89,11 +90,11 @@ function TabIcon({
 
     case "members":
       return active ? (
-        <svg viewBox="0 0 24 24" className={cn("h-5.5 w-5.5", colorClass)} fill="currentColor" aria-hidden="true">
+        <svg viewBox="0 0 24 24" className={cn("h-5 w-5", colorClass)} fill="currentColor" aria-hidden="true">
           <path d="M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm0 2c-3.866 0-7 2.239-7 5v1.5A1.5 1.5 0 0 0 3.5 21h11a1.5 1.5 0 0 0 1.5-1.5V18c0-2.761-3.134-5-7-5Zm7.5-2.5a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm1.25 2.13c2.49.49 4.25 2.19 4.25 4.37v2.5a1.5 1.5 0 0 1-1.5 1.5h-3.12c.08-.32.12-.66.12-1V18c0-2.18-.79-4.14-2.08-5.56.75.08 1.55.12 2.33.19Z" />
         </svg>
       ) : (
-        <svg viewBox="0 0 24 24" className={cn("h-5.5 w-5.5", colorClass)} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <svg viewBox="0 0 24 24" className={cn("h-5 w-5", colorClass)} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
           <circle cx="9" cy="7" r="4" />
           <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
@@ -104,14 +105,14 @@ function TabIcon({
     case "more":
     default:
       return active ? (
-        <svg viewBox="0 0 24 24" className={cn("h-5.5 w-5.5", colorClass)} fill="currentColor" aria-hidden="true">
+        <svg viewBox="0 0 24 24" className={cn("h-5 w-5", colorClass)} fill="currentColor" aria-hidden="true">
           <rect x="3" y="3" width="8" height="8" rx="2.5" />
           <rect x="13" y="3" width="8" height="8" rx="2.5" />
           <rect x="3" y="13" width="8" height="8" rx="2.5" />
           <rect x="13" y="13" width="8" height="8" rx="2.5" />
         </svg>
       ) : (
-        <svg viewBox="0 0 24 24" className={cn("h-5.5 w-5.5", colorClass)} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <svg viewBox="0 0 24 24" className={cn("h-5 w-5", colorClass)} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <rect x="3" y="3" width="7.5" height="7.5" rx="2" />
           <rect x="13.5" y="3" width="7.5" height="7.5" rx="2" />
           <rect x="3" y="13.5" width="7.5" height="7.5" rx="2" />
@@ -214,11 +215,16 @@ export function FloatingBottomNav({
 
           {items.map((item) => {
             const active = item.id === activeId;
-            const labelText = isZh ? item.label.zh : item.label.en;
+            const fullLabel = isZh ? item.label.zh : item.label.en;
+            const displayLabel = item.shortLabel
+              ? isZh
+                ? item.shortLabel.zh
+                : item.shortLabel.en
+              : fullLabel;
             const badge = item.badgeCount && item.badgeCount > 0 ? item.badgeCount : 0;
 
             const inner = (
-              <>
+              <div className="flex flex-col items-center justify-center gap-0.5 min-w-0 max-w-full px-1">
                 <span className="relative inline-flex items-center justify-center transition-transform duration-150 active:scale-95">
                   <TabIcon id={item.id} active={active} avatarUrl={item.avatarUrl} />
                   {badge > 0 && (
@@ -227,12 +233,19 @@ export function FloatingBottomNav({
                     </span>
                   )}
                 </span>
-                <span className="sr-only">{labelText}</span>
-              </>
+                <span
+                  className={cn(
+                    "text-[10px] leading-tight tracking-tight truncate max-w-full transition-colors duration-200",
+                    active ? "text-[#FFFFFF] font-semibold" : "text-[#E4E6EB]/85 font-medium"
+                  )}
+                >
+                  {displayLabel}
+                </span>
+              </div>
             );
 
             const sharedClass =
-              "relative z-10 flex-1 min-h-[44px] min-w-[52px] flex items-center justify-center rounded-full cursor-pointer select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40";
+              "relative z-10 flex-1 min-h-[50px] min-w-[52px] py-1 flex items-center justify-center rounded-full cursor-pointer select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40";
 
             if (item.href) {
               return (
@@ -244,7 +257,7 @@ export function FloatingBottomNav({
                   ref={(el) => {
                     itemRefs.current[item.id] = el;
                   }}
-                  aria-label={labelText}
+                  aria-label={fullLabel}
                   aria-current={active ? "page" : undefined}
                   className={sharedClass}
                 >
@@ -262,7 +275,7 @@ export function FloatingBottomNav({
                   itemRefs.current[item.id] = el;
                 }}
                 onClick={item.onClick}
-                aria-label={labelText}
+                aria-label={fullLabel}
                 aria-expanded={active}
                 className={sharedClass}
               >

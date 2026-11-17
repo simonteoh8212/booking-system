@@ -234,19 +234,10 @@ export function AdminNav({ initialLanguage = "ONLY_EN" }: AdminNavProps = {}) {
 
   const floatingNavItems: FloatingNavItem[] = [
     {
-      id: "desk",
-      href: "/admin/desk",
-      label: { zh: "前台收银", en: "Salon Desk" },
-      onClick: () => {
-        if (!pathname.startsWith("/admin/desk")) {
-          setOptimisticTarget({ id: "desk", fromPath: pathname });
-        }
-      },
-    },
-    {
       id: "dashboard",
       href: "/admin",
-      label: { zh: "总览", en: "Dashboard" },
+      label: { zh: "首页", en: "Home" },
+      shortLabel: { zh: "首页", en: "Home" },
       exact: true,
       onClick: () => {
         if (pathname !== "/admin") {
@@ -255,9 +246,21 @@ export function AdminNav({ initialLanguage = "ONLY_EN" }: AdminNavProps = {}) {
       },
     },
     {
+      id: "desk",
+      href: "/admin/desk",
+      label: { zh: "前台收银", en: "Salon Desk" },
+      shortLabel: { zh: "收银", en: "Desk" },
+      onClick: () => {
+        if (!pathname.startsWith("/admin/desk")) {
+          setOptimisticTarget({ id: "desk", fromPath: pathname });
+        }
+      },
+    },
+    {
       id: "bookings",
       href: "/admin/bookings",
       label: { zh: "预约记录", en: "Bookings" },
+      shortLabel: { zh: "预约", en: "Bookings" },
       badgeCount: !isInternalAppMode() ? pendingCount : 0,
       onClick: () => {
         if (!pathname.startsWith("/admin/bookings")) {
@@ -269,6 +272,7 @@ export function AdminNav({ initialLanguage = "ONLY_EN" }: AdminNavProps = {}) {
       id: "members",
       href: "/admin/members",
       label: { zh: "会员配套", en: "Members" },
+      shortLabel: { zh: "会员", en: "Members" },
       onClick: () => {
         if (!pathname.startsWith("/admin/members")) {
           setOptimisticTarget({ id: "members", fromPath: pathname });

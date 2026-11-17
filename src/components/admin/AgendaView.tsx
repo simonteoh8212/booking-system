@@ -69,35 +69,35 @@ export function AgendaView({
     });
   }
 
-  // Navigation handlers
-  function handlePrev() {
-    if (viewMode === "calendar") {
-      const prevMonth = subMonths(currentMonth, 1);
-      setCurrentMonth(prevMonth);
-      loadMonthBookings(prevMonth);
-    } else {
-      const prevDay = subDays(selectedDate, 1);
-      setSelectedDate(prevDay);
-      if (!isSameMonth(prevDay, currentMonth)) {
-        setCurrentMonth(startOfMonth(prevDay));
-        loadMonthBookings(prevDay);
-      }
+  // Navigation handlers (always step selected day; auto-switch month when crossing boundary)
+  function stepDay(delta: -1 | 1) {
+    const targetDay = delta === -1 ? subDays(selectedDate, 1) : addDays(selectedDate, 1);
+    setSelectedDate(targetDay);
+    if (!isSameMonth(targetDay, currentMonth)) {
+      const targetMonth = startOfMonth(targetDay);
+      setCurrentMonth(targetMonth);
+      loadMonthBookings(targetMonth);
     }
   }
 
+  function handlePrev() {
+    stepDay(-1);
+  }
+
   function handleNext() {
-    if (viewMode === "calendar") {
-      const nextMonth = addMonths(currentMonth, 1);
-      setCurrentMonth(nextMonth);
-      loadMonthBookings(nextMonth);
-    } else {
-      const nextDay = addDays(selectedDate, 1);
-      setSelectedDate(nextDay);
-      if (!isSameMonth(nextDay, currentMonth)) {
-        setCurrentMonth(startOfMonth(nextDay));
-        loadMonthBookings(nextDay);
-      }
-    }
+    stepDay(1);
+  }
+
+  function handlePrevMonth() {
+    const prevMonth = subMonths(currentMonth, 1);
+    setCurrentMonth(prevMonth);
+    loadMonthBookings(prevMonth);
+  }
+
+  function handleNextMonth() {
+    const nextMonth = addMonths(currentMonth, 1);
+    setCurrentMonth(nextMonth);
+    loadMonthBookings(nextMonth);
   }
 
   function handleToday() {
@@ -166,7 +166,8 @@ export function AgendaView({
             size="icon"
             onClick={handlePrev}
             className="h-9 w-9 shrink-0"
-            title={viewMode === "calendar" ? "Previous Month" : "Previous Day"}
+            title="Previous Day"
+            aria-label="Previous Day"
           >
             <ChevronLeft className="h-4 w-4" />
           </Button>
@@ -206,7 +207,8 @@ export function AgendaView({
             size="icon"
             onClick={handleNext}
             className="h-9 w-9 shrink-0"
-            title={viewMode === "calendar" ? "Next Month" : "Next Day"}
+            title="Next Day"
+            aria-label="Next Day"
           >
             <ChevronRight className="h-4 w-4" />
           </Button>
@@ -264,6 +266,28 @@ export function AgendaView({
               <h2 className="text-xl font-bold tracking-tight">
                 {format(currentMonth, "MMMM yyyy")}
               </h2>
+              <div className="flex items-center gap-1.5">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={handlePrevMonth}
+                  className="h-8 w-8 shrink-0"
+                  title="Previous Month"
+                  aria-label="Previous Month"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={handleNextMonth}
+                  className="h-8 w-8 shrink-0"
+                  title="Next Month"
+                  aria-label="Next Month"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
 
             {/* Days of Week Header */}
