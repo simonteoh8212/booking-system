@@ -17,13 +17,8 @@ export default async function ServicesPage() {
   const currencySymbol = depositRes.success ? depositRes.data.currencySymbol : "RM";
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">Services</h1>
-        <p className="text-muted-foreground text-sm">
-          Manage your service catalog
-        </p>
-      </div>
+    <div className="space-y-5">
+      <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Catalog</h1>
 
       <ServiceManager initialServices={services} currencySymbol={currencySymbol} />
     </div>

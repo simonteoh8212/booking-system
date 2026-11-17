@@ -6,6 +6,7 @@ import {
   toBusinessDateString,
   createBusinessDateTime,
   normalizePhoneNumber,
+  isInternalAppMode,
 } from "@/lib/utils";
 import { buildWhatsAppUrl } from "@/lib/whatsapp";
 import { headers } from "next/headers";
@@ -163,6 +164,12 @@ interface CreateBookingInput {
 export async function createBookingHold(
   input: CreateBookingInput
 ): Promise<ActionResult<BookingConfirmation>> {
+  if (isInternalAppMode()) {
+    return {
+      success: false,
+      error: "Public online self-booking is disabled in internal mode.",
+    };
+  }
   const { serviceId, startDatetimeIso, customerName, phoneNumber, notes, language } = input;
 
   try {
@@ -393,6 +400,12 @@ export async function confirmBookingReceipt(
   referenceCode: string,
   language: "en" | "zh" = "en"
 ): Promise<ActionResult<BookingConfirmation>> {
+  if (isInternalAppMode()) {
+    return {
+      success: false,
+      error: "Public online self-booking is disabled in internal mode.",
+    };
+  }
   try {
     const booking = await prisma.booking.findUnique({
       where: { referenceCode },

@@ -5,8 +5,8 @@ import type { DeskLanguageMode } from "@/types";
 
 export const metadata: Metadata = {
   title: {
-    default: "Admin Dashboard",
-    template: "%s | BookEase Admin",
+    default: "Admin",
+    template: "%s | SideBox",
   },
 };
 
@@ -19,9 +19,9 @@ export default async function AdminLayout({ children }: { children: React.ReactN
       : "ONLY_EN";
 
   return (
-    <div className="min-h-screen bg-muted/30">
+    <div className="min-h-screen bg-background flex flex-col md:flex-row">
       <AdminNav initialLanguage={initialLanguage} />
-      <main className="max-w-5xl mx-auto px-4 py-6">
+      <main className="flex-1 min-w-0 px-4 sm:px-6 lg:px-8 py-6 pb-28 md:pb-8 max-w-6xl mx-auto w-full">
         {children}
       </main>
     </div>

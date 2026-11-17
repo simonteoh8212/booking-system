@@ -12,7 +12,7 @@ import {
 import {
   updateDeskLanguageSetting,
 } from "@/actions/deposit";
-import { formatPrice, getServiceImage } from "@/lib/utils";
+import { formatPrice, getServiceImage, isInternalAppMode } from "@/lib/utils";
 import Image from "next/image";
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
@@ -54,6 +54,8 @@ import {
   ChevronDown,
   ChevronUp,
   ShieldAlert,
+  Users,
+  LayoutDashboard,
 } from "lucide-react";
 import {
   Sheet,
@@ -438,11 +440,11 @@ export function DeskHub({
     }
   }
 
-  // Reusable Sales Scoreboard Content
+  // Reusable Sales Scoreboard Content (Unified KPI Strip)
   const renderScoreboardCards = () => {
     if (totalVisibleScoreboardCards === 0) return null;
 
-    const gridColsClass =
+    const colsClass =
       totalVisibleScoreboardCards === 3
         ? "grid-cols-1 md:grid-cols-3"
         : totalVisibleScoreboardCards === 2
@@ -450,207 +452,103 @@ export function DeskHub({
         : "grid-cols-1 max-w-md";
 
     return (
-      <div className={`grid ${gridColsClass} gap-3.5`}>
-        {/* Card 1: Today's Sales */}
+      <div
+        className={`rounded-xl border border-border bg-card grid ${colsClass} divide-y md:divide-y-0 md:divide-x divide-border`}
+      >
         {isTodayCardVisible && (
-          <Card className="relative overflow-hidden border border-border/80 bg-card rounded-2xl shadow-xs hover:shadow-sm transition-all duration-150 p-4 sm:p-5 flex flex-col justify-between">
-            <div className="absolute top-0 left-0 right-0 h-1 bg-emerald-500" />
-            <div className="space-y-1">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-7 h-7 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
-                    <TrendingUp className="h-4 w-4" />
-                  </div>
-                  <DeskText
-                    text={DESK_DICT.scoreboard.todaySales}
-                    mode={languageMode}
-                    layout="inline"
-                    primaryClass="font-bold text-xs text-foreground tracking-tight"
-                  />
-                </div>
-                <span className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-500/10 px-2.5 py-0.5 rounded-full tabular-nums">
-                  <DeskText
-                    text={DESK_DICT.scoreboard.todayClients}
-                    mode={languageMode}
-                    layout="badge"
-                  />
-                  : {summary.completedCount}
-                </span>
-              </div>
-              <div className="flex items-center justify-between pt-2">
-                <div className="text-3xl sm:text-4xl font-black font-mono tracking-tight text-foreground tabular-nums">
-                  {revealTodaySales
-                    ? formatPrice(summary.totalSalesCents, currencySymbol)
-                    : `${currencySymbol} ••••••`}
-                </div>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={toggleTodaySales}
-                  className="h-8 w-8 p-0 rounded-xl hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-                  title={revealTodaySales ? "Hide sales / 隐藏金额" : "Show sales / 显示金额"}
-                  aria-label={revealTodaySales ? "Hide today sales" : "Show today sales"}
-                >
-                  {revealTodaySales ? (
-                    <Eye className="h-4 w-4" />
-                  ) : (
-                    <EyeOff className="h-4 w-4 text-muted-foreground/50" />
-                  )}
-                </Button>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between pt-3 mt-3 border-t border-border/60 text-xs">
-              <span className="text-muted-foreground font-medium flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                <DeskText
-                  text={DESK_DICT.scoreboard.waiting}
-                  mode={languageMode}
-                  layout="badge"
-                />
+          <div className="p-4 sm:p-5 flex flex-col justify-between gap-2.5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                {resolveDeskText(DESK_DICT.scoreboard.todaySales, languageMode).primary}
               </span>
-              <span className="font-bold font-mono text-foreground">
-                {summary.pendingCount}{" "}
-                <span className="text-[11px] font-normal text-muted-foreground">
-                  {resolveDeskText(DESK_DICT.scoreboard.bookedBadge, languageMode).primary}
-                </span>
-              </span>
+              <button
+                type="button"
+                onClick={toggleTodaySales}
+                className="text-muted-foreground hover:text-foreground cursor-pointer"
+                aria-label="Toggle today sales"
+              >
+                {revealTodaySales ? (
+                  <Eye className="h-3.5 w-3.5" />
+                ) : (
+                  <EyeOff className="h-3.5 w-3.5 opacity-50" />
+                )}
+              </button>
             </div>
-          </Card>
+            <div className="text-2xl sm:text-3xl font-bold font-mono tabular-nums tracking-tight text-primary">
+              {revealTodaySales
+                ? formatPrice(summary.totalSalesCents, currencySymbol)
+                : `${currencySymbol} ••••••`}
+            </div>
+            <div className="text-xs text-muted-foreground tabular-nums">
+              {summary.completedCount}{" "}
+              {resolveDeskText(DESK_DICT.scoreboard.todayClients, languageMode).primary} ·{" "}
+              {summary.pendingCount}{" "}
+              {resolveDeskText(DESK_DICT.scoreboard.waiting, languageMode).primary}
+            </div>
+          </div>
         )}
 
-        {/* Card 2: Yesterday's Sales */}
         {isYesterdayCardVisible && (
-          <Card className="relative overflow-hidden border border-border/80 bg-card rounded-2xl shadow-xs hover:shadow-sm transition-all duration-150 p-4 sm:p-5 flex flex-col justify-between">
-            <div className="absolute top-0 left-0 right-0 h-1 bg-amber-500" />
-            <div className="space-y-1">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-7 h-7 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
-                    <History className="h-4 w-4" />
-                  </div>
-                  <DeskText
-                    text={DESK_DICT.scoreboard.yesterdaySales}
-                    mode={languageMode}
-                    layout="inline"
-                    primaryClass="font-bold text-xs text-foreground tracking-tight"
-                  />
-                </div>
-                <span className="text-[11px] font-semibold text-amber-700 dark:text-amber-400 bg-amber-500/10 px-2.5 py-0.5 rounded-full tabular-nums">
-                  <DeskText
-                    text={DESK_DICT.scoreboard.yesterdayClients}
-                    mode={languageMode}
-                    layout="badge"
-                  />
-                  : {summary.yesterdayCompletedCount || 0}
-                </span>
-              </div>
-              <div className="flex items-center justify-between pt-2">
-                <div className="text-3xl sm:text-4xl font-black font-mono tracking-tight text-foreground tabular-nums">
-                  {revealYesterdaySales
-                    ? formatPrice(summary.yesterdaySalesCents || 0, currencySymbol)
-                    : `${currencySymbol} ••••••`}
-                </div>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={toggleYesterdaySales}
-                  className="h-8 w-8 p-0 rounded-xl hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-                  title={revealYesterdaySales ? "Hide sales / 隐藏金额" : "Show sales / 显示金额"}
-                  aria-label={revealYesterdaySales ? "Hide yesterday sales" : "Show yesterday sales"}
-                >
-                  {revealYesterdaySales ? (
-                    <Eye className="h-4 w-4" />
-                  ) : (
-                    <EyeOff className="h-4 w-4 text-muted-foreground/50" />
-                  )}
-                </Button>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between pt-3 mt-3 border-t border-border/60 text-xs">
-              <span className="text-muted-foreground font-medium flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-                <DeskText
-                  text={DESK_DICT.scoreboard.completedClients}
-                  mode={languageMode}
-                  layout="badge"
-                />
+          <div className="p-4 sm:p-5 flex flex-col justify-between gap-2.5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                {resolveDeskText(DESK_DICT.scoreboard.yesterdaySales, languageMode).primary}
               </span>
-              <span className="font-bold font-mono text-foreground">
-                {summary.yesterdayCompletedCount || 0}{" "}
-                <span className="text-[11px] font-normal text-muted-foreground">
-                  {resolveDeskText(DESK_DICT.scoreboard.servedBadge, languageMode).primary}
-                </span>
-              </span>
+              <button
+                type="button"
+                onClick={toggleYesterdaySales}
+                className="text-muted-foreground hover:text-foreground cursor-pointer"
+                aria-label="Toggle yesterday sales"
+              >
+                {revealYesterdaySales ? (
+                  <Eye className="h-3.5 w-3.5" />
+                ) : (
+                  <EyeOff className="h-3.5 w-3.5 opacity-50" />
+                )}
+              </button>
             </div>
-          </Card>
+            <div className="text-2xl sm:text-3xl font-bold font-mono tabular-nums tracking-tight text-foreground">
+              {revealYesterdaySales
+                ? formatPrice(summary.yesterdaySalesCents || 0, currencySymbol)
+                : `${currencySymbol} ••••••`}
+            </div>
+            <div className="text-xs text-muted-foreground tabular-nums">
+              {summary.yesterdayCompletedCount || 0}{" "}
+              {resolveDeskText(DESK_DICT.scoreboard.servedBadge, languageMode).primary}
+            </div>
+          </div>
         )}
 
-        {/* Card 3: Monthly Sales */}
         {isMonthlyCardVisible && (
-          <Card className="relative overflow-hidden border border-border/80 bg-card rounded-2xl shadow-xs hover:shadow-sm transition-all duration-150 p-4 sm:p-5 flex flex-col justify-between">
-            <div className="absolute top-0 left-0 right-0 h-1 bg-indigo-500" />
-            <div className="space-y-1">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-7 h-7 rounded-lg bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
-                    <CalendarRange className="h-4 w-4" />
-                  </div>
-                  <DeskText
-                    text={DESK_DICT.scoreboard.monthlySales}
-                    mode={languageMode}
-                    layout="inline"
-                    primaryClass="font-bold text-xs text-foreground tracking-tight"
-                  />
-                </div>
-                <span className="text-[11px] font-semibold text-indigo-700 dark:text-indigo-400 bg-indigo-500/10 px-2.5 py-0.5 rounded-full tabular-nums">
-                  {summary.monthLabel || "This Month"}
-                </span>
-              </div>
-              <div className="flex items-center justify-between pt-2">
-                <div className="text-3xl sm:text-4xl font-black font-mono tracking-tight text-foreground tabular-nums">
-                  {revealMonthSales
-                    ? formatPrice(summary.monthSalesCents || 0, currencySymbol)
-                    : `${currencySymbol} ••••••`}
-                </div>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={toggleMonthSales}
-                  className="h-8 w-8 p-0 rounded-xl hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-                  title={revealMonthSales ? "Hide sales / 隐藏金额" : "Show sales / 显示金额"}
-                  aria-label={revealMonthSales ? "Hide monthly sales" : "Show monthly sales"}
-                >
-                  {revealMonthSales ? (
-                    <Eye className="h-4 w-4" />
-                  ) : (
-                    <EyeOff className="h-4 w-4 text-muted-foreground/50" />
-                  )}
-                </Button>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between pt-3 mt-3 border-t border-border/60 text-xs">
-              <span className="text-muted-foreground font-medium flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
-                <DeskText
-                  text={DESK_DICT.scoreboard.monthlyClients}
-                  mode={languageMode}
-                  layout="badge"
-                />
+          <div className="p-4 sm:p-5 flex flex-col justify-between gap-2.5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                {summary.monthLabel ||
+                  resolveDeskText(DESK_DICT.scoreboard.monthlySales, languageMode).primary}
               </span>
-              <span className="font-bold font-mono text-foreground">
-                {summary.monthCompletedCount || 0}{" "}
-                <span className="text-[11px] font-normal text-muted-foreground">
-                  {resolveDeskText(DESK_DICT.scoreboard.servedBadge, languageMode).primary}
-                </span>
-              </span>
+              <button
+                type="button"
+                onClick={toggleMonthSales}
+                className="text-muted-foreground hover:text-foreground cursor-pointer"
+                aria-label="Toggle monthly sales"
+              >
+                {revealMonthSales ? (
+                  <Eye className="h-3.5 w-3.5" />
+                ) : (
+                  <EyeOff className="h-3.5 w-3.5 opacity-50" />
+                )}
+              </button>
             </div>
-          </Card>
+            <div className="text-2xl sm:text-3xl font-bold font-mono tabular-nums tracking-tight text-foreground">
+              {revealMonthSales
+                ? formatPrice(summary.monthSalesCents || 0, currencySymbol)
+                : `${currencySymbol} ••••••`}
+            </div>
+            <div className="text-xs text-muted-foreground tabular-nums">
+              {summary.monthCompletedCount || 0}{" "}
+              {resolveDeskText(DESK_DICT.scoreboard.servedBadge, languageMode).primary}
+            </div>
+          </div>
         )}
       </div>
     );
@@ -706,110 +604,57 @@ export function DeskHub({
             : "hidden"
         }
       >
-      {/* Top Header Bar */}
-      <div className="flex items-center justify-between gap-3 border-b pb-4">
+      {/* Top Header Bar (POS-specific actions; navigation lives in AdminNav sidebar / mobile bottom bar) */}
+      <div className="flex items-center justify-between gap-3 border-b border-border pb-4">
         <div className="space-y-0.5 min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="text-xl sm:text-2xl font-black text-foreground tracking-tight truncate">
-              {businessName}
-            </span>
-            <Badge variant="outline" className="text-xs font-bold bg-primary/10 text-primary shrink-0">
-              <DeskText
-                text={DESK_DICT.header.deskMode}
-                mode={languageMode}
-                layout="badge"
-              />
-            </Badge>
-          </div>
-          <p className="text-xs sm:text-base font-bold text-muted-foreground truncate" suppressHydrationWarning>
+          <h1 className="text-xl sm:text-2xl font-bold text-foreground tracking-tight truncate">
+            {businessName}
+          </h1>
+          <p className="text-xs text-muted-foreground truncate" suppressHydrationWarning>
             {format(new Date(), "EEEE, d MMMM yyyy")}
           </p>
         </div>
 
-        {/* Desktop Action Icons (hidden on mobile) */}
-        <div className="hidden md:flex items-center gap-2">
-          {/* Quick Monthly Financial & Profit Report Button (PIN-Protected) */}
+        <div className="flex items-center gap-2 shrink-0">
+          {/* Monthly Financial Report (PIN-Protected) */}
           <Button
             type="button"
             variant="outline"
             size="sm"
             onClick={handleOpenFinancialReport}
-            className="h-12 px-3.5 rounded-2xl flex items-center gap-1.5 font-bold hover:bg-muted text-sm shadow-xs border-2 cursor-pointer"
-            title="Monthly Financial & Profit Report / 查看月度财报与净利润"
+            className="h-9 px-3 rounded-lg flex items-center gap-1.5 font-semibold text-xs cursor-pointer"
           >
-            <BarChart3 className="h-4.5 w-4.5 text-emerald-600 shrink-0" />
-            <DeskText
-              text={DESK_DICT.financialReport.navBtn}
-              mode={languageMode}
-              layout="badge"
-              primaryClass="font-bold text-xs"
-            />
+            <BarChart3 className="h-3.5 w-3.5 text-primary shrink-0" />
+            <span className="hidden sm:inline">
+              {resolveDeskText(DESK_DICT.financialReport.navBtn, languageMode).primary}
+            </span>
           </Button>
-
-
-
-          {/* Rush Mode Fast Control */}
-          <RushModeControl langMode={languageMode} />
-
-          {/* Quick Language Switcher Dropdown */}
-          <DeskLanguageSwitcher
-            currentMode={languageMode}
-            onLanguageChange={handleLanguageChange}
-          />
 
           <Button
             type="button"
             variant="outline"
-            size="sm"
+            size="icon"
             onClick={refreshData}
             disabled={isPending}
-            className="h-12 w-12 rounded-2xl p-0 hover:bg-muted"
-            title="Refresh Data / 刷新"
+            className="h-9 w-9 rounded-lg cursor-pointer"
+            title="Refresh"
           >
-            <RefreshCw className={`h-5 w-5 ${isPending ? "animate-spin text-primary" : ""}`} />
+            <RefreshCw className={`h-4 w-4 ${isPending ? "animate-spin text-primary" : ""}`} />
           </Button>
-
-          <Link href="/admin/settings">
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-12 w-12 rounded-2xl p-0 hover:bg-muted"
-              title="Full Admin Settings / 系统设置"
-            >
-              <Settings className="h-5 w-5 text-muted-foreground" />
-            </Button>
-          </Link>
 
           <form action={lockDeskSession}>
             <Button
               type="submit"
-              variant="destructive"
+              variant="outline"
               size="sm"
-              className="h-12 px-4 rounded-2xl text-sm font-bold gap-1.5 shadow-xs cursor-pointer"
+              className="h-9 px-3 rounded-lg text-xs font-semibold text-destructive border-destructive/30 hover:bg-destructive/10 gap-1.5 cursor-pointer"
             >
-              <Lock className="h-4 w-4" />
-              <DeskText
-                text={DESK_DICT.header.lock}
-                mode={languageMode}
-                layout="badge"
-                primaryClass="font-bold"
-              />
+              <Lock className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">
+                {resolveDeskText(DESK_DICT.header.lock, languageMode).primary}
+              </span>
             </Button>
           </form>
-        </div>
-
-        {/* Mobile: Classic Hamburger Menu Button */}
-        <div className="flex md:hidden items-center gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => setIsMobileMenuOpen(true)}
-            className="h-11 w-11 p-0 rounded-2xl border-2 border-border/80 hover:bg-muted text-foreground cursor-pointer shadow-xs flex items-center justify-center shrink-0"
-            aria-label="Open Desk Menu"
-          >
-            <Menu className="h-5 w-5" />
-          </Button>
         </div>
       </div>
 
@@ -820,74 +665,48 @@ export function DeskHub({
         </div>
       )}
 
-      {/* THE MAIN ACTION CARDS - Clean Tactile Retail POS Style */}
-      {/* On mobile: Count Sales is ordered first for immediate 1-tap recording without scrolling */}
+      {/* THE MAIN ACTION CARDS */}
       <div
         className={
           isMakeAppointmentVisible
-            ? "grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-5"
-            : "grid grid-cols-1 max-w-2xl mx-auto gap-4 sm:gap-5"
+            ? "grid grid-cols-1 sm:grid-cols-2 gap-4"
+            : "grid grid-cols-1 max-w-2xl mx-auto gap-4"
         }
       >
-        {/* Card: Count Sales (Clean Card with Explicit Solid Action Pill - Option 2) */}
+        {/* Card: Count Sales */}
         <button
           type="button"
           onClick={() => setView("COUNT_SALES")}
-          className="order-1 md:order-2 group relative h-40 sm:h-48 p-5 sm:p-6 rounded-3xl border-2 border-emerald-600/40 hover:border-emerald-600 bg-card hover:bg-muted/30 shadow-xs hover:shadow-md active:scale-[0.99] transition-all text-left flex flex-col justify-between cursor-pointer"
+          className="order-1 md:order-2 group h-36 sm:h-40 p-5 sm:p-6 rounded-xl border border-primary/40 hover:border-primary bg-card hover:bg-accent/40 transition-all text-left flex flex-col justify-between cursor-pointer"
         >
-          <div className="flex items-start justify-between">
-            <div className="w-12 sm:w-14 h-12 sm:h-14 rounded-2xl bg-emerald-600/10 text-emerald-600 flex items-center justify-center border border-emerald-600/20 shadow-xs group-hover:bg-emerald-600 group-hover:text-white transition-all">
-              <Receipt className="h-6 sm:h-7 w-6 sm:w-7" />
+          <div className="flex items-center justify-between">
+            <div className="w-11 h-11 rounded-lg bg-primary text-primary-foreground flex items-center justify-center">
+              <Receipt className="h-5 w-5" />
             </div>
-            {/* High-contrast solid emerald action pill */}
-            <span className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-600 text-white text-xs sm:text-sm font-bold shadow-xs group-hover:bg-emerald-700 transition-all">
-              <span>{resolveDeskText(DESK_DICT.hubCards.startSaleBtn, languageMode).primary}</span>
-              <ArrowRight className="h-3.5 w-3.5 group-hover:translate-x-1 transition-transform" />
-            </span>
+            <ArrowRight className="h-5 w-5 text-primary group-hover:translate-x-1 transition-transform" />
           </div>
 
-          <div className="space-y-1">
-            <DeskText
-              text={DESK_DICT.hubCards.countSalesTitle}
-              mode={languageMode}
-              layout="stack"
-              primaryClass="text-2xl sm:text-3xl font-black text-foreground tracking-tight"
-              secondaryClass="text-sm font-semibold text-muted-foreground"
-            />
-            <p className="text-xs text-muted-foreground font-normal pt-0.5 line-clamp-1 sm:line-clamp-none">
-              {resolveDeskText(DESK_DICT.hubCards.countSalesSub, languageMode).primary}
-            </p>
+          <div className="text-xl sm:text-2xl font-bold text-foreground tracking-tight">
+            {resolveDeskText(DESK_DICT.hubCards.countSalesTitle, languageMode).primary}
           </div>
         </button>
 
-        {/* Card: Make Appointment (Conditionally displayed) */}
+        {/* Card: Make Appointment */}
         {isMakeAppointmentVisible && (
           <button
             type="button"
             onClick={() => setView("APPOINTMENTS")}
-            className="order-2 md:order-1 group relative h-40 sm:h-48 p-5 sm:p-6 rounded-3xl border-2 border-border/80 bg-card hover:border-foreground/30 shadow-xs hover:shadow-md active:scale-[0.99] transition-all text-left flex flex-col justify-between cursor-pointer"
+            className="order-2 md:order-1 group h-36 sm:h-40 p-5 sm:p-6 rounded-xl border border-border bg-card hover:border-foreground/30 hover:bg-muted/30 transition-all text-left flex flex-col justify-between cursor-pointer"
           >
-            <div className="flex items-start justify-between">
-              <div className="w-12 sm:w-14 h-12 sm:h-14 rounded-2xl bg-muted/80 text-foreground flex items-center justify-center border border-border/50 group-hover:bg-foreground group-hover:text-background transition-all shadow-xs">
-                <CalendarDays className="h-6 sm:h-7 w-6 sm:w-7" />
+            <div className="flex items-center justify-between">
+              <div className="w-11 h-11 rounded-lg bg-muted text-foreground flex items-center justify-center">
+                <CalendarDays className="h-5 w-5" />
               </div>
-              <span className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-muted text-foreground text-xs sm:text-sm font-bold border border-border/60 group-hover:bg-foreground group-hover:text-background transition-all shadow-xs">
-                <span>{resolveDeskText(DESK_DICT.hubCards.appointmentsBadge, languageMode).primary}</span>
-                <ArrowRight className="h-3.5 w-3.5 group-hover:translate-x-1 transition-transform" />
-              </span>
+              <ArrowRight className="h-5 w-5 text-muted-foreground group-hover:translate-x-1 transition-transform" />
             </div>
 
-            <div className="space-y-1">
-              <DeskText
-                text={DESK_DICT.hubCards.makeAppointmentTitle}
-                mode={languageMode}
-                layout="stack"
-                primaryClass="text-2xl sm:text-3xl font-extrabold text-foreground tracking-tight"
-                secondaryClass="text-sm font-semibold text-muted-foreground"
-              />
-              <p className="text-xs text-muted-foreground/80 font-normal pt-0.5 line-clamp-1 sm:line-clamp-none">
-                {resolveDeskText(DESK_DICT.hubCards.makeAppointmentSub, languageMode).primary}
-              </p>
+            <div className="text-xl sm:text-2xl font-bold text-foreground tracking-tight">
+              {resolveDeskText(DESK_DICT.hubCards.makeAppointmentTitle, languageMode).primary}
             </div>
           </button>
         )}
@@ -970,21 +789,15 @@ export function DeskHub({
               </div>
               <div className="space-y-0.5 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <DeskText
-                    text={DESK_DICT.breakdown.title}
-                    mode={languageMode}
-                    layout="inline"
-                    primaryClass="text-base sm:text-lg font-bold text-foreground"
-                  />
+                  <span className="text-base font-bold text-foreground">
+                    {resolveDeskText(DESK_DICT.breakdown.title, languageMode).primary}
+                  </span>
                   {summary.servicesBreakdown.length > 0 && (
                     <Badge variant="outline" className="text-xs font-mono font-bold bg-muted/50 border-border/60">
-                      {summary.servicesBreakdown.length} {resolveDeskText(DESK_DICT.breakdown.servicesDoneBadge, languageMode).primary}
+                      {summary.servicesBreakdown.length}
                     </Badge>
                   )}
                 </div>
-                <p className="text-xs text-muted-foreground truncate">
-                  {resolveDeskText(DESK_DICT.breakdown.subtitle, languageMode).primary}
-                </p>
               </div>
             </div>
 
@@ -1163,6 +976,28 @@ export function DeskHub({
             </SheetHeader>
 
             <div className="space-y-2">
+              {/* Admin Dashboard Link */}
+              <Link href="/admin" onClick={() => setIsMobileMenuOpen(false)} className="block">
+                <div className="w-full h-11 px-3.5 rounded-xl border border-border/80 bg-card hover:bg-muted font-semibold text-sm flex items-center justify-between cursor-pointer transition-colors">
+                  <div className="flex items-center gap-2.5">
+                    <LayoutDashboard className="h-4 w-4 text-muted-foreground" />
+                    <span>{languageMode === "ONLY_ZH" ? "管理后台" : "Admin Dashboard"}</span>
+                  </div>
+                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                </div>
+              </Link>
+
+              {/* Members Link */}
+              <Link href="/admin/members" onClick={() => setIsMobileMenuOpen(false)} className="block">
+                <div className="w-full h-11 px-3.5 rounded-xl border border-border/80 bg-card hover:bg-muted font-semibold text-sm flex items-center justify-between cursor-pointer transition-colors">
+                  <div className="flex items-center gap-2.5">
+                    <Users className="h-4 w-4 text-primary" />
+                    <span>{languageMode === "ONLY_ZH" ? "会员与配套" : "Members & Promos"}</span>
+                  </div>
+                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                </div>
+              </Link>
+
               {/* Scoreboard Overview Button (Only if at least one sales card is visible) */}
               {totalVisibleScoreboardCards > 0 && (
                 <button

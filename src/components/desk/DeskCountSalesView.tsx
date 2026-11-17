@@ -1,13 +1,13 @@
 "use client";
 
-import { useState, useTransition, useRef } from "react";
+import { useState, useTransition, useEffect } from "react";
 import { recordDeskSale, type DeskAppointmentItem } from "@/actions/desk";
+import { lookupMembersForCheckout } from "@/actions/members";
 import { formatPrice, getServiceImage } from "@/lib/utils";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
   DialogContent,
@@ -16,13 +16,8 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
-import type { ServiceDto, DeskLanguageMode } from "@/types";
-import {
-  DESK_DICT,
-  resolveServiceName,
-  resolveDeskText,
-} from "@/lib/desk-i18n";
-import { DeskText } from "./DeskText";
+import type { ServiceDto, DeskLanguageMode, MemberDto } from "@/types";
+import { DESK_DICT, resolveServiceName, resolveDeskText } from "@/lib/desk-i18n";
 import {
   ArrowLeft,
   CalendarCheck,
@@ -31,8 +26,15 @@ import {
   Loader2,
   AlertCircle,
   Receipt,
-  User,
   Scissors,
+  Search,
+  Wallet,
+  Ticket,
+  X,
+  ShoppingBag,
+  Banknote,
+  QrCode,
+  CreditCard,
 } from "lucide-react";
 
 export interface DeskSaleSuccessData {
@@ -58,18 +60,16 @@ export function DeskCountSalesView({
   todayAppointments,
   initialAppointmentId = "",
   currencySymbol = "RM",
-  languageMode = "BILINGUAL_ZH_FIRST",
+  languageMode = "ONLY_EN",
   showWalkIn = true,
   showBookedCheckout = true,
   onBack,
   onSuccess,
 }: DeskCountSalesViewProps) {
-  // If both are false due to configuration error, fallback to true so cashier is not blocked
   const fallbackShowBoth = !showWalkIn && !showBookedCheckout;
   const canShowWalkIn = fallbackShowBoth || showWalkIn;
   const canShowBooked = fallbackShowBoth || showBookedCheckout;
 
-  // Mode: Appointment vs Walk-in
   const [sourceType, setSourceType] = useState<"APPOINTMENT" | "WALKIN">(() => {
     if (initialAppointmentId && canShowBooked) return "APPOINTMENT";
     if (!canShowWalkIn && canShowBooked) return "APPOINTMENT";
@@ -78,23 +78,21 @@ export function DeskCountSalesView({
   const [selectedAppointmentId, setSelectedAppointmentId] = useState<string>(
     initialAppointmentId
   );
-  const [showCustomerDetails, setShowCustomerDetails] = useState(false);
+  const [showWalkinFields, setShowWalkinFields] = useState(false);
   const [walkinName, setWalkinName] = useState<string>("");
   const [walkinPhone, setWalkinPhone] = useState<string>("");
 
-  // Ref for auto-scrolling to Section 2 (Step 2: Multi-Select Service Grid)
-  const section2Ref = useRef<HTMLDivElement>(null);
+  // Catalog filter tab
+  const [catalogFilter, setCatalogFilter] = useState<"ALL" | "SERVICE" | "PRODUCT">("ALL");
 
-  const scrollToSection2 = () => {
-    setTimeout(() => {
-      section2Ref.current?.scrollIntoView({
-        behavior: "smooth",
-        block: "start",
-      });
-    }, 120);
-  };
+  // Member lookup & redemption state
+  const [memberSearchQuery, setMemberSearchQuery] = useState<string>("");
+  const [memberSearchResults, setMemberSearchResults] = useState<MemberDto[]>([]);
+  const [isSearchingMember, setIsSearchingMember] = useState(false);
+  const [selectedMember, setSelectedMember] = useState<MemberDto | null>(null);
+  const [promoRedemptions, setPromoRedemptions] = useState<Record<string, string>>({});
+  const [useMemberCredit, setUseMemberCredit] = useState<boolean>(true);
 
-  // Default to Hair Cut (剪 / Hair Cut) service for fast 1-tap checkout
   const defaultHairCutId = (() => {
     const hairCut = services.find(
       (s) => s.name.includes("剪") || s.name.toLowerCase().includes("cut")
@@ -102,7 +100,6 @@ export function DeskCountSalesView({
     return hairCut ? hairCut.id : services[0]?.id;
   })();
 
-  // Multi-selected service IDs (defaults to Hair Cut for walk-in, or appointment service)
   const [selectedServiceIds, setSelectedServiceIds] = useState<string[]>(() => {
     if (initialAppointmentId) {
       const apt = todayAppointments.find((a) => a.id === initialAppointmentId);
@@ -116,93 +113,194 @@ export function DeskCountSalesView({
   const [paymentMethod, setPaymentMethod] = useState<"CASH" | "DUITNOW_QR" | "CARD">("CASH");
   const [notes, setNotes] = useState<string>("");
 
-  // Confirmation modal state
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
-  // Find currently selected appointment object
   const activeAppointment = todayAppointments.find(
     (a) => a.id === selectedAppointmentId
   );
 
-  // Auto-fill service when an appointment is selected and auto-scroll to section 2
+  function computeAutoPromos(
+    member: MemberDto | null,
+    serviceIds: string[],
+    prev: Record<string, string>
+  ): Record<string, string> {
+    if (!member || member.activePackages.length === 0) return {};
+    const next: Record<string, string> = {};
+    const usedCountByPkg: Record<string, number> = {};
+
+    for (const sid of serviceIds) {
+      const existingPkgId = prev[sid];
+      if (existingPkgId) {
+        const pkg = member.activePackages.find((p) => p.id === existingPkgId);
+        const alreadyUsed = usedCountByPkg[existingPkgId] || 0;
+        if (pkg && pkg.serviceIds.includes(sid) && pkg.remainingSessions > alreadyUsed) {
+          next[sid] = existingPkgId;
+          usedCountByPkg[existingPkgId] = alreadyUsed + 1;
+          continue;
+        }
+      }
+      const matchingPkg = member.activePackages.find((p) => {
+        const alreadyUsed = usedCountByPkg[p.id] || 0;
+        return p.serviceIds.includes(sid) && p.remainingSessions > alreadyUsed;
+      });
+      if (matchingPkg) {
+        next[sid] = matchingPkg.id;
+        usedCountByPkg[matchingPkg.id] = (usedCountByPkg[matchingPkg.id] || 0) + 1;
+      }
+    }
+    return next;
+  }
+
+  // Auto-load member profile when an appointment is selected
+  useEffect(() => {
+    let ignore = false;
+    async function loadAppointmentMember() {
+      if (sourceType === "APPOINTMENT" && activeAppointment?.phoneNumber) {
+        const res = await lookupMembersForCheckout(activeAppointment.phoneNumber);
+        if (!ignore && res.success && res.data.length > 0) {
+          const exact =
+            res.data.find((m) => m.id === activeAppointment.customerId) ||
+            res.data.find((m) => m.phoneNumber === activeAppointment.phoneNumber) ||
+            res.data[0];
+          if (
+            exact &&
+            (exact.isMember ||
+              exact.creditBalanceCents > 0 ||
+              exact.activePackages.length > 0)
+          ) {
+            setSelectedMember(exact);
+            setPromoRedemptions((prev) =>
+              computeAutoPromos(exact, selectedServiceIds, prev)
+            );
+            return;
+          }
+        }
+        if (!ignore) {
+          setSelectedMember(null);
+          setPromoRedemptions({});
+        }
+      }
+    }
+    loadAppointmentMember();
+    return () => {
+      ignore = true;
+    };
+  }, [sourceType, activeAppointment, selectedServiceIds]);
+
+  async function handleMemberSearchChange(val: string) {
+    setMemberSearchQuery(val);
+    if (val.trim().length < 2) {
+      setMemberSearchResults([]);
+      return;
+    }
+    setIsSearchingMember(true);
+    try {
+      const res = await lookupMembersForCheckout(val);
+      if (res.success) setMemberSearchResults(res.data);
+    } finally {
+      setIsSearchingMember(false);
+    }
+  }
+
+  function handleSelectWalkinMember(member: MemberDto) {
+    setSelectedMember(member);
+    setWalkinName(member.name);
+    setWalkinPhone(member.phoneNumber);
+    setMemberSearchQuery("");
+    setMemberSearchResults([]);
+    setUseMemberCredit(member.creditBalanceCents > 0);
+    setPromoRedemptions((prev) =>
+      computeAutoPromos(member, selectedServiceIds, prev)
+    );
+  }
+
+  function togglePromoForService(serviceId: string, memberPackageId: string) {
+    setPromoRedemptions((prev) => {
+      const next = { ...prev };
+      if (next[serviceId] === memberPackageId) delete next[serviceId];
+      else next[serviceId] = memberPackageId;
+      return next;
+    });
+  }
+
   function handleSelectAppointment(aptId: string) {
     setSelectedAppointmentId(aptId);
     const apt = todayAppointments.find((a) => a.id === aptId);
     if (apt) {
       const matchedService = services.find((s) => s.name === apt.serviceName);
       if (matchedService) {
-        setSelectedServiceIds([matchedService.id]);
+        const nextIds = [matchedService.id];
+        setSelectedServiceIds(nextIds);
+        setPromoRedemptions((prev) => computeAutoPromos(selectedMember, nextIds, prev));
       }
     }
-    scrollToSection2();
   }
 
-  // Toggle service selection in multi-select mode (NO auto-scroll here: section 2 allows multiple choices)
   function toggleService(serviceId: string) {
-    setSelectedServiceIds((prev) =>
-      prev.includes(serviceId)
+    setSelectedServiceIds((prev) => {
+      const nextIds = prev.includes(serviceId)
         ? prev.filter((id) => id !== serviceId)
-        : [...prev, serviceId]
-    );
+        : [...prev, serviceId];
+      setPromoRedemptions((p) => computeAutoPromos(selectedMember, nextIds, p));
+      return nextIds;
+    });
   }
 
-  // Calculate Running Totals
-  const selectedServices = services.filter((s) =>
-    selectedServiceIds.includes(s.id)
-  );
+  const selectedServices = services.filter((s) => selectedServiceIds.includes(s.id));
   const totalCents = selectedServices.reduce((acc, s) => acc + s.priceCents, 0);
-
-  // If tied to an appointment with a deposit already paid, credit that deposit
+  const promoDiscountCents = selectedServices.reduce(
+    (acc, s) => acc + (promoRedemptions[s.id] ? s.priceCents : 0),
+    0
+  );
+  const afterPromoCents = Math.max(0, totalCents - promoDiscountCents);
   const depositPaidCents =
     sourceType === "APPOINTMENT" && activeAppointment?.depositDueCents
       ? activeAppointment.depositDueCents
       : 0;
+  const balanceBeforeCreditCents = Math.max(0, afterPromoCents - depositPaidCents);
+  const creditDeductedCents =
+    selectedMember && useMemberCredit && selectedMember.creditBalanceCents > 0
+      ? Math.min(selectedMember.creditBalanceCents, balanceBeforeCreditCents)
+      : 0;
+  const netPayableCents = Math.max(0, balanceBeforeCreditCents - creditDeductedCents);
 
-  const netPayableCents = Math.max(0, totalCents - depositPaidCents);
-
-  // Validate before showing confirmation modal
   function handleOpenConfirm() {
     setErrorMessage(null);
     if (selectedServiceIds.length === 0) {
-      setErrorMessage(
-        languageMode === "ONLY_ZH"
-          ? "请至少选择 1 个服务项目"
-          : "Please select at least 1 service."
-      );
+      setErrorMessage("Select at least 1 item");
       return;
     }
-
     if (sourceType === "APPOINTMENT" && !selectedAppointmentId) {
-      setErrorMessage(
-        languageMode === "ONLY_ZH"
-          ? (canShowWalkIn ? "请选择一位预约顾客，或切换为“散客开单”" : "请选择一位今日已预约的顾客结账")
-          : (canShowWalkIn ? "Please select an appointment from today's list, or switch to Walk-in." : "Please select an appointment from today's list.")
-      );
+      setErrorMessage("Select an appointment");
       return;
     }
-
     setIsConfirmOpen(true);
   }
 
-  // Final confirmation execution
   function handleFinalizeSale() {
     setErrorMessage(null);
-
     startTransition(async () => {
+      const redemptionArray = Object.entries(promoRedemptions)
+        .filter(([sid, pkgId]) => selectedServiceIds.includes(sid) && Boolean(pkgId))
+        .map(([serviceId, memberPackageId]) => ({ serviceId, memberPackageId }));
+
       const res = await recordDeskSale({
         type: sourceType,
         bookingId: sourceType === "APPOINTMENT" ? selectedAppointmentId : undefined,
+        customerId: selectedMember?.id,
         customerName:
           sourceType === "WALKIN"
-            ? walkinName.trim() || undefined
+            ? selectedMember?.name || walkinName.trim() || undefined
             : undefined,
         phoneNumber:
           sourceType === "WALKIN"
-            ? walkinPhone.trim() || undefined
+            ? selectedMember?.phoneNumber || walkinPhone.trim() || undefined
             : undefined,
         serviceIds: selectedServiceIds,
+        promoRedemptions: redemptionArray,
+        useCreditCents: creditDeductedCents,
         paymentMethod,
         notes: notes.trim() || undefined,
       });
@@ -224,611 +322,601 @@ export function DeskCountSalesView({
     });
   }
 
-  // Filter today's appointments that are still PENDING or CONFIRMED
   const pendingAppointments = todayAppointments.filter(
     (a) => a.status === "PENDING" || a.status === "CONFIRMED"
   );
 
+  const hasProducts = services.some((s) => s.type === "PRODUCT");
+  const visibleServices = services.filter((s) => {
+    if (catalogFilter === "SERVICE") return s.type !== "PRODUCT";
+    if (catalogFilter === "PRODUCT") return s.type === "PRODUCT";
+    return true;
+  });
+
+  const isZh = languageMode === "ONLY_ZH";
+
   return (
-    <div className="space-y-6 pb-28 max-w-4xl mx-auto select-none">
-      {/* Top Bar with Cancel / Back Button */}
-      <div className="flex items-center justify-between border-b pb-4 gap-3">
+    <div className="space-y-5 pb-44 md:pb-24 lg:pb-8 max-w-6xl mx-auto select-none">
+      {/* Top Bar */}
+      <div className="flex items-center justify-between border-b border-border pb-3.5 gap-3">
         <Button
           type="button"
           onClick={onBack}
-          size="lg"
           variant="outline"
-          className="h-12 sm:h-16 px-4 sm:px-6 text-sm sm:text-lg font-bold border border-border/80 bg-card hover:bg-muted text-foreground gap-2 sm:gap-2.5 rounded-2xl shadow-xs cursor-pointer shrink-0"
+          size="sm"
+          className="h-10 px-4 rounded-lg font-semibold gap-2 cursor-pointer"
         >
-          <ArrowLeft className="h-5 sm:h-6 w-5 sm:w-6 text-foreground shrink-0" />
-          <DeskText
-            text={DESK_DICT.countSalesView.cancelBack}
-            mode={languageMode}
-            layout="inline"
-            primaryClass="font-black text-sm sm:text-lg"
-          />
+          <ArrowLeft className="h-4 w-4" />
+          <span>{isZh ? "返回" : "Back"}</span>
         </Button>
 
-        <div className="text-right">
-          <DeskText
-            text={DESK_DICT.hubCards.countSalesTitle}
-            mode={languageMode}
-            layout="stack"
-            primaryClass="text-xl sm:text-2xl font-black text-foreground"
-            secondaryClass="text-xs text-muted-foreground font-semibold"
-          />
-        </div>
+        <h1 className="text-lg sm:text-xl font-bold tracking-tight text-foreground">
+          {isZh ? "收银开单" : "New Sale"}
+        </h1>
+
+        <div className="w-16" />
       </div>
 
-      {/* Global Error Banner */}
       {errorMessage && (
-        <div className="p-4 rounded-2xl bg-destructive/10 text-destructive text-sm font-semibold flex items-center gap-3 border border-destructive/20 animate-in fade-in">
-          <AlertCircle className="h-5 w-5 shrink-0" />
-          {errorMessage}
+        <div className="p-3.5 rounded-xl bg-destructive/10 text-destructive text-sm font-medium flex items-center gap-2.5 border border-destructive/20">
+          <AlertCircle className="h-4 w-4 shrink-0" />
+          <span>{errorMessage}</span>
         </div>
       )}
 
-      {/* Step 1: Choose Appointment or Walk-in */}
-      <div className="space-y-3">
-        <Label className="text-base sm:text-lg font-bold text-foreground">
-          <DeskText
-            text={DESK_DICT.countSalesView.step1Client}
-            mode={languageMode}
-            layout="inline"
-            primaryClass="text-base sm:text-lg font-bold"
-          />
-        </Label>
-        <div className={`grid ${canShowWalkIn && canShowBooked ? "grid-cols-1 sm:grid-cols-2" : "grid-cols-1"} gap-4`}>
-          {canShowWalkIn && (
-            <button
-              type="button"
-              onClick={() => {
-                setSourceType("WALKIN");
-                setSelectedAppointmentId("");
-                if (selectedServiceIds.length === 0 && defaultHairCutId) {
-                  setSelectedServiceIds([defaultHairCutId]);
-                }
-                scrollToSection2();
-              }}
-              className={`h-20 sm:h-22 rounded-2xl p-4 flex items-center gap-4 text-left transition-all cursor-pointer ${
-                sourceType === "WALKIN"
-                  ? "border-2 border-foreground bg-muted/40 shadow-xs"
-                  : "border border-border/80 bg-card hover:bg-muted/30 text-muted-foreground"
-              }`}
-            >
-              <div
-                className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 transition-colors ${
+      {/* SPLIT-PANE POS WORKSPACE */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        {/* =============================================================== */}
+        {/* LEFT PANE: Client / Member + Catalog Grid                       */}
+        {/* =============================================================== */}
+        <div className="lg:col-span-7 space-y-4">
+          {/* Source Segmented Switch */}
+          {canShowWalkIn && canShowBooked && (
+            <div className="inline-flex w-full sm:w-auto rounded-lg border border-border bg-muted/60 p-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setSourceType("WALKIN");
+                  setSelectedAppointmentId("");
+                }}
+                className={`flex-1 sm:flex-initial px-4 py-2 rounded-md text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer transition-colors ${
                   sourceType === "WALKIN"
-                    ? "bg-foreground text-background"
-                    : "bg-muted text-muted-foreground"
+                    ? "bg-card text-foreground shadow-2xs"
+                    : "text-muted-foreground hover:text-foreground"
                 }`}
               >
-                <UserPlus className="h-6 w-6" />
-              </div>
-              <div>
-                <DeskText
-                  text={DESK_DICT.countSalesView.walkinTab}
-                  mode={languageMode}
-                  layout="stack"
-                  primaryClass="text-lg font-bold text-foreground leading-tight"
-                  secondaryClass="text-xs text-muted-foreground"
-                />
-              </div>
-            </button>
-          )}
-
-          {canShowBooked && (
-            <button
-              type="button"
-              onClick={() => {
-                setSourceType("APPOINTMENT");
-                if (selectedAppointmentId) {
-                  scrollToSection2();
-                }
-              }}
-              className={`h-20 sm:h-22 rounded-2xl p-4 flex items-center gap-4 text-left transition-all cursor-pointer ${
-                sourceType === "APPOINTMENT"
-                  ? "border-2 border-foreground bg-muted/40 shadow-xs"
-                  : "border border-border/80 bg-card hover:bg-muted/30 text-muted-foreground"
-              }`}
-            >
-              <div
-                className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 transition-colors ${
+                <UserPlus className="h-3.5 w-3.5" />
+                <span>{isZh ? "散客开单" : "Walk-in"}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setSourceType("APPOINTMENT")}
+                className={`flex-1 sm:flex-initial px-4 py-2 rounded-md text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer transition-colors ${
                   sourceType === "APPOINTMENT"
-                    ? "bg-foreground text-background"
-                    : "bg-muted text-muted-foreground"
+                    ? "bg-card text-foreground shadow-2xs"
+                    : "text-muted-foreground hover:text-foreground"
                 }`}
               >
-                <CalendarCheck className="h-6 w-6" />
-              </div>
-              <div>
-                <DeskText
-                  text={DESK_DICT.countSalesView.appointmentTab}
-                  mode={languageMode}
-                  layout="stack"
-                  primaryClass="text-lg font-bold text-foreground leading-tight"
-                  secondaryClass="text-xs text-muted-foreground"
-                />
-                <span className="text-[11px] text-muted-foreground font-medium">
-                  ({pendingAppointments.length} {resolveDeskText(DESK_DICT.breakdown.clientUnit, languageMode).primary})
+                <CalendarCheck className="h-3.5 w-3.5" />
+                <span>
+                  {isZh ? "预约核销" : "Booked"} ({pendingAppointments.length})
                 </span>
-              </div>
-            </button>
+              </button>
+            </div>
           )}
-        </div>
-      </div>
 
-      {/* Appointment Selection Details */}
-      {sourceType === "APPOINTMENT" && (
-        <Card className="border border-border/80 bg-muted/20">
-          <CardContent className="p-4 sm:p-5 space-y-3">
-            <Label className="text-sm sm:text-base font-bold text-foreground">
-              {resolveDeskText(DESK_DICT.countSalesView.selectScheduledClient, languageMode).primary}
-            </Label>
-            {pendingAppointments.length === 0 ? (
-              <p className="text-sm text-muted-foreground italic py-2">
-                {resolveDeskText(
-                  canShowWalkIn
-                    ? DESK_DICT.countSalesView.noPendingAppointmentsWalkinNotice
-                    : DESK_DICT.countSalesView.noPendingAppointmentsNotice,
-                  languageMode
-                ).primary}
-              </p>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-60 overflow-y-auto">
-                {pendingAppointments.map((apt) => {
-                  const isSelected = apt.id === selectedAppointmentId;
-                  const svcResolved = resolveServiceName(apt.serviceName, languageMode);
-                  return (
-                    <button
-                      key={apt.id}
-                      type="button"
-                      onClick={() => handleSelectAppointment(apt.id)}
-                      className={`p-3.5 rounded-xl text-left transition-all cursor-pointer ${
-                        isSelected
-                          ? "border-2 border-foreground bg-muted/40 shadow-xs"
-                          : "border border-border/80 bg-card hover:bg-muted/40"
-                      }`}
-                    >
-                      <div className="flex justify-between items-center">
-                        <span className="font-bold text-base text-foreground">
-                          {apt.customerName}
-                        </span>
-                        <span className="text-xs font-mono font-bold bg-muted px-2 py-0.5 rounded">
-                          {apt.startDatetime.slice(11, 16)}
-                        </span>
-                      </div>
-                      <div className="mt-1">
-                        <DeskText
-                          zh={svcResolved.primary}
-                          en={svcResolved.secondary}
-                          mode={languageMode}
-                          primaryClass="text-xs font-semibold text-foreground/80"
-                          secondaryClass="text-[10px] text-muted-foreground ml-1"
-                          layout="inline"
-                        />
-                      </div>
-                      {apt.depositDueCents && apt.depositDueCents > 0 ? (
-                        <p className="text-xs text-muted-foreground font-semibold mt-1">
-                          ✓ {resolveDeskText(DESK_DICT.appointmentView.depositPaidLabel, languageMode).primary}:{" "}
-                          {formatPrice(apt.depositDueCents, currencySymbol)}
-                        </p>
-                      ) : null}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
+          {/* Booked Appointment Selector */}
+          {sourceType === "APPOINTMENT" && (
+            <div className="p-3.5 rounded-xl border border-border bg-card space-y-2.5">
+              {pendingAppointments.length === 0 ? (
+                <p className="text-xs text-muted-foreground py-2">
+                  {isZh ? "今日暂无待结账预约" : "No pending appointments today"}
+                </p>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto">
+                  {pendingAppointments.map((apt) => {
+                    const isSelected = apt.id === selectedAppointmentId;
+                    return (
+                      <button
+                        key={apt.id}
+                        type="button"
+                        onClick={() => handleSelectAppointment(apt.id)}
+                        className={`p-3 rounded-lg border text-left cursor-pointer transition-colors ${
+                          isSelected
+                            ? "border-primary bg-accent"
+                            : "bg-background hover:bg-muted/40"
+                        }`}
+                      >
+                        <div className="flex justify-between items-center text-sm font-semibold">
+                          <span className="truncate">{apt.customerName}</span>
+                          <span className="font-mono text-xs text-muted-foreground tabular-nums">
+                            {apt.startDatetime.slice(11, 16)}
+                          </span>
+                        </div>
+                        <div className="text-xs text-muted-foreground truncate mt-0.5">
+                          {apt.serviceName}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
 
-      {/* Walk-in Customer Info (Hidden by default, revealed on button click) */}
-      {sourceType === "WALKIN" && (
-        <div className="pt-1">
-          {!showCustomerDetails ? (
-            <button
-              type="button"
-              onClick={() => setShowCustomerDetails(true)}
-              className="inline-flex items-center gap-2 text-sm sm:text-base font-semibold text-foreground/80 hover:text-foreground hover:underline py-2.5 px-4 rounded-xl border border-border/80 bg-card cursor-pointer transition-all shadow-xs"
-            >
-              <User className="h-4 w-4" />
-              <DeskText
-                text={DESK_DICT.countSalesView.recordCustomerDetailsBtn}
-                mode={languageMode}
-                layout="inline"
-                primaryClass="font-semibold"
-              />
-            </button>
-          ) : (
-            <div className="p-4 rounded-2xl border border-border/80 bg-card space-y-3 animate-in fade-in shadow-xs">
-              <div className="flex items-center justify-between">
-                <span className="text-xs sm:text-sm font-bold uppercase tracking-wider text-muted-foreground">
-                  <DeskText
-                    text={DESK_DICT.countSalesView.customerDetailsOptional}
-                    mode={languageMode}
-                    layout="inline"
+          {/* Walk-in Member Lookup / Optional Info */}
+          {sourceType === "WALKIN" && !selectedMember && (
+            <div className="p-3.5 rounded-xl border border-border bg-card space-y-2.5">
+              <div className="flex items-center gap-2">
+                <div className="relative flex-1">
+                  <Search className="h-4 w-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
+                  <Input
+                    placeholder={
+                      isZh
+                        ? "搜索会员手机或姓名..."
+                        : "Search member phone or name..."
+                    }
+                    value={memberSearchQuery}
+                    onChange={(e) => handleMemberSearchChange(e.target.value)}
+                    className="pl-9 h-9 rounded-lg text-sm"
                   />
+                  {isSearchingMember && (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground absolute right-3 top-1/2 -translate-y-1/2" />
+                  )}
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setShowWalkinFields(!showWalkinFields)}
+                  className="h-9 rounded-lg text-xs cursor-pointer"
+                >
+                  {showWalkinFields ? "Hide" : "+ Info"}
+                </Button>
+              </div>
+
+              {memberSearchResults.length > 0 && (
+                <div className="divide-y divide-border border border-border rounded-lg overflow-hidden max-h-44 overflow-y-auto">
+                  {memberSearchResults.map((m) => (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => handleSelectWalkinMember(m)}
+                      className="w-full p-2.5 bg-background hover:bg-muted/50 text-left flex items-center justify-between gap-2 cursor-pointer"
+                    >
+                      <div>
+                        <div className="text-sm font-semibold">{m.name}</div>
+                        <div className="text-xs font-mono text-muted-foreground">
+                          {m.phoneNumber}
+                          {m.activePackages.length > 0
+                            ? ` · ${m.activePackages.length} promo`
+                            : ""}
+                        </div>
+                      </div>
+                      <span className="font-mono font-bold text-xs text-primary tabular-nums">
+                        {formatPrice(m.creditBalanceCents, currencySymbol)}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {showWalkinFields && (
+                <div className="grid grid-cols-2 gap-2 pt-1">
+                  <Input
+                    placeholder="Customer Name"
+                    value={walkinName}
+                    onChange={(e) => setWalkinName(e.target.value)}
+                    className="h-9 rounded-lg text-sm"
+                  />
+                  <Input
+                    type="tel"
+                    placeholder="Phone Number"
+                    value={walkinPhone}
+                    onChange={(e) => setWalkinPhone(e.target.value)}
+                    className="h-9 rounded-lg text-sm font-mono"
+                  />
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Selected Member Strip */}
+          {selectedMember && (
+            <div className="p-3.5 rounded-xl border border-primary/40 bg-accent/50 flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <Badge className="text-[11px]">Member</Badge>
+                <span className="font-bold text-sm">{selectedMember.name}</span>
+                <span className="font-mono text-xs text-muted-foreground">
+                  {selectedMember.phoneNumber}
                 </span>
+                <span className="text-xs font-mono font-bold text-primary tabular-nums">
+                  {formatPrice(selectedMember.creditBalanceCents, currencySymbol)}
+                </span>
+                {selectedMember.activePackages.map((pkg) => (
+                  <Badge key={pkg.id} variant="secondary" className="text-[11px] font-mono">
+                    {pkg.name} ({pkg.remainingSessions}/{pkg.totalSessions})
+                  </Badge>
+                ))}
+              </div>
+              {sourceType === "WALKIN" && (
                 <button
                   type="button"
                   onClick={() => {
-                    setShowCustomerDetails(false);
+                    setSelectedMember(null);
                     setWalkinName("");
                     setWalkinPhone("");
+                    setPromoRedemptions({});
                   }}
-                  className="text-xs sm:text-sm text-muted-foreground hover:text-foreground font-semibold cursor-pointer px-2 py-1 rounded-md hover:bg-muted"
+                  className="text-muted-foreground hover:text-foreground cursor-pointer"
+                  aria-label="Clear member"
                 >
-                  <DeskText
-                    text={DESK_DICT.countSalesView.hideCustomerDetailsBtn}
-                    mode={languageMode}
-                    layout="inline"
-                  />
+                  <X className="h-4 w-4" />
                 </button>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                <div className="space-y-1">
-                  <Label htmlFor="walkinName" className="text-xs sm:text-sm font-semibold">
-                    <DeskText
-                      text={DESK_DICT.appointmentView.customerName}
-                      mode={languageMode}
-                      layout="inline"
-                    />
-                  </Label>
-                  <Input
-                    id="walkinName"
-                    placeholder={resolveDeskText(DESK_DICT.countSalesView.customerNamePlaceholder, languageMode).primary}
-                    value={walkinName}
-                    onChange={(e) => setWalkinName(e.target.value)}
-                    className="h-11 sm:h-12 text-base font-medium rounded-xl"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="walkinPhone" className="text-xs sm:text-sm font-semibold">
-                    <DeskText
-                      text={DESK_DICT.appointmentView.phoneNumber}
-                      mode={languageMode}
-                      layout="inline"
-                    />
-                  </Label>
-                  <Input
-                    id="walkinPhone"
-                    type="tel"
-                    placeholder={resolveDeskText(DESK_DICT.countSalesView.customerPhonePlaceholder, languageMode).primary}
-                    value={walkinPhone}
-                    onChange={(e) => setWalkinPhone(e.target.value)}
-                    className="h-11 sm:h-12 text-base font-medium rounded-xl"
-                  />
-                </div>
-              </div>
+              )}
             </div>
           )}
-        </div>
-      )}
 
-      {/* Step 2: Multi-Select Service Grid */}
-      <div ref={section2Ref} className="space-y-3 pt-2 scroll-mt-6">
-        <div className="flex items-center justify-between">
-          <Label className="text-base sm:text-lg font-bold text-foreground">
-            <DeskText
-              text={DESK_DICT.countSalesView.step2Services}
-              mode={languageMode}
-              layout="inline"
-              primaryClass="text-base sm:text-lg font-bold"
-            />
-          </Label>
-          <span className="text-xs sm:text-sm font-semibold text-muted-foreground font-mono">
-            {selectedServiceIds.length} {resolveDeskText(DESK_DICT.countSalesView.itemsSelected, languageMode).primary}
-          </span>
-        </div>
+          {/* Catalog Filter Bar (only shown if products exist) */}
+          {hasProducts && (
+            <div className="inline-flex rounded-lg border border-border bg-muted/60 p-1">
+              {(["ALL", "SERVICE", "PRODUCT"] as const).map((tab) => (
+                <button
+                  key={tab}
+                  type="button"
+                  onClick={() => setCatalogFilter(tab)}
+                  className={`px-3 py-1 rounded-md text-xs font-semibold cursor-pointer transition-colors ${
+                    catalogFilter === tab
+                      ? "bg-card text-foreground shadow-2xs"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {tab === "ALL" ? "All" : tab === "SERVICE" ? "Services" : "Products"}
+                </button>
+              ))}
+            </div>
+          )}
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
-          {services.map((service) => {
-            const isSelected = selectedServiceIds.includes(service.id);
-            const svcResolved = resolveServiceName(service.name, languageMode);
-            const svcImage = getServiceImage(service.name);
-            return (
-              <button
-                key={service.id}
-                type="button"
-                onClick={() => toggleService(service.id)}
-                className={`min-h-[82px] p-3.5 sm:p-4 rounded-2xl text-left flex items-center justify-between gap-3 transition-all cursor-pointer ${
-                  isSelected
-                    ? "border-2 border-emerald-600 bg-card shadow-xs"
-                    : "border border-border/80 bg-card hover:border-foreground/30 hover:bg-muted/20 shadow-xs"
-                }`}
-              >
-                <div className="flex items-center gap-3 flex-1 min-w-0">
-                  {svcImage ? (
-                    <div className="relative w-16 h-16 sm:w-18 sm:h-18 rounded-2xl overflow-hidden shrink-0 border border-border/60 bg-muted/40 shadow-2xs p-1 flex items-center justify-center">
-                      <Image
-                        src={svcImage}
-                        alt={service.name}
-                        fill
-                        unoptimized
-                        className="object-contain drop-shadow-xs"
-                        sizes="(max-width: 640px) 64px, 72px"
-                      />
+          {/* Service & Product Grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            {visibleServices.map((service) => {
+              const isSelected = selectedServiceIds.includes(service.id);
+              const svcResolved = resolveServiceName(service.name, languageMode);
+              const svcImage = getServiceImage(service.name);
+              const isPromoCovered = Boolean(promoRedemptions[service.id]);
+
+              return (
+                <button
+                  key={service.id}
+                  type="button"
+                  onClick={() => toggleService(service.id)}
+                  className={`p-3.5 rounded-xl text-left flex items-center justify-between gap-3 transition-all cursor-pointer border ${
+                    isSelected
+                      ? "border-primary bg-accent/60 ring-1 ring-primary"
+                      : "border-border bg-card hover:bg-muted/30"
+                  }`}
+                >
+                  <div className="flex items-center gap-3 min-w-0 flex-1">
+                    {svcImage ? (
+                      <div className="relative w-11 h-11 rounded-lg overflow-hidden shrink-0 border border-border bg-muted/40">
+                        <Image
+                          src={svcImage}
+                          alt={service.name}
+                          fill
+                          unoptimized
+                          className="object-contain p-1"
+                          sizes="44px"
+                        />
+                      </div>
+                    ) : service.type === "PRODUCT" ? (
+                      <div className="w-11 h-11 rounded-lg bg-muted text-muted-foreground flex items-center justify-center shrink-0">
+                        <ShoppingBag className="h-5 w-5" />
+                      </div>
+                    ) : (
+                      <div className="w-11 h-11 rounded-lg bg-muted text-muted-foreground flex items-center justify-center shrink-0">
+                        <Scissors className="h-5 w-5" />
+                      </div>
+                    )}
+
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        {isSelected && (
+                          <CheckCircle2 className="h-3.5 w-3.5 text-primary shrink-0" />
+                        )}
+                        <span className="font-semibold text-sm truncate text-foreground">
+                          {svcResolved.primary}
+                        </span>
+                      </div>
+                      <div className="text-xs text-muted-foreground tabular-nums">
+                        {service.type === "PRODUCT"
+                          ? "Product"
+                          : `${service.durationMinutes} min`}
+                      </div>
                     </div>
-                  ) : (
-                    <div className="w-16 h-16 sm:w-18 sm:h-18 rounded-2xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
-                      <Scissors className="h-7 w-7" />
-                    </div>
-                  )}
-                  <div className="space-y-0.5 flex-1 min-w-0">
-                    <div className="flex items-center gap-1.5">
-                      {isSelected && (
-                        <CheckCircle2 className="h-4.5 w-4.5 text-emerald-600 shrink-0" />
-                      )}
-                      <DeskText
-                        zh={svcResolved.primary}
-                        en={svcResolved.secondary}
-                        mode={languageMode}
-                        primaryClass="font-bold text-base sm:text-lg leading-tight truncate text-foreground"
-                        secondaryClass="text-xs text-muted-foreground font-medium"
-                      />
-                    </div>
-                    <p className="text-xs text-muted-foreground font-normal pl-0.5">
-                      {service.durationMinutes} mins
-                    </p>
                   </div>
-                </div>
-                <div className="text-right shrink-0">
-                  <span className="text-base sm:text-lg font-mono font-bold text-foreground">
-                    {formatPrice(service.priceCents, currencySymbol)}
-                  </span>
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      </div>
 
-      {/* Step 3: Payment Method */}
-      <div className="space-y-3">
-        <Label className="text-base sm:text-lg font-bold text-foreground">
-          <DeskText
-            text={DESK_DICT.countSalesView.step3Payment}
-            mode={languageMode}
-            layout="inline"
-            primaryClass="text-base sm:text-lg font-bold"
-          />
-        </Label>
-        <div className="grid grid-cols-3 gap-3">
-          {[
-            {
-              id: "CASH",
-              icon: "💵",
-              text: DESK_DICT.countSalesView.pmCash,
-            },
-            {
-              id: "DUITNOW_QR",
-              icon: "📱",
-              text: DESK_DICT.countSalesView.pmTransferDuitnow,
-            },
-            {
-              id: "CARD",
-              icon: "💳",
-              text: DESK_DICT.countSalesView.pmCard,
-            },
-          ].map((pm) => {
-            const isChosen = paymentMethod === pm.id;
-            return (
-              <button
-                key={pm.id}
-                type="button"
-                onClick={() => setPaymentMethod(pm.id as "CASH" | "DUITNOW_QR" | "CARD")}
-                className={`h-16 sm:h-20 rounded-xl font-bold text-sm sm:text-base transition-all cursor-pointer flex flex-col items-center justify-center ${
-                  isChosen
-                    ? "border-2 border-foreground bg-muted/40 text-foreground shadow-xs"
-                    : "border border-border/80 bg-card hover:bg-muted/30 text-muted-foreground"
-                }`}
-              >
-                <div className="flex items-center gap-1">
-                  <span>{pm.icon}</span>
-                  <DeskText
-                    text={pm.text}
-                    mode={languageMode}
-                    primaryClass="font-bold text-sm sm:text-base"
-                    secondaryClass="text-[10px] text-muted-foreground"
-                    layout="stack"
-                  />
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Real-time Total Bar & Big Confirm Button */}
-      <div className="p-4 sm:p-5 rounded-2xl border border-border/80 bg-card/95 backdrop-blur-md shadow-lg flex flex-col sm:flex-row items-center justify-between gap-4 fixed sm:sticky bottom-3 left-3 right-3 sm:bottom-4 z-20">
-        <div className="space-y-0.5 text-center sm:text-left w-full sm:w-auto">
-          <p className="text-xs uppercase tracking-wider font-semibold text-muted-foreground">
-            <DeskText
-              text={DESK_DICT.countSalesView.totalToCollect}
-              mode={languageMode}
-              layout="inline"
-            />
-          </p>
-          <div className="flex items-baseline gap-2 justify-center sm:justify-start">
-            <span className="text-3xl sm:text-4xl font-extrabold font-mono text-foreground">
-              {formatPrice(netPayableCents, currencySymbol)}
-            </span>
-            {depositPaidCents > 0 && (
-              <span className="text-xs text-muted-foreground font-mono">
-                (Total {formatPrice(totalCents, currencySymbol)} - Dep{" "}
-                {formatPrice(depositPaidCents, currencySymbol)})
-              </span>
-            )}
+                  <div className="text-right shrink-0 font-mono tabular-nums">
+                    {isPromoCovered ? (
+                      <div className="flex flex-col items-end">
+                        <span className="text-[11px] line-through text-muted-foreground">
+                          {formatPrice(service.priceCents, currencySymbol)}
+                        </span>
+                        <span className="text-sm font-bold text-primary">
+                          {currencySymbol} 0.00
+                        </span>
+                      </div>
+                    ) : (
+                      <span className="text-sm font-bold text-foreground">
+                        {formatPrice(service.priceCents, currencySymbol)}
+                      </span>
+                    )}
+                  </div>
+                </button>
+              );
+            })}
           </div>
         </div>
 
-        <Button
-          type="button"
-          onClick={handleOpenConfirm}
-          disabled={selectedServiceIds.length === 0}
-          size="lg"
-          className="w-full sm:w-auto h-14 px-8 text-base sm:text-lg font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs gap-2 rounded-xl cursor-pointer transition-colors"
-        >
-          <Receipt className="h-5 w-5" />
-          <DeskText
-            text={DESK_DICT.countSalesView.confirmSaleBtn}
-            mode={languageMode}
-            layout="inline"
-            primaryClass="font-bold text-base sm:text-lg"
-          />
-        </Button>
-      </div>
+        {/* =============================================================== */}
+        {/* RIGHT PANE (STICKY): Live Order Ticket                          */}
+        {/* =============================================================== */}
+        <div className="lg:col-span-5 lg:sticky lg:top-6 rounded-xl border border-border bg-card p-5 space-y-4">
+          <div className="flex items-center justify-between border-b border-border pb-3">
+            <span className="text-sm font-bold text-foreground">
+              {isZh ? "结账明细" : "Order Ticket"}
+            </span>
+            <span className="text-xs font-mono text-muted-foreground tabular-nums">
+              {selectedServices.length} items
+            </span>
+          </div>
 
-      {/* Confirmation Modal (Receipt Style) */}
-      <Dialog open={isConfirmOpen} onOpenChange={setIsConfirmOpen}>
-        <DialogContent className="max-w-md p-6">
-          <DialogHeader>
-            <div className="w-12 h-12 rounded-2xl bg-muted text-foreground flex items-center justify-center mx-auto mb-2 border border-border/80">
-              <Receipt className="h-6 w-6" />
-            </div>
-            <DialogTitle className="text-2xl font-bold text-center">
-              <DeskText
-                text={DESK_DICT.countSalesView.confirmModalTitle}
-                mode={languageMode}
-                layout="inline"
-              />
-            </DialogTitle>
-            <DialogDescription className="text-center text-xs text-muted-foreground">
-              <DeskText
-                text={DESK_DICT.countSalesView.confirmModalDesc}
-                mode={languageMode}
-                layout="inline"
-              />
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="my-4 space-y-3 p-4 rounded-xl border bg-muted/30 text-sm">
-            <div className="flex justify-between items-center">
-              <span className="text-muted-foreground">
-                <DeskText
-                  text={DESK_DICT.countSalesView.modalCustomer}
-                  mode={languageMode}
-                  layout="inline"
-                />
-              </span>
-              <span className="font-bold text-base">
-                {sourceType === "APPOINTMENT"
-                  ? activeAppointment?.customerName
-                  : walkinName.trim() || resolveDeskText(DESK_DICT.countSalesView.walkinDefault, languageMode).primary}
-              </span>
-            </div>
-
-            <div className="flex justify-between items-center">
-              <span className="text-muted-foreground">
-                <DeskText
-                  text={DESK_DICT.countSalesView.modalPaymentMethod}
-                  mode={languageMode}
-                  layout="inline"
-                />
-              </span>
-              <span className="font-bold font-mono">{paymentMethod}</span>
-            </div>
-
-            <div className="border-t pt-2 space-y-1">
-              <span className="text-xs font-semibold text-muted-foreground uppercase">
-                <DeskText
-                  text={DESK_DICT.countSalesView.modalServices}
-                  mode={languageMode}
-                  layout="inline"
-                />
-                :
-              </span>
+          {/* Line Items */}
+          {selectedServices.length === 0 ? (
+            <p className="text-xs text-muted-foreground py-6 text-center">
+              Select services or products from the catalog
+            </p>
+          ) : (
+            <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
               {selectedServices.map((s) => {
-                const svcResolved = resolveServiceName(s.name, languageMode);
+                const matchingPkg = selectedMember?.activePackages.find((p) =>
+                  p.serviceIds.includes(s.id)
+                );
+                const isRedeemed = Boolean(
+                  matchingPkg && promoRedemptions[s.id] === matchingPkg.id
+                );
+
                 return (
-                  <div key={s.id} className="flex justify-between text-sm py-0.5">
-                    <DeskText
-                      zh={svcResolved.primary}
-                      en={svcResolved.secondary}
-                      mode={languageMode}
-                      layout="inline"
-                      primaryClass="font-medium"
-                      secondaryClass="text-xs text-muted-foreground"
-                    />
-                    <span className="font-mono font-bold">
-                      {formatPrice(s.priceCents, currencySymbol)}
-                    </span>
+                  <div
+                    key={s.id}
+                    className="flex items-center justify-between gap-2 text-sm py-1.5 border-b border-border/50 last:border-0"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="font-medium truncate">{s.name}</div>
+                      {matchingPkg && (
+                        <button
+                          type="button"
+                          onClick={() => togglePromoForService(s.id, matchingPkg.id)}
+                          className={`mt-1 inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold border cursor-pointer transition-colors ${
+                            isRedeemed
+                              ? "border-primary bg-accent text-accent-foreground"
+                              : "border-border bg-background text-muted-foreground hover:text-foreground"
+                          }`}
+                        >
+                          <Ticket className="h-3 w-3" />
+                          <span>
+                            {isRedeemed
+                              ? `Promo Applied (-1)`
+                              : `Use ${matchingPkg.name}`}
+                          </span>
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="font-mono font-semibold tabular-nums">
+                        {isRedeemed
+                          ? `${currencySymbol} 0.00`
+                          : formatPrice(s.priceCents, currencySymbol)}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => toggleService(s.id)}
+                        className="text-muted-foreground hover:text-destructive cursor-pointer"
+                        aria-label={`Remove ${s.name}`}
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
                   </div>
                 );
               })}
             </div>
+          )}
 
-            {depositPaidCents > 0 && (
-              <div className="flex justify-between text-xs text-green-600 pt-1 border-t">
-                <span>
-                  <DeskText
-                    text={DESK_DICT.countSalesView.modalDepositDeduction}
-                    mode={languageMode}
-                    layout="inline"
+          {/* Member Credit Toggle */}
+          {selectedMember &&
+            selectedMember.creditBalanceCents > 0 &&
+            balanceBeforeCreditCents > 0 && (
+              <label className="flex items-center justify-between p-3 rounded-lg border border-border bg-muted/40 text-xs font-semibold cursor-pointer">
+                <span className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={useMemberCredit}
+                    onChange={(e) => setUseMemberCredit(e.target.checked)}
+                    className="h-4 w-4 rounded"
                   />
+                  <Wallet className="h-3.5 w-3.5 text-primary" />
+                  <span>Deduct Member Credit</span>
                 </span>
-                <span className="font-mono font-bold">
-                  - {formatPrice(depositPaidCents, currencySymbol)}
+                <span className="font-mono text-primary tabular-nums">
+                  -{formatPrice(creditDeductedCents, currencySymbol)}
+                </span>
+              </label>
+            )}
+
+          {/* Deductions Summary */}
+          {(promoDiscountCents > 0 || depositPaidCents > 0 || creditDeductedCents > 0) && (
+            <div className="space-y-1 pt-2 border-t border-border text-xs tabular-nums">
+              <div className="flex justify-between text-muted-foreground">
+                <span>Subtotal</span>
+                <span className="font-mono">{formatPrice(totalCents, currencySymbol)}</span>
+              </div>
+              {promoDiscountCents > 0 && (
+                <div className="flex justify-between text-primary">
+                  <span>Promo</span>
+                  <span className="font-mono">
+                    -{formatPrice(promoDiscountCents, currencySymbol)}
+                  </span>
+                </div>
+              )}
+              {depositPaidCents > 0 && (
+                <div className="flex justify-between text-primary">
+                  <span>Deposit</span>
+                  <span className="font-mono">
+                    -{formatPrice(depositPaidCents, currencySymbol)}
+                  </span>
+                </div>
+              )}
+              {creditDeductedCents > 0 && (
+                <div className="flex justify-between text-primary">
+                  <span>Credit</span>
+                  <span className="font-mono">
+                    -{formatPrice(creditDeductedCents, currencySymbol)}
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Payment Method Segmented Bar */}
+          <div className="space-y-1.5 pt-2 border-t border-border">
+            <div className="grid grid-cols-3 gap-2">
+              {(
+                [
+                  { id: "CASH", label: isZh ? "现金" : "Cash", icon: Banknote },
+                  { id: "DUITNOW_QR", label: "QR", icon: QrCode },
+                  { id: "CARD", label: isZh ? "刷卡" : "Card", icon: CreditCard },
+                ] as const
+              ).map((pm) => {
+                const active = paymentMethod === pm.id;
+                return (
+                  <button
+                    key={pm.id}
+                    type="button"
+                    onClick={() => setPaymentMethod(pm.id)}
+                    className={`py-2.5 rounded-lg text-xs font-semibold border flex items-center justify-center gap-1.5 cursor-pointer transition-colors ${
+                      active
+                        ? "border-primary bg-accent text-accent-foreground"
+                        : "border-border bg-background text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    <pm.icon className="h-3.5 w-3.5" />
+                    <span>{pm.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <Input
+            placeholder={isZh ? "备注 (可选)" : "Note (optional)"}
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            className="h-9 rounded-lg text-xs"
+          />
+
+          {/* Desktop / Tablet Collect CTA */}
+          <div className="hidden lg:block pt-2">
+            <Button
+              type="button"
+              onClick={handleOpenConfirm}
+              disabled={selectedServiceIds.length === 0}
+              className="w-full h-12 rounded-xl font-bold text-base justify-between px-5 cursor-pointer"
+            >
+              <span>{isZh ? "确认收款" : "Collect"}</span>
+              <span className="font-mono tabular-nums">
+                {formatPrice(netPayableCents, currencySymbol)}
+              </span>
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      {/* Mobile Sticky Bottom Collect Bar (floats cleanly above the mobile pill bar) */}
+      <div className="lg:hidden fixed bottom-[84px] md:bottom-0 left-0 right-0 z-30 p-3 border-t border-border bg-card/95 backdrop-blur flex items-center justify-between gap-3">
+        <div>
+          <div className="text-[11px] text-muted-foreground font-medium">Total</div>
+          <div className="text-xl font-bold font-mono tabular-nums text-foreground">
+            {formatPrice(netPayableCents, currencySymbol)}
+          </div>
+        </div>
+        <Button
+          type="button"
+          onClick={handleOpenConfirm}
+          disabled={selectedServiceIds.length === 0}
+          className="h-11 px-6 rounded-xl font-bold gap-2 cursor-pointer"
+        >
+          <Receipt className="h-4 w-4" />
+          <span>{isZh ? "确认收款" : "Collect"}</span>
+        </Button>
+      </div>
+
+      {/* Receipt Confirmation Modal */}
+      <Dialog open={isConfirmOpen} onOpenChange={setIsConfirmOpen}>
+        <DialogContent className="max-w-sm rounded-xl p-5">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-bold">
+              {isZh ? "确认结账" : "Confirm Payment"}
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              {sourceType === "APPOINTMENT"
+                ? activeAppointment?.customerName
+                : selectedMember?.name || walkinName.trim() || "Walk-in"}{" "}
+              · {paymentMethod}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-2 py-2 border-y border-border text-sm">
+            {selectedServices.map((s) => (
+              <div key={s.id} className="flex justify-between">
+                <span className="truncate pr-2">
+                  {s.name}
+                  {promoRedemptions[s.id] ? " (Promo)" : ""}
+                </span>
+                <span className="font-mono font-semibold tabular-nums">
+                  {promoRedemptions[s.id]
+                    ? `${currencySymbol} 0.00`
+                    : formatPrice(s.priceCents, currencySymbol)}
+                </span>
+              </div>
+            ))}
+            {creditDeductedCents > 0 && (
+              <div className="flex justify-between text-xs text-primary pt-1 border-t border-border">
+                <span>Member Credit</span>
+                <span className="font-mono tabular-nums">
+                  -{formatPrice(creditDeductedCents, currencySymbol)}
                 </span>
               </div>
             )}
-
-            <div className="border-t-2 border-dashed pt-2 flex justify-between items-baseline font-bold text-lg">
-              <span>
-                <DeskText
-                  text={DESK_DICT.countSalesView.modalAmountCollected}
-                  mode={languageMode}
-                  layout="inline"
-                />
-              </span>
-              <span className="text-2xl font-black font-mono text-primary">
+            <div className="flex justify-between font-bold text-base pt-2 border-t border-border">
+              <span>{isZh ? "实收金额" : "Amount Due"}</span>
+              <span className="font-mono text-primary tabular-nums">
                 {formatPrice(netPayableCents, currencySymbol)}
               </span>
             </div>
           </div>
 
-          <DialogFooter className="gap-2 sm:gap-0">
+          <DialogFooter>
             <Button
-              type="button"
               variant="outline"
               onClick={() => setIsConfirmOpen(false)}
               disabled={isPending}
-              className="h-12 text-base font-semibold rounded-xl"
             >
-              <DeskText
-                text={DESK_DICT.countSalesView.modalCancelBtn}
-                mode={languageMode}
-                layout="inline"
-              />
+              {resolveDeskText(DESK_DICT.countSalesView.modalCancelBtn, languageMode).primary}
             </Button>
-            <Button
-              type="button"
-              onClick={handleFinalizeSale}
-              disabled={isPending}
-              className="h-12 text-base font-bold bg-green-600 hover:bg-green-700 text-white gap-2 rounded-xl"
-            >
-              {isPending ? (
-                <>
-                  <Loader2 className="h-5 w-5 animate-spin" />
-                  <DeskText
-                    text={DESK_DICT.countSalesView.modalSavingBtn}
-                    mode={languageMode}
-                    layout="inline"
-                    secondaryClass="text-xs text-white/80 font-normal"
-                  />
-                </>
-              ) : (
-                <>
-                  <CheckCircle2 className="h-5 w-5" />
-                  <DeskText
-                    text={DESK_DICT.countSalesView.modalConfirmBtn}
-                    mode={languageMode}
-                    layout="inline"
-                    secondaryClass="text-xs text-white/80 font-normal"
-                  />
-                </>
-              )}
+            <Button onClick={handleFinalizeSale} disabled={isPending} className="gap-1.5">
+              {isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+              <span>{isZh ? "完成" : "Confirm"}</span>
             </Button>
           </DialogFooter>
         </DialogContent>

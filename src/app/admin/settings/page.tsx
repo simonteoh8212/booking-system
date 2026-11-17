@@ -14,6 +14,7 @@ import { AdminPinSettingsForm } from "@/components/admin/AdminPinSettingsForm";
 import { DatabaseBackupCard } from "@/components/admin/DatabaseBackupCard";
 import { Separator } from "@/components/ui/separator";
 import { resolveLabel } from "@/lib/desk-i18n";
+import { isInternalAppMode } from "@/lib/utils";
 import type { DeskLanguageMode } from "@/types";
 
 import { connection } from "next/server";
@@ -66,20 +67,9 @@ export default async function SettingsPage() {
 
   return (
     <div className="space-y-8">
-      <div>
-        <h1 className="text-2xl font-bold">
-          {resolveLabel({ zh: "系统设置", en: "Settings" }, activeLang)}
-        </h1>
-        <p className="text-muted-foreground text-sm">
-          {resolveLabel(
-            {
-              zh: "配置定金收取、熟客免定金名单、前台看板、营业时间与不可预约时段",
-              en: "Configure deposits, regular customer exemptions, desk scoreboard, business hours, and calendar availability",
-            },
-            activeLang
-          )}
-        </p>
-      </div>
+      <h1 className="text-xl sm:text-2xl font-bold tracking-tight">
+        {resolveLabel({ zh: "系统设置", en: "Settings" }, activeLang)}
+      </h1>
 
       {/* Salon Desk Scoreboard Display Controls */}
       <section className="space-y-4">
@@ -96,15 +86,18 @@ export default async function SettingsPage() {
         <DatabaseBackupCard initialStats={backupStats} />
       </section>
 
-      {/* Deposit & DuitNow QR */}
-      <section className="space-y-4">
-        <DepositSettingsForm initialSetting={depositSetting} />
-      </section>
+      {/* Deposit & Exemption settings (only needed when public self-booking is enabled) */}
+      {!isInternalAppMode() && (
+        <>
+          <section className="space-y-4">
+            <DepositSettingsForm initialSetting={depositSetting} />
+          </section>
 
-      {/* Regular Customer Exemption (Verify phone numbers to exclude deposit) */}
-      <section className="space-y-4">
-        <DepositExemptManager initialCustomers={exemptCustomers} />
-      </section>
+          <section className="space-y-4">
+            <DepositExemptManager initialCustomers={exemptCustomers} />
+          </section>
+        </>
+      )}
 
       <Separator />
 

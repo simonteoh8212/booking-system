@@ -19,8 +19,11 @@ export async function proxy(request: NextRequest) {
       .replace(/['"]/g, "")
       .trim() === "internal";
 
-  // In internal mode, public pages (root / and /check-booking) redirect directly to /admin/desk
-  if (isInternalMode && (pathname === "/" || pathname === "/check-booking")) {
+  // In internal mode, public pages (/, /check-booking, /demo) redirect directly to /admin/desk
+  if (
+    isInternalMode &&
+    (pathname === "/" || pathname === "/check-booking" || pathname === "/demo")
+  ) {
     const deskUrl = request.nextUrl.clone();
     deskUrl.pathname = "/admin/desk";
     return NextResponse.redirect(deskUrl);

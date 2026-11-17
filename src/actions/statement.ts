@@ -95,26 +95,42 @@ export async function getMonthlyStatementData(
     const currency = depositSetting?.currency || "MYR";
     const currencySymbol = depositSetting?.currencySymbol || "RM";
 
-    // 1. Fetch Completed Bookings in target month
-    const bookings = await prisma.booking.findMany({
-      where: {
-        status: "COMPLETED",
-        startDatetime: {
-          gte: startOfMonth,
-          lte: endOfMonth,
-        },
-      },
-      include: {
-        customer: true,
-        service: true,
-        items: {
-          include: {
-            service: true,
+    // 1. Fetch Completed Bookings and Member Cash Reloads/Promo Purchases in target month
+    const [bookings, memberCashTxs] = await Promise.all([
+      prisma.booking.findMany({
+        where: {
+          status: "COMPLETED",
+          startDatetime: {
+            gte: startOfMonth,
+            lte: endOfMonth,
           },
         },
-      },
-      orderBy: { startDatetime: "asc" },
-    });
+        include: {
+          customer: true,
+          service: true,
+          items: {
+            include: {
+              service: true,
+            },
+          },
+        },
+        orderBy: { startDatetime: "asc" },
+      }),
+      prisma.memberTransaction.findMany({
+        where: {
+          createdAt: {
+            gte: startOfMonth,
+            lte: endOfMonth,
+          },
+          cashPaidCents: { gt: 0 },
+        },
+        include: {
+          customer: true,
+          memberPackage: true,
+        },
+        orderBy: { createdAt: "asc" },
+      }),
+    ]);
 
     // 2. Fetch Expenses if requested
     const expenses = includeExpenses
@@ -130,8 +146,10 @@ export async function getMonthlyStatementData(
       : [];
 
     // Financial KPIs
-    const grossSalesCents = bookings.reduce((sum, b) => sum + b.totalPriceCents, 0);
-    const completedOrdersCount = bookings.length;
+    const memberSalesCents = memberCashTxs.reduce((sum, t) => sum + t.cashPaidCents, 0);
+    const grossSalesCents =
+      bookings.reduce((sum, b) => sum + b.totalPriceCents, 0) + memberSalesCents;
+    const completedOrdersCount = bookings.length + memberCashTxs.length;
     const averageOrderCents =
       completedOrdersCount > 0 ? Math.round(grossSalesCents / completedOrdersCount) : 0;
 
@@ -223,6 +241,57 @@ export async function getMonthlyStatementData(
       };
     });
 
+    const memberTxRows = memberCashTxs.map((mt) => {
+      const dt = new Date(mt.createdAt);
+      const dateStr = dt.toISOString().slice(0, 10);
+      const timeStr = dt.toTimeString().slice(0, 5);
+      const label =
+        mt.type === "CREDIT_RELOAD"
+          ? "Member Credit Reload"
+          : mt.memberPackage?.name || "Member Promo Package";
+
+      if (!serviceMap[label]) serviceMap[label] = { count: 0, totalCents: 0 };
+      serviceMap[label].count += 1;
+      serviceMap[label].totalCents += mt.cashPaidCents;
+
+      let method: "CASH" | "DUITNOW_QR" | "CARD" | "OTHER" = "OTHER";
+      if (mt.paymentMethod === "CASH") {
+        method = "CASH";
+        paymentChannels.cashCents += mt.cashPaidCents;
+        paymentChannels.cashCount += 1;
+      } else if (mt.paymentMethod === "DUITNOW_QR") {
+        method = "DUITNOW_QR";
+        paymentChannels.qrCents += mt.cashPaidCents;
+        paymentChannels.qrCount += 1;
+      } else if (mt.paymentMethod === "CARD") {
+        method = "CARD";
+        paymentChannels.cardCents += mt.cashPaidCents;
+        paymentChannels.cardCount += 1;
+      } else {
+        paymentChannels.otherCents += mt.cashPaidCents;
+        paymentChannels.otherCount += 1;
+      }
+
+      return {
+        id: mt.id,
+        referenceCode: `MEM-${mt.id.slice(-5).toUpperCase()}`,
+        dateStr,
+        timeStr,
+        customerName: mt.customer.name,
+        phoneNumber: mt.customer.phoneNumber,
+        isWalkin: false,
+        services: label,
+        serviceNames: [label],
+        paymentMethod: method,
+        amountCents: mt.cashPaidCents,
+        notes: mt.description,
+      };
+    });
+
+    const allTransactions = [...transactions, ...memberTxRows].sort((a, b) =>
+      `${a.dateStr} ${a.timeStr}`.localeCompare(`${b.dateStr} ${b.timeStr}`)
+    );
+
     // Top services sorted by total cents descending
     const topServices = Object.entries(serviceMap)
       .map(([serviceName, data]) => ({
@@ -284,7 +353,7 @@ export async function getMonthlyStatementData(
         netProfitCents,
         profitMarginPercent,
         expenseCategories,
-        transactions,
+        transactions: allTransactions,
       },
     };
   } catch (error) {

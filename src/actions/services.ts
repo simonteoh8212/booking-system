@@ -41,6 +41,7 @@ interface ServiceInput {
   name: string;
   description?: string;
   category?: string;
+  type?: string; // "SERVICE" | "PRODUCT"
   durationMinutes: number;
   priceCents: number;
   isActive?: boolean;

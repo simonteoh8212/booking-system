@@ -12,13 +12,14 @@ datasource db {
 }
 
 // ---------------------------------------------------------------------------
-// Service catalog
+// Service & Product catalog
 // ---------------------------------------------------------------------------
 model Service {
   id              String    @id @default(cuid())
   name            String
   description     String?
   category        String?
+  type            String    @default("SERVICE") // "SERVICE" | "PRODUCT"
   durationMinutes Int
   priceCents      Int
   isActive        Boolean   @default(true)
@@ -58,18 +59,99 @@ model TimeBlockout {
 }
 
 // ---------------------------------------------------------------------------
-// Customer records (upserted by phone number)
+// ---------------------------------------------------------------------------
+// Customer & Member records (upserted by phone number)
 // ---------------------------------------------------------------------------
 model Customer {
-  id          String    @id @default(cuid())
-  name        String
-  phoneNumber String    @unique
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id                 String              @id @default(cuid())
+  name               String
+  phoneNumber        String              @unique
+  isMember           Boolean             @default(false)
+  creditBalanceCents Int                 @default(0)
+  notes              String?
+  memberSince        DateTime?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
 
-  bookings    Booking[]
+  bookings           Booking[]
+  memberPackages     MemberPackage[]
+  memberTransactions MemberTransaction[]
 
   @@map("customers")
+}
+
+// ---------------------------------------------------------------------------
+// Reusable Promo / Package templates (e.g. "RM288 for 10x Hair Cut")
+// ---------------------------------------------------------------------------
+model PromoPackage {
+  id             String          @id @default(cuid())
+  name           String
+  description    String?
+  priceCents     Int
+  totalSessions  Int
+  serviceIds     String[]        // Eligible Service IDs (multiple allowed)
+  validityMonths Int?            // null = No expiry, otherwise valid for X months
+  isActive       Boolean         @default(true)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  memberPackages MemberPackage[]
+
+  @@map("promo_packages")
+}
+
+// ---------------------------------------------------------------------------
+// Member's purchased or bonus session packages
+// ---------------------------------------------------------------------------
+model MemberPackage {
+  id                String              @id @default(cuid())
+  customerId        String
+  promoPackageId    String?
+  name              String
+  serviceIds        String[]
+  totalSessions     Int
+  remainingSessions Int
+  pricePaidCents    Int                 @default(0)
+  paymentMethod     String?             // "CASH" | "DUITNOW_QR" | "CARD" | "BONUS"
+  expiresAt         DateTime?
+  status            String              @default("ACTIVE") // "ACTIVE" | "COMPLETED" | "EXPIRED" | "CANCELLED"
+  notes             String?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  customer          Customer            @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  promoPackage      PromoPackage?       @relation(fields: [promoPackageId], references: [id], onDelete: SetNull)
+  transactions      MemberTransaction[]
+  bookingItems      BookingItem[]
+
+  @@index([customerId])
+  @@map("member_packages")
+}
+
+// ---------------------------------------------------------------------------
+// Member Credit & Promo Transaction Ledger (also tracks cash sales on reload/buy)
+// ---------------------------------------------------------------------------
+model MemberTransaction {
+  id                String         @id @default(cuid())
+  customerId        String
+  memberPackageId   String?
+  bookingId         String?
+  type              String         // "CREDIT_RELOAD" | "CREDIT_DEDUCT" | "PACKAGE_PURCHASE" | "PACKAGE_DEDUCT" | "MANUAL_ADJUST"
+  creditChangeCents Int            @default(0)
+  balanceAfterCents Int            @default(0)
+  sessionsChange    Int            @default(0)
+  sessionsAfter     Int?
+  cashPaidCents     Int            @default(0) // Counted in Today's Sales on the day paid
+  paymentMethod     String?        // "CASH" | "DUITNOW_QR" | "CARD" | "CREDIT" | "PROMO"
+  description       String
+  createdAt         DateTime       @default(now())
+
+  customer          Customer       @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  memberPackage     MemberPackage? @relation(fields: [memberPackageId], references: [id], onDelete: SetNull)
+
+  @@index([customerId])
+  @@index([createdAt])
+  @@map("member_transactions")
 }
 
 // ---------------------------------------------------------------------------
@@ -84,24 +166,26 @@ enum BookingStatus {
 }
 
 model Booking {
-  id              String        @id @default(cuid())
-  referenceCode   String        @unique
-  customerId      String
-  serviceId       String
-  startDatetime   DateTime
-  endDatetime     DateTime
-  totalPriceCents Int
-  depositDueCents Int?
-  balanceDueCents Int?
-  status          BookingStatus @default(PENDING)
-  notes           String?
+  id                 String        @id @default(cuid())
+  referenceCode      String        @unique
+  customerId         String
+  serviceId          String
+  startDatetime      DateTime
+  endDatetime        DateTime
+  totalPriceCents    Int
+  depositDueCents    Int?
+  balanceDueCents    Int?
+  creditUsedCents    Int           @default(0)
+  promoDiscountCents Int           @default(0)
+  status             BookingStatus @default(PENDING)
+  notes              String?
   receiptSubmittedAt DateTime?
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
 
-  customer        Customer      @relation(fields: [customerId], references: [id])
-  service         Service       @relation(fields: [serviceId], references: [id])
-  items           BookingItem[]
+  customer           Customer      @relation(fields: [customerId], references: [id])
+  service            Service       @relation(fields: [serviceId], references: [id])
+  items              BookingItem[]
 
   @@index([startDatetime])
   @@index([status])
@@ -109,17 +193,20 @@ model Booking {
 }
 
 // ---------------------------------------------------------------------------
-// Itemized services for a booking (supports multi-service sales)
+// Itemized services/products for a booking (supports multi-service + promo redeem)
 // ---------------------------------------------------------------------------
 model BookingItem {
-  id         String   @id @default(cuid())
-  bookingId  String
-  serviceId  String
-  priceCents Int
-  createdAt  DateTime @default(now())
+  id                 String         @id @default(cuid())
+  bookingId          String
+  serviceId          String
+  priceCents         Int
+  originalPriceCents Int?
+  memberPackageId    String?
+  createdAt          DateTime       @default(now())
 
-  booking    Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
-  service    Service  @relation(fields: [serviceId], references: [id])
+  booking            Booking        @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  service            Service        @relation(fields: [serviceId], references: [id])
+  memberPackage      MemberPackage? @relation(fields: [memberPackageId], references: [id], onDelete: SetNull)
 
   @@map("booking_items")
 }

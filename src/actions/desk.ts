@@ -54,6 +54,7 @@ export interface DeskDailySummary {
 export interface DeskAppointmentItem {
   id: string;
   referenceCode: string;
+  customerId: string;
   customerName: string;
   phoneNumber: string;
   serviceName: string;
@@ -114,12 +115,22 @@ export async function getDeskDailySummary(
       console.error("[getDeskDailySummary] depositSetting fetch warning:", settingErr);
     }
 
-    // Fetch bookings safely
+    // Fetch bookings and member cash reloads/package purchases safely
     let bookings: any[] = [];
     let yesterdayBookings: { totalPriceCents: number }[] = [];
     let monthBookings: { totalPriceCents: number }[] = [];
+    let todayMemberSalesCents = 0;
+    let yesterdayMemberSalesCents = 0;
+    let monthMemberSalesCents = 0;
     try {
-      [bookings, yesterdayBookings, monthBookings] = await Promise.all([
+      const [
+        bToday,
+        bYesterday,
+        bMonth,
+        mToday,
+        mYesterday,
+        mMonth,
+      ] = await Promise.all([
         prisma.booking.findMany({
           where: {
             startDatetime: { gte: startOfDay, lte: endOfDay },
@@ -147,12 +158,39 @@ export async function getDeskDailySummary(
           },
           select: { totalPriceCents: true },
         }),
+        prisma.memberTransaction.findMany({
+          where: {
+            createdAt: { gte: startOfDay, lte: endOfDay },
+            cashPaidCents: { gt: 0 },
+          },
+          select: { cashPaidCents: true },
+        }),
+        prisma.memberTransaction.findMany({
+          where: {
+            createdAt: { gte: startOfYesterday, lte: endOfYesterday },
+            cashPaidCents: { gt: 0 },
+          },
+          select: { cashPaidCents: true },
+        }),
+        prisma.memberTransaction.findMany({
+          where: {
+            createdAt: { gte: startOfMonth, lte: endOfMonth },
+            cashPaidCents: { gt: 0 },
+          },
+          select: { cashPaidCents: true },
+        }),
       ]);
+      bookings = bToday;
+      yesterdayBookings = bYesterday;
+      monthBookings = bMonth;
+      todayMemberSalesCents = mToday.reduce((s, t) => s + t.cashPaidCents, 0);
+      yesterdayMemberSalesCents = mYesterday.reduce((s, t) => s + t.cashPaidCents, 0);
+      monthMemberSalesCents = mMonth.reduce((s, t) => s + t.cashPaidCents, 0);
     } catch (bookingErr) {
       console.error("[getDeskDailySummary] Bookings query warning:", bookingErr);
     }
 
-    let totalSalesCents = 0;
+    let totalSalesCents = todayMemberSalesCents;
     let completedCount = 0;
     let pendingCount = 0;
 
@@ -211,16 +249,14 @@ export async function getDeskDailySummary(
       (a, b) => b.count - a.count || b.totalCents - a.totalCents
     );
 
-    const yesterdaySalesCents = yesterdayBookings.reduce(
-      (sum, b) => sum + b.totalPriceCents,
-      0
-    );
+    const yesterdaySalesCents =
+      yesterdayBookings.reduce((sum, b) => sum + b.totalPriceCents, 0) +
+      yesterdayMemberSalesCents;
     const yesterdayCompletedCount = yesterdayBookings.length;
 
-    const monthSalesCents = monthBookings.reduce(
-      (sum, b) => sum + b.totalPriceCents,
-      0
-    );
+    const monthSalesCents =
+      monthBookings.reduce((sum, b) => sum + b.totalPriceCents, 0) +
+      monthMemberSalesCents;
     const monthCompletedCount = monthBookings.length;
 
     const currency = "MYR";
@@ -296,6 +332,7 @@ export async function getDeskAppointments(
     const items: DeskAppointmentItem[] = bookings.map((b) => ({
       id: b.id,
       referenceCode: b.referenceCode,
+      customerId: b.customerId,
       customerName: b.customer.name,
       phoneNumber: b.customer.phoneNumber,
       serviceName: b.service.name,
@@ -346,15 +383,19 @@ export async function updateDeskAppointmentStatus(
 interface RecordDeskSaleInput {
   type: "APPOINTMENT" | "WALKIN";
   bookingId?: string;
+  customerId?: string;
   customerName?: string;
   phoneNumber?: string;
-  serviceIds: string[]; // Supports multiple services!
+  serviceIds: string[]; // Supports multiple services & products!
+  promoRedemptions?: { serviceId: string; memberPackageId: string }[];
+  useCreditCents?: number;
   paymentMethod: "CASH" | "DUITNOW_QR" | "CARD";
   notes?: string;
 }
 
 /**
- * Record and finalize sales for either an existing appointment or a walk-in client.
+ * Record and finalize sales for either an existing appointment or a walk-in client,
+ * with full support for Member Promo Session Redemptions and Member Credit deductions.
  */
 export async function recordDeskSale(
   input: RecordDeskSaleInput
@@ -362,131 +403,288 @@ export async function recordDeskSale(
   await requireAdmin();
 
   try {
-    const { type, bookingId, customerName, phoneNumber, serviceIds, paymentMethod, notes } =
-      input;
+    const {
+      type,
+      bookingId,
+      customerId,
+      customerName,
+      phoneNumber,
+      serviceIds,
+      promoRedemptions = [],
+      useCreditCents = 0,
+      paymentMethod,
+      notes,
+    } = input;
 
     if (!serviceIds || serviceIds.length === 0) {
-      return { success: false, error: "Please select at least one service." };
+      return { success: false, error: "Please select at least one service or product." };
     }
 
-    // Fetch all chosen services to calculate accurate price
+    // Fetch all chosen services/products to calculate accurate price
     const services = await prisma.service.findMany({
       where: { id: { in: serviceIds } },
     });
 
     if (services.length === 0) {
-      return { success: false, error: "Selected services not found." };
+      return { success: false, error: "Selected items not found." };
     }
 
-    const totalCents = services.reduce((acc, s) => acc + s.priceCents, 0);
-    const serviceNames = services.map((s) => s.name).join(", ");
-    const paymentNote = `Paid via ${paymentMethod}${notes ? ` (${notes})` : ""}`;
-
-    if (type === "APPOINTMENT" && bookingId) {
-      // Complete existing booking
-      const existing = await prisma.booking.findUnique({
-        where: { id: bookingId },
-        include: { customer: true },
-      });
-
-      if (!existing) {
-        return { success: false, error: "Booking not found." };
+    // Map promo redemptions by serviceId (at most 1 redemption per selected service)
+    const promoByServiceId = new Map<string, string>();
+    for (const r of promoRedemptions) {
+      if (r.serviceId && r.memberPackageId) {
+        promoByServiceId.set(r.serviceId, r.memberPackageId);
       }
+    }
 
-      // Delete any previous items and re-create fresh items
-      await prisma.bookingItem.deleteMany({
-        where: { bookingId },
-      });
-
-      await prisma.bookingItem.createMany({
-        data: services.map((s) => ({
-          bookingId,
-          serviceId: s.id,
-          priceCents: s.priceCents,
-        })),
-      });
-
-      const updated = await prisma.booking.update({
-        where: { id: bookingId },
-        data: {
-          status: "COMPLETED",
-          totalPriceCents: totalCents,
-          balanceDueCents: 0,
-          notes: existing.notes
-            ? `${existing.notes} | ${paymentNote}`
-            : paymentNote,
-          receiptSubmittedAt: existing.receiptSubmittedAt || new Date(),
-        },
-      });
-
-      invalidateBookingCache(updated.referenceCode, existing.customer.phoneNumber);
-      revalidatePath("/admin/desk");
-      revalidatePath("/admin/bookings");
-      revalidatePath("/admin");
-
+    const itemLineData = services.map((s) => {
+      const redeemedPkgId = promoByServiceId.get(s.id) || null;
       return {
-        success: true,
-        data: { referenceCode: updated.referenceCode, totalCents },
+        serviceId: s.id,
+        serviceName: s.name,
+        originalPriceCents: s.priceCents,
+        priceCents: redeemedPkgId ? 0 : s.priceCents,
+        memberPackageId: redeemedPkgId,
       };
-    } else {
-      // Walk-in Customer Flow
-      const cleanPhone = (phoneNumber || "").replace(/\s/g, "");
-      const finalName = (customerName || "").trim() || "Walk-in Customer";
-      const finalPhone = cleanPhone || `WALKIN-${Date.now()}`;
+    });
 
-      // Upsert customer
-      const customer = await prisma.customer.upsert({
-        where: { phoneNumber: finalPhone },
-        update: { name: finalName },
-        create: { name: finalName, phoneNumber: finalPhone },
-      });
+    const grossSubtotalCents = itemLineData.reduce((acc, it) => acc + it.originalPriceCents, 0);
+    const promoDiscountCents = itemLineData.reduce(
+      (acc, it) => acc + (it.memberPackageId ? it.originalPriceCents : 0),
+      0
+    );
+    const afterPromoCents = Math.max(0, grossSubtotalCents - promoDiscountCents);
 
-      let refCode = generateReferenceCode();
-      let attempts = 0;
-      while (attempts < 5) {
-        const found = await prisma.booking.findUnique({
-          where: { referenceCode: refCode },
+    const result = await prisma.$transaction(async (tx) => {
+      let targetCustomer = null;
+      let existingBooking = null;
+
+      if (type === "APPOINTMENT" && bookingId) {
+        existingBooking = await tx.booking.findUnique({
+          where: { id: bookingId },
+          include: { customer: true },
         });
-        if (!found) break;
-        refCode = generateReferenceCode();
-        attempts++;
+        if (!existingBooking) {
+          throw new Error("Booking not found.");
+        }
+        targetCustomer = existingBooking.customer;
+      } else if (customerId) {
+        targetCustomer = await tx.customer.findUnique({ where: { id: customerId } });
       }
 
-      const now = new Date();
-      const booking = await prisma.booking.create({
-        data: {
-          referenceCode: refCode,
-          customerId: customer.id,
-          serviceId: services[0].id, // Primary service
-          startDatetime: now,
-          endDatetime: now,
-          totalPriceCents: totalCents,
-          depositDueCents: 0,
-          balanceDueCents: 0,
-          status: "COMPLETED",
-          notes: `Services: ${serviceNames} | ${paymentNote}`,
-          receiptSubmittedAt: now,
-          items: {
-            create: services.map((s) => ({
-              serviceId: s.id,
-              priceCents: s.priceCents,
-            })),
+      if (!targetCustomer) {
+        const cleanPhone = (phoneNumber || "").replace(/\s/g, "");
+        const finalName = (customerName || "").trim() || "Walk-in Customer";
+        const finalPhone = cleanPhone || `WALKIN-${Date.now()}`;
+        targetCustomer = await tx.customer.upsert({
+          where: { phoneNumber: finalPhone },
+          update: { name: finalName },
+          create: { name: finalName, phoneNumber: finalPhone },
+        });
+      }
+
+      const depositPaidCents =
+        existingBooking?.depositDueCents && existingBooking.depositDueCents > 0
+          ? existingBooking.depositDueCents
+          : 0;
+      const balanceBeforeCreditCents = Math.max(0, afterPromoCents - depositPaidCents);
+
+      // Process Promo Session Redemptions
+      const redeemedNotes: string[] = [];
+      for (const item of itemLineData) {
+        if (!item.memberPackageId) continue;
+        const pkg = await tx.memberPackage.findUnique({
+          where: { id: item.memberPackageId },
+        });
+        if (!pkg || pkg.customerId !== targetCustomer.id) {
+          throw new Error("Invalid member promo package selected.");
+        }
+        if (pkg.remainingSessions < 1) {
+          throw new Error(`No sessions remaining on promo "${pkg.name}".`);
+        }
+        const nextRemaining = pkg.remainingSessions - 1;
+        await tx.memberPackage.update({
+          where: { id: pkg.id },
+          data: {
+            remainingSessions: nextRemaining,
+            status: nextRemaining === 0 ? "COMPLETED" : "ACTIVE",
           },
-        },
-      });
+        });
+        redeemedNotes.push(`${pkg.name} (-1, ${nextRemaining}/${pkg.totalSessions} left)`);
+      }
 
-      revalidatePath("/admin/desk");
-      revalidatePath("/admin/bookings");
-      revalidatePath("/admin");
+      // Process Member Credit Deduction
+      let actualCreditUsedCents = 0;
+      let nextCreditBalance = targetCustomer.creditBalanceCents;
+      if (useCreditCents > 0 && balanceBeforeCreditCents > 0) {
+        actualCreditUsedCents = Math.min(
+          useCreditCents,
+          targetCustomer.creditBalanceCents,
+          balanceBeforeCreditCents
+        );
+        if (actualCreditUsedCents > 0) {
+          nextCreditBalance = targetCustomer.creditBalanceCents - actualCreditUsedCents;
+          await tx.customer.update({
+            where: { id: targetCustomer.id },
+            data: { creditBalanceCents: nextCreditBalance },
+          });
+        }
+      }
 
-      return {
-        success: true,
-        data: { referenceCode: booking.referenceCode, totalCents },
-      };
-    }
+      // Net Cash/QR/Card collected TODAY (stored in totalPriceCents so sales reports never double-count)
+      const netCashCollectedCents = Math.max(
+        0,
+        balanceBeforeCreditCents - actualCreditUsedCents
+      );
+
+      const serviceNames = services.map((s) => s.name).join(", ");
+      const noteParts: string[] = [];
+      if (netCashCollectedCents > 0) {
+        noteParts.push(`Paid RM ${(netCashCollectedCents / 100).toFixed(2)} via ${paymentMethod}`);
+      } else {
+        noteParts.push(`Paid RM 0.00 (Covered by Promo/Credit)`);
+      }
+      if (actualCreditUsedCents > 0) {
+        noteParts.push(`Credit Used: RM ${(actualCreditUsedCents / 100).toFixed(2)}`);
+      }
+      if (redeemedNotes.length > 0) {
+        noteParts.push(`Promo: ${redeemedNotes.join("; ")}`);
+      }
+      if (notes) {
+        noteParts.push(notes);
+      }
+      const paymentNote = noteParts.join(" | ");
+
+      let finalBookingId = "";
+      let finalRefCode = "";
+
+      if (existingBooking) {
+        await tx.bookingItem.deleteMany({ where: { bookingId: existingBooking.id } });
+        await tx.bookingItem.createMany({
+          data: itemLineData.map((it) => ({
+            bookingId: existingBooking.id,
+            serviceId: it.serviceId,
+            priceCents: it.priceCents,
+            originalPriceCents: it.originalPriceCents,
+            memberPackageId: it.memberPackageId,
+          })),
+        });
+
+        const updated = await tx.booking.update({
+          where: { id: existingBooking.id },
+          data: {
+            customerId: targetCustomer.id,
+            status: "COMPLETED",
+            totalPriceCents: netCashCollectedCents,
+            creditUsedCents: actualCreditUsedCents,
+            promoDiscountCents,
+            balanceDueCents: 0,
+            notes: existingBooking.notes
+              ? `${existingBooking.notes} | ${paymentNote}`
+              : paymentNote,
+            receiptSubmittedAt: existingBooking.receiptSubmittedAt || new Date(),
+          },
+        });
+        finalBookingId = updated.id;
+        finalRefCode = updated.referenceCode;
+        invalidateBookingCache(updated.referenceCode, targetCustomer.phoneNumber);
+      } else {
+        let refCode = generateReferenceCode();
+        let attempts = 0;
+        while (attempts < 5) {
+          const found = await tx.booking.findUnique({ where: { referenceCode: refCode } });
+          if (!found) break;
+          refCode = generateReferenceCode();
+          attempts++;
+        }
+
+        const now = new Date();
+        const created = await tx.booking.create({
+          data: {
+            referenceCode: refCode,
+            customerId: targetCustomer.id,
+            serviceId: services[0].id,
+            startDatetime: now,
+            endDatetime: now,
+            totalPriceCents: netCashCollectedCents,
+            depositDueCents: 0,
+            balanceDueCents: 0,
+            creditUsedCents: actualCreditUsedCents,
+            promoDiscountCents,
+            status: "COMPLETED",
+            notes: `Items: ${serviceNames} | ${paymentNote}`,
+            receiptSubmittedAt: now,
+            items: {
+              create: itemLineData.map((it) => ({
+                serviceId: it.serviceId,
+                priceCents: it.priceCents,
+                originalPriceCents: it.originalPriceCents,
+                memberPackageId: it.memberPackageId,
+              })),
+            },
+          },
+        });
+        finalBookingId = created.id;
+        finalRefCode = created.referenceCode;
+      }
+
+      // Write MemberTransaction audit entries for any promo or credit deductions
+      for (const item of itemLineData) {
+        if (!item.memberPackageId) continue;
+        const pkgAfter = await tx.memberPackage.findUnique({
+          where: { id: item.memberPackageId },
+        });
+        await tx.memberTransaction.create({
+          data: {
+            customerId: targetCustomer.id,
+            memberPackageId: item.memberPackageId,
+            bookingId: finalBookingId,
+            type: "PACKAGE_DEDUCT",
+            creditChangeCents: 0,
+            balanceAfterCents: nextCreditBalance,
+            sessionsChange: -1,
+            sessionsAfter: pkgAfter?.remainingSessions ?? null,
+            cashPaidCents: 0,
+            paymentMethod: "PROMO",
+            description: `Used 1x ${item.serviceName} from ${pkgAfter?.name || "Promo"} (${finalRefCode})`,
+          },
+        });
+      }
+
+      if (actualCreditUsedCents > 0) {
+        await tx.memberTransaction.create({
+          data: {
+            customerId: targetCustomer.id,
+            bookingId: finalBookingId,
+            type: "CREDIT_DEDUCT",
+            creditChangeCents: -actualCreditUsedCents,
+            balanceAfterCents: nextCreditBalance,
+            sessionsChange: 0,
+            cashPaidCents: 0,
+            paymentMethod: "CREDIT",
+            description: `Deducted RM ${(actualCreditUsedCents / 100).toFixed(
+              2
+            )} credit for ${serviceNames} (${finalRefCode})`,
+          },
+        });
+      }
+
+      return { referenceCode: finalRefCode, totalCents: netCashCollectedCents };
+    });
+
+    revalidatePath("/admin/desk");
+    revalidatePath("/admin/bookings");
+    revalidatePath("/admin/members");
+    revalidatePath("/admin");
+
+    return {
+      success: true,
+      data: result,
+    };
   } catch (error) {
     console.error("[recordDeskSale]", error);
-    return { success: false, error: "Failed to record sale." };
+    const msg = error instanceof Error ? error.message : "Failed to record sale.";
+    return { success: false, error: msg };
   }
 }
 
@@ -669,20 +867,35 @@ export async function getMonthlyFinancialReport(
       // ignore
     }
 
-    // 2. Fetch Expenses in this month
-    const expenses = await prisma.expense.findMany({
-      where: {
-        date: {
-          gte: startOfMonth,
-          lte: endOfMonth,
+    // 2. Fetch Expenses and Member Cash Reloads/Promo Purchases in this month
+    const [expenses, memberCashTxs] = await Promise.all([
+      prisma.expense.findMany({
+        where: {
+          date: {
+            gte: startOfMonth,
+            lte: endOfMonth,
+          },
         },
-      },
-      orderBy: { date: "desc" },
-    });
+        orderBy: { date: "desc" },
+      }),
+      prisma.memberTransaction.findMany({
+        where: {
+          createdAt: {
+            gte: startOfMonth,
+            lte: endOfMonth,
+          },
+          cashPaidCents: { gt: 0 },
+        },
+        orderBy: { createdAt: "asc" },
+      }),
+    ]);
+
+    const memberSalesCents = memberCashTxs.reduce((sum, t) => sum + t.cashPaidCents, 0);
 
     // Calculate Sales KPIs
-    const grossSalesCents = bookings.reduce((sum, b) => sum + b.totalPriceCents, 0);
-    const completedOrdersCount = bookings.length;
+    const grossSalesCents =
+      bookings.reduce((sum, b) => sum + b.totalPriceCents, 0) + memberSalesCents;
+    const completedOrdersCount = bookings.length + memberCashTxs.length;
 
     // Calculate Expenses KPIs
     const totalExpensesCents = expenses.reduce((sum, e) => sum + e.amountCents, 0);
@@ -796,6 +1009,16 @@ export async function getMonthlyFinancialReport(
       const cur = dayMap.get(dayNum);
       if (cur) {
         cur.salesCents += b.totalPriceCents;
+        cur.ordersCount += 1;
+      }
+    }
+
+    for (const mt of memberCashTxs) {
+      const mDateStr = toBusinessDateString(mt.createdAt);
+      const dayNum = parseInt(mDateStr.slice(8, 10), 10);
+      const cur = dayMap.get(dayNum);
+      if (cur) {
+        cur.salesCents += mt.cashPaidCents;
         cur.ordersCount += 1;
       }
     }

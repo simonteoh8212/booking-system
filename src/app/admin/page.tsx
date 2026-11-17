@@ -52,13 +52,8 @@ export default async function AdminDashboardPage() {
       <SalesOverviewCards summary={summary} />
 
       {/* Appointment Agenda */}
-      <div className="space-y-4 pt-2">
-        <div>
-          <h2 className="text-lg font-bold">Appointment Agenda / 今日预约日程</h2>
-          <p className="text-muted-foreground text-xs">
-            Review slot schedule and customer bookings
-          </p>
-        </div>
+      <div className="space-y-3 pt-2">
+        <h2 className="text-base font-semibold text-foreground">Agenda</h2>
 
         <AgendaView
           initialDate={today.toISOString()}

@@ -30,7 +30,9 @@ export default async function BookingPage() {
     getRushModeStatus(),
   ]);
 
-  const services = servicesResult.success ? servicesResult.data : [];
+  const services = servicesResult.success
+    ? servicesResult.data.filter((s) => s.type !== "PRODUCT")
+    : [];
   const currencySymbol = depositResult.success ? depositResult.data.currencySymbol : "RM";
   const rushStatus = rushStatusRes.success ? rushStatusRes.data : null;
   const businessName = process.env.NEXT_PUBLIC_BUSINESS_NAME ?? "Our Salon";

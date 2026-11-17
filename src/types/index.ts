@@ -18,6 +18,7 @@ export interface ServiceDto {
   name: string;
   description: string | null;
   category: string | null;
+  type?: string; // "SERVICE" | "PRODUCT"
   durationMinutes: number;
   priceCents: number;
   isActive: boolean;
@@ -195,5 +196,94 @@ export interface MonthlyFinancialReportDto {
     netProfitCents: number;
     ordersCount: number;
   }[];
+}
+
+// ----------------------------------------------------------------
+// Member, Credit & Promo Package DTOs
+// ----------------------------------------------------------------
+export interface PromoPackageDto {
+  id: string;
+  name: string;
+  description: string | null;
+  priceCents: number;
+  totalSessions: number;
+  serviceIds: string[];
+  validityMonths: number | null;
+  isActive: boolean;
+  createdAt: string;
+}
+
+export interface MemberPackageDto {
+  id: string;
+  customerId: string;
+  promoPackageId: string | null;
+  name: string;
+  serviceIds: string[];
+  totalSessions: number;
+  remainingSessions: number;
+  pricePaidCents: number;
+  paymentMethod: string | null;
+  expiresAt: string | null;
+  status: string; // "ACTIVE" | "COMPLETED" | "EXPIRED" | "CANCELLED"
+  notes: string | null;
+  createdAt: string;
+}
+
+export interface MemberTransactionDto {
+  id: string;
+  customerId: string;
+  memberPackageId: string | null;
+  bookingId: string | null;
+  type: string; // "CREDIT_RELOAD" | "CREDIT_DEDUCT" | "PACKAGE_PURCHASE" | "PACKAGE_DEDUCT" | "MANUAL_ADJUST"
+  creditChangeCents: number;
+  balanceAfterCents: number;
+  sessionsChange: number;
+  sessionsAfter: number | null;
+  cashPaidCents: number;
+  paymentMethod: string | null;
+  description: string;
+  createdAt: string;
+}
+
+export interface MemberPurchaseHistoryItemDto {
+  id: string;
+  referenceCode: string;
+  dateIso: string;
+  status: BookingStatus;
+  totalCashPaidCents: number;
+  creditUsedCents: number;
+  promoDiscountCents: number;
+  notes: string | null;
+  items: {
+    id: string;
+    serviceId: string;
+    serviceName: string;
+    itemType: string;
+    priceCents: number;
+    originalPriceCents: number | null;
+    memberPackageId: string | null;
+    memberPackageName: string | null;
+  }[];
+}
+
+export interface MemberDto {
+  id: string;
+  name: string;
+  phoneNumber: string;
+  isMember: boolean;
+  creditBalanceCents: number;
+  notes: string | null;
+  memberSince: string | null;
+  createdAt: string;
+  updatedAt: string;
+  activePackages: MemberPackageDto[];
+  totalVisitsCount: number;
+  totalSpentCents: number;
+}
+
+export interface MemberDetailDto extends MemberDto {
+  allPackages: MemberPackageDto[];
+  transactions: MemberTransactionDto[];
+  purchaseHistory: MemberPurchaseHistoryItemDto[];
 }
 
