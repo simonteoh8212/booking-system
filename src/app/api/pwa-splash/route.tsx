@@ -1,6 +1,7 @@
 import { ImageResponse } from "next/og";
 
 export function GET(request: Request) {
+  const appName = process.env.NEXT_PUBLIC_APP_NAME || "SideBox";
   const { searchParams } = new URL(request.url);
   const width = Math.min(Math.max(parseInt(searchParams.get("w") || "1206", 10), 300), 3000);
   const height = Math.min(Math.max(parseInt(searchParams.get("h") || "2622", 10), 500), 3500);
@@ -60,11 +61,9 @@ export function GET(request: Request) {
               strokeLinecap="round"
               strokeLinejoin="round"
             >
-              <circle cx="6" cy="6" r="3" />
-              <circle cx="6" cy="18" r="3" />
-              <line x1="20" y1="4" x2="8.12" y2="15.88" />
-              <line x1="14.47" y1="14.48" x2="20" y2="20" />
-              <line x1="8.12" y1="8.12" x2="12" y2="12" />
+              <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" />
+              <path d="m3.3 7 8.7 5 8.7-5" />
+              <path d="M12 22V12" />
             </svg>
           </div>
 
@@ -84,7 +83,7 @@ export function GET(request: Request) {
                 letterSpacing: "-0.03em",
               }}
             >
-              Salon POS
+              {appName}
             </span>
             <span
               style={{

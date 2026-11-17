@@ -18,7 +18,7 @@ interface AdminPinSettingsFormProps {
 
 export function AdminPinSettingsForm({ currentPin: initialPin }: AdminPinSettingsFormProps) {
   const { langMode } = useDeskLanguage();
-  const [activePin, setActivePin] = useState(initialPin || "1234");
+  const [activePin, setActivePin] = useState(initialPin || "");
   const [showCurrentPin, setShowCurrentPin] = useState(false);
   const [newPin, setNewPin] = useState("");
   const [confirmPin, setConfirmPin] = useState("");
@@ -113,7 +113,7 @@ export function AdminPinSettingsForm({ currentPin: initialPin }: AdminPinSetting
               </p>
               <div className="flex items-center gap-2">
                 <span className="font-mono text-2xl font-black tracking-widest text-foreground">
-                  {showCurrentPin ? activePin : "••••"}
+                  {activePin ? (showCurrentPin ? activePin : "••••") : "Not set"}
                 </span>
                 <button
                   type="button"

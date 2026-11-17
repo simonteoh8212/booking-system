@@ -46,10 +46,15 @@ export function checkRateLimit(
     memoryStore.set(identifier, record);
   }
 
-  // If IP is temporarily locked due to repeated non-existent code guessing
-  if (record.blockedUntil && record.blockedUntil > now) {
-    const retryAfter = Math.ceil((record.blockedUntil - now) / 1000);
-    return { allowed: false, retryAfterSeconds: retryAfter };
+  // If IP is temporarily locked due to repeated failed attempts
+  if (record.blockedUntil) {
+    if (record.blockedUntil > now) {
+      const retryAfter = Math.ceil((record.blockedUntil - now) / 1000);
+      return { allowed: false, retryAfterSeconds: retryAfter };
+    }
+    // Cooldown expired — reset lockout counter
+    record.blockedUntil = undefined;
+    record.failedAttempts = 0;
   }
 
   // Filter timestamps to the current sliding window
@@ -88,5 +93,19 @@ export function recordSuccessfulLookup(identifier: string) {
   const record = memoryStore.get(identifier);
   if (record) {
     record.failedAttempts = 0;
+    record.blockedUntil = undefined;
   }
+}
+
+/**
+ * Extract the best-effort client IP from Next.js request headers.
+ */
+export function extractClientIp(headersList: Headers): string {
+  const forwarded = headersList.get("x-forwarded-for");
+  if (forwarded) return forwarded.split(",")[0].trim();
+  const realIp = headersList.get("x-real-ip");
+  if (realIp) return realIp.trim();
+  const cfIp = headersList.get("cf-connecting-ip");
+  if (cfIp) return cfIp.trim();
+  return "127.0.0.1";
 }

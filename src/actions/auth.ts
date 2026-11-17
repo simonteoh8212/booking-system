@@ -1,15 +1,28 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
-import { signAndSetSession, clearSession } from "@/lib/auth";
-import { verifySession } from "@/lib/auth";
+import {
+  signAndSetSession,
+  clearSession,
+  verifySession,
+  setTrustedDeviceCookie,
+  verifyTrustedDeviceCookie,
+  clearTrustedDeviceCookie,
+  timingSafeSecretEqual,
+  getRequestClientIp,
+} from "@/lib/auth";
+import {
+  checkRateLimit,
+  recordFailedLookup,
+  recordSuccessfulLookup,
+} from "@/lib/rate-limit";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import type { ActionResult } from "@/types";
 import bcrypt from "bcryptjs";
 
 // ----------------------------------------------------------------
-// Admin login
+// Admin login (Username & Password)
 // ----------------------------------------------------------------
 interface LoginInput {
   username: string;
@@ -22,18 +35,32 @@ export async function adminLogin(
   const { username, password } = input;
 
   try {
+    const clientIp = await getRequestClientIp();
+    const rateKey = `admin-login:${clientIp}`;
+    const rateCheck = checkRateLimit(rateKey, 10, 5 * 60 * 1000);
+    if (!rateCheck.allowed) {
+      return {
+        success: false,
+        error: `Too many login attempts. Please wait ${rateCheck.retryAfterSeconds}s and try again.`,
+      };
+    }
+
     const admin = await prisma.adminUser.findUnique({ where: { username } });
 
     if (!admin) {
+      recordFailedLookup(rateKey);
       return { success: false, error: "Invalid credentials." };
     }
 
     const valid = await bcrypt.compare(password, admin.passwordHash);
     if (!valid) {
+      recordFailedLookup(rateKey);
       return { success: false, error: "Invalid credentials." };
     }
 
+    recordSuccessfulLookup(rateKey);
     await signAndSetSession({ sub: admin.id, username: admin.username });
+    await setTrustedDeviceCookie({ sub: admin.id, username: admin.username });
     return { success: true, data: undefined };
   } catch (error: unknown) {
     console.error("[adminLogin]", error);
@@ -47,7 +74,7 @@ export async function adminLogin(
     if (msg.includes("Can't reach database") || msg.includes("P1001")) {
       return {
         success: false,
-        error: "Cannot connect to database. Ensure DATABASE_URL uses the Supabase connection pooler.",
+        error: "Cannot connect to database. Ensure DATABASE_URL is reachable.",
       };
     }
     return { success: false, error: "Login failed. Please check server logs or try again." };
@@ -55,29 +82,57 @@ export async function adminLogin(
 }
 
 // ----------------------------------------------------------------
-// Admin PIN login (iPhone-style 4-digit PIN for Desk POS)
+// Admin PIN login (Trusted-device 4-digit PIN unlock, rate limited)
 // ----------------------------------------------------------------
 export async function adminPinLogin(pin: string): Promise<ActionResult<void>> {
   try {
     const cleanPin = pin.trim();
-    if (!cleanPin || cleanPin.length !== 4) {
+    if (!/^\d{4}$/.test(cleanPin)) {
       return { success: false, error: "Please enter a 4-digit PIN." };
     }
 
-    const admin = await prisma.adminUser.findFirst({
-      orderBy: { createdAt: "asc" },
+    const clientIp = await getRequestClientIp();
+    const rateKey = `admin-pin:${clientIp}`;
+    const rateCheck = checkRateLimit(rateKey, 5, 5 * 60 * 1000);
+    if (!rateCheck.allowed) {
+      return {
+        success: false,
+        error: `Too many PIN attempts. Wait ${rateCheck.retryAfterSeconds}s or sign in with password.`,
+      };
+    }
+
+    const trusted = await verifyTrustedDeviceCookie();
+    if (!trusted) {
+      return {
+        success: false,
+        error: "Please sign in with username & password once on this device to enable PIN unlock.",
+      };
+    }
+
+    const admin = await prisma.adminUser.findUnique({
+      where: { id: trusted.sub },
     });
 
     if (!admin) {
-      return { success: false, error: "No admin user found." };
+      recordFailedLookup(rateKey);
+      return { success: false, error: "Account not found. Sign in with password." };
     }
 
-    const validPin = admin.pinCode || "1234";
-    if (cleanPin !== validPin) {
+    if (!admin.pinCode) {
+      return {
+        success: false,
+        error: "Passcode PIN is not set. Sign in with password and set a PIN in Settings.",
+      };
+    }
+
+    if (!timingSafeSecretEqual(cleanPin, admin.pinCode)) {
+      recordFailedLookup(rateKey);
       return { success: false, error: "Incorrect PIN code. Please try again." };
     }
 
+    recordSuccessfulLookup(rateKey);
     await signAndSetSession({ sub: admin.id, username: admin.username });
+    await setTrustedDeviceCookie({ sub: admin.id, username: admin.username });
     return { success: true, data: undefined };
   } catch (error) {
     console.error("[adminPinLogin]", error);
@@ -89,12 +144,12 @@ export async function adminPinLogin(pin: string): Promise<ActionResult<void>> {
 // Get & Update Admin PIN
 // ----------------------------------------------------------------
 export async function getAdminPin(): Promise<ActionResult<string>> {
-  await requireAdmin();
+  const session = await requireAdmin();
   try {
-    const admin = await prisma.adminUser.findFirst({
-      orderBy: { createdAt: "asc" },
+    const admin = await prisma.adminUser.findUnique({
+      where: { id: session.sub },
     });
-    return { success: true, data: admin?.pinCode || "1234" };
+    return { success: true, data: admin?.pinCode ?? "" };
   } catch (error) {
     console.error("[getAdminPin]", error);
     return { success: false, error: "Failed to load PIN." };
@@ -102,15 +157,15 @@ export async function getAdminPin(): Promise<ActionResult<string>> {
 }
 
 export async function updateAdminPin(newPin: string): Promise<ActionResult<void>> {
-  await requireAdmin();
+  const session = await requireAdmin();
   try {
     const cleanPin = newPin.trim();
     if (!/^\d{4}$/.test(cleanPin)) {
       return { success: false, error: "PIN must be exactly 4 digits." };
     }
 
-    const admin = await prisma.adminUser.findFirst({
-      orderBy: { createdAt: "asc" },
+    const admin = await prisma.adminUser.findUnique({
+      where: { id: session.sub },
     });
     if (!admin) return { success: false, error: "Admin not found." };
 
@@ -133,6 +188,7 @@ export async function updateAdminPin(newPin: string): Promise<ActionResult<void>
 export async function adminLogout(): Promise<ActionResult<void>> {
   try {
     await clearSession();
+    await clearTrustedDeviceCookie();
     return { success: true, data: undefined };
   } catch (error) {
     console.error("[adminLogout]", error);
@@ -141,6 +197,7 @@ export async function adminLogout(): Promise<ActionResult<void>> {
 }
 
 export async function lockDeskSession(): Promise<void> {
+  // Clears active session only — keeps trusted-device cookie so owner/staff can unlock with PIN
   await clearSession();
   redirect("/admin/login?from=/admin/desk");
 }

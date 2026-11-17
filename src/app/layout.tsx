@@ -27,14 +27,16 @@ const notoSansSC = Noto_Sans_SC({
   display: "swap",
 });
 
+const appName = process.env.NEXT_PUBLIC_APP_NAME || "SideBox";
+
 export const metadata: Metadata = {
-  title: "Salon POS",
-  description: "Salon point-of-sale web app",
-  applicationName: "Salon POS",
+  title: appName,
+  description: `${appName} point-of-sale & management web app`,
+  applicationName: appName,
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "Salon POS",
+    title: appName,
     startupImage: [
       // iPhone 14 Pro, 15, 15 Pro, 16, 16 Pro
       {
@@ -143,7 +145,7 @@ export default function RootLayout({
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src="/apple-touch-icon.png"
-              alt="Salon POS"
+              alt={appName}
               width={76}
               height={76}
               style={{
@@ -164,7 +166,7 @@ export default function RootLayout({
                 fontFamily: "system-ui, -apple-system, sans-serif",
               }}
             >
-              Salon POS
+              {appName}
             </span>
             <div
               style={{

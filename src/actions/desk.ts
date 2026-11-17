@@ -2,6 +2,12 @@
 
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "./auth";
+import { getRequestClientIp, timingSafeSecretEqual } from "@/lib/auth";
+import {
+  checkRateLimit,
+  recordFailedLookup,
+  recordSuccessfulLookup,
+} from "@/lib/rate-limit";
 import {
   toBusinessDateString,
   createBusinessDateTime,
@@ -763,23 +769,40 @@ export async function createDeskAppointment(input: {
 // Verify Owner PIN for Desk Financial Module
 // ----------------------------------------------------------------
 export async function verifyDeskOwnerPin(pin: string): Promise<ActionResult<boolean>> {
-  await requireAdmin();
+  const session = await requireAdmin();
   try {
     const cleanPin = pin.trim();
-    if (!cleanPin || cleanPin.length !== 4) {
+    if (!/^\d{4}$/.test(cleanPin)) {
       return { success: false, error: "Please enter a 4-digit PIN." };
     }
 
-    const admin = await prisma.adminUser.findFirst({
-      orderBy: { createdAt: "asc" },
+    const clientIp = await getRequestClientIp();
+    const rateKey = `desk-pin:${session.sub}:${clientIp}`;
+    const rateCheck = checkRateLimit(rateKey, 6, 5 * 60 * 1000);
+    if (!rateCheck.allowed) {
+      return {
+        success: false,
+        error: `Too many PIN attempts. Please wait ${rateCheck.retryAfterSeconds}s.`,
+      };
+    }
+
+    const admin = await prisma.adminUser.findUnique({
+      where: { id: session.sub },
     });
     if (!admin) return { success: false, error: "No admin user found." };
+    if (!admin.pinCode) {
+      return {
+        success: false,
+        error: "Passcode PIN is not configured. Please set one in Settings.",
+      };
+    }
 
-    const validPin = admin.pinCode || "1234";
-    if (cleanPin !== validPin) {
+    if (!timingSafeSecretEqual(cleanPin, admin.pinCode)) {
+      recordFailedLookup(rateKey);
       return { success: false, error: "Incorrect PIN code. / 密码错误" };
     }
 
+    recordSuccessfulLookup(rateKey);
     return { success: true, data: true };
   } catch (error) {
     console.error("[verifyDeskOwnerPin]", error);

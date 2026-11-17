@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { jwtVerify } from "jose";
-
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET ?? "dev-secret-change-me-in-production"
-);
+import {
+  SESSION_COOKIE_NAME,
+  SESSION_MAX_AGE,
+  SESSION_REFRESH_THRESHOLD_SECONDS,
+  signSessionJwt,
+  verifySessionJwt,
+} from "@/lib/session-token";
 
 // Routes that require admin authentication
 const PROTECTED_PREFIXES = ["/admin"];
@@ -34,17 +36,9 @@ export async function proxy(request: NextRequest) {
   );
   const isAuthRoute = AUTH_ROUTES.includes(pathname);
 
-  const token = request.cookies.get("admin_session")?.value;
-
-  let isAuthenticated = false;
-  if (token) {
-    try {
-      await jwtVerify(token, JWT_SECRET);
-      isAuthenticated = true;
-    } catch {
-      // Token invalid or expired
-    }
-  }
+  const token = request.cookies.get(SESSION_COOKIE_NAME)?.value;
+  const session = token ? await verifySessionJwt(token) : null;
+  const isAuthenticated = session !== null;
 
   // Redirect unauthenticated users away from protected routes
   if (isProtected && !isAuthenticated) {
@@ -61,7 +55,28 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(targetUrl);
   }
 
-  return NextResponse.next();
+  const response = NextResponse.next();
+
+  // Sliding 30-day renewal: extend session cookie whenever < 15 days remain
+  if (isProtected && session) {
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    const remainingSeconds = (session.exp ?? 0) - nowSeconds;
+    if (remainingSeconds < SESSION_REFRESH_THRESHOLD_SECONDS) {
+      const refreshedToken = await signSessionJwt({
+        sub: session.sub,
+        username: session.username,
+      });
+      response.cookies.set(SESSION_COOKIE_NAME, refreshedToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        maxAge: SESSION_MAX_AGE,
+        path: "/",
+      });
+    }
+  }
+
+  return response;
 }
 
 export const config = {

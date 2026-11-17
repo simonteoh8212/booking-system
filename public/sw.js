@@ -1,7 +1,7 @@
-// Service Worker for Salon POS — App Shell Cache
+// Service Worker for SideBox — Static Asset Cache
 // Bump CACHE_VERSION whenever you want all clients to get a fresh cache.
-const CACHE_VERSION = 'v2';
-const CACHE_NAME = `salon-pos-${CACHE_VERSION}`;
+const CACHE_VERSION = 'v3';
+const CACHE_NAME = `sidebox-${CACHE_VERSION}`;
 
 // Assets to pre-cache on SW install.
 // Only static, always-available files — NOT server-rendered HTML pages.
@@ -44,43 +44,13 @@ self.addEventListener('fetch', (event) => {
   // Only handle GET requests from our own origin
   if (request.method !== 'GET' || url.origin !== self.location.origin) return;
 
-  // Never intercept admin, login, or API routes — always go directly to network
+  // Never intercept HTML navigations, admin, login, or API routes — always go directly to network
   if (
+    request.mode === 'navigate' ||
     url.pathname.startsWith('/admin') ||
     url.pathname.startsWith('/api/') ||
     url.pathname.startsWith('/_next/data/')
   ) {
-    return;
-  }
-
-  // ── Navigation requests for home screen launch (Root / only) ──
-  // Strategy: Cache-first, then update cache in background.
-  if (request.mode === 'navigate' && url.pathname === '/') {
-    event.respondWith(
-      caches.open(CACHE_NAME).then(async (cache) => {
-        const cacheKey = new Request('/');
-        const cached = await cache.match(cacheKey);
-
-        // Fire a background update regardless
-        const networkUpdate = fetch(request)
-          .then((response) => {
-            if (response.ok) {
-              cache.put(cacheKey, response.clone());
-            }
-            return response;
-          })
-          .catch(() => null);
-
-        if (cached) {
-          // Serve stale immediately; update happens in background
-          event.waitUntil(networkUpdate);
-          return cached;
-        }
-
-        // First visit — wait for network
-        return networkUpdate.then((r) => r || cached);
-      })
-    );
     return;
   }
 

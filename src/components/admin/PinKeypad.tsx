@@ -212,20 +212,20 @@ export function PinKeypad({
       </div>
 
       {/* Error / Loading feedback */}
-      <div className={`flex items-center justify-center ${compact ? "h-5 mb-1.5" : "h-6 sm:h-7 mb-2 sm:mb-3"}`}>
+      <div className={`flex items-center justify-center text-center px-2 ${compact ? "min-h-6 mb-1.5" : "min-h-8 mb-2 sm:mb-3"}`}>
         {isPending ? (
           <div className="flex items-center gap-1.5 text-primary font-semibold text-xs animate-pulse">
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
             Unlocking Desk…
           </div>
         ) : error ? (
-          <div className="flex items-center gap-1.5 text-destructive font-semibold text-xs animate-in fade-in duration-200">
+          <div className="flex items-center justify-center gap-1.5 text-destructive font-semibold text-xs leading-snug animate-in fade-in duration-200">
             <AlertCircle className="h-3.5 w-3.5 shrink-0" />
-            {error}
+            <span>{error}</span>
           </div>
         ) : (
-          <span className="text-[10px] text-muted-foreground/60 font-mono">
-            Default PIN: 1234
+          <span className="text-[11px] text-muted-foreground/75">
+            Enter 4-digit passcode
           </span>
         )}
       </div>

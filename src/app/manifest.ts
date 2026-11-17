@@ -2,12 +2,15 @@
 import type { MetadataRoute } from 'next'
 
 export default function manifest(): MetadataRoute.Manifest {
+  const appName = process.env.NEXT_PUBLIC_APP_NAME || 'SideBox';
+  const shortName = process.env.NEXT_PUBLIC_APP_SHORT_NAME || appName;
+
   return {
-    id: '/',
-    name: 'Salon POS',
-    short_name: 'Salon POS',
-    description: 'Salon point-of-sale web app',
-    start_url: '/',
+    id: '/admin/desk',
+    name: appName,
+    short_name: shortName,
+    description: `${appName} point-of-sale & management web app`,
+    start_url: '/admin/desk',
     scope: '/',
     display: 'standalone',
     background_color: '#ffffff',
