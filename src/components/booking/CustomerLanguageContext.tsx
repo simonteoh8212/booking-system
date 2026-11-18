@@ -2,7 +2,8 @@
 
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { CUSTOMER_I18N, type CustomerLanguage } from "@/lib/customer-i18n";
-import { Globe, Check, Sparkles } from "lucide-react";
+import { FlagIcon } from "@/components/FlagIcon";
+import { Globe, Check } from "lucide-react";
 
 interface CustomerLanguageContextType {
   language: CustomerLanguage;
@@ -90,10 +91,10 @@ export function CustomerLanguageProvider({ children }: { children: React.ReactNo
                 className="group p-4 rounded-2xl border-2 border-border/80 hover:border-primary bg-card hover:bg-primary/5 transition-all text-left flex items-center justify-between cursor-pointer active:scale-[0.98]"
               >
                 <div className="flex items-center gap-3">
-                  <span className="text-2xl">🇨🇳</span>
+                  <FlagIcon country="CN" className="h-4 w-6" />
                   <div>
-                    <p className="font-black text-base text-foreground group-hover:text-primary transition-colors">
-                      中文 (Chinese)
+                    <p className="font-bold text-base text-foreground group-hover:text-primary transition-colors">
+                      中文
                     </p>
                     <p className="text-xs text-muted-foreground">以中文浏览预约系统</p>
                   </div>
@@ -110,9 +111,9 @@ export function CustomerLanguageProvider({ children }: { children: React.ReactNo
                 className="group p-4 rounded-2xl border-2 border-border/80 hover:border-primary bg-card hover:bg-primary/5 transition-all text-left flex items-center justify-between cursor-pointer active:scale-[0.98]"
               >
                 <div className="flex items-center gap-3">
-                  <span className="text-2xl">🇬🇧</span>
+                  <FlagIcon country="UK" className="h-4 w-6" />
                   <div>
-                    <p className="font-black text-base text-foreground group-hover:text-primary transition-colors">
+                    <p className="font-bold text-base text-foreground group-hover:text-primary transition-colors">
                       English
                     </p>
                     <p className="text-xs text-muted-foreground">Browse and book in English</p>

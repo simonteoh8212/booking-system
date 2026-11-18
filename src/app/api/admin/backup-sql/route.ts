@@ -11,6 +11,10 @@ function sqlValue(val: unknown): string {
   if (typeof val === "boolean") return val ? "TRUE" : "FALSE";
   if (typeof val === "number") return String(val);
   if (val instanceof Date) return sqlEscapeString(val.toISOString());
+  if (Array.isArray(val)) {
+    if (val.length === 0) return "ARRAY[]::text[]";
+    return `ARRAY[${val.map((v) => sqlEscapeString(String(v))).join(", ")}]::text[]`;
+  }
   return sqlEscapeString(String(val));
 }
 
@@ -73,9 +77,12 @@ export async function GET() {
       services,
       schedules,
       blockouts,
+      promoPackages,
       customers,
+      memberPackages,
       bookings,
       bookingItems,
+      memberTransactions,
       adminUsers,
       depositSettings,
       exemptCustomers,
@@ -84,9 +91,12 @@ export async function GET() {
       prisma.service.findMany({ orderBy: { createdAt: "asc" } }),
       prisma.businessSchedule.findMany({ orderBy: { dayOfWeek: "asc" } }),
       prisma.timeBlockout.findMany({ orderBy: { startDatetime: "asc" } }),
+      prisma.promoPackage.findMany({ orderBy: { createdAt: "asc" } }),
       prisma.customer.findMany({ orderBy: { createdAt: "asc" } }),
+      prisma.memberPackage.findMany({ orderBy: { createdAt: "asc" } }),
       prisma.booking.findMany({ orderBy: { createdAt: "asc" } }),
       prisma.bookingItem.findMany({ orderBy: { createdAt: "asc" } }),
+      prisma.memberTransaction.findMany({ orderBy: { createdAt: "asc" } }),
       prisma.adminUser.findMany({ orderBy: { createdAt: "asc" } }),
       prisma.depositSetting.findMany({ orderBy: { id: "asc" } }),
       prisma.depositExemptCustomer.findMany({ orderBy: { createdAt: "asc" } }),
@@ -97,9 +107,12 @@ export async function GET() {
       services.length +
       schedules.length +
       blockouts.length +
+      promoPackages.length +
       customers.length +
+      memberPackages.length +
       bookings.length +
       bookingItems.length +
+      memberTransactions.length +
       adminUsers.length +
       depositSettings.length +
       exemptCustomers.length +
@@ -115,7 +128,7 @@ export async function GET() {
       `-- Booking System Database Full Backup (.sql)`,
       `-- Generated at : ${nowIso}`,
       `-- Exported by  : ${session.username}`,
-      `-- Total Records: ${totalRecords} across 10 tables`,
+      `-- Total Records: ${totalRecords} across 13 tables`,
       `-- Format       : PostgreSQL Standard SQL (Compatible with Supabase / Neon / pgAdmin)`,
       `-- =========================================================================`,
       ``,
@@ -133,7 +146,18 @@ export async function GET() {
     sqlParts.push(
       buildInsertStatement(
         "services",
-        ["id", "name", "description", "category", "durationMinutes", "priceCents", "isActive", "createdAt", "updatedAt"],
+        [
+          "id",
+          "name",
+          "description",
+          "category",
+          "type",
+          "durationMinutes",
+          "priceCents",
+          "isActive",
+          "createdAt",
+          "updatedAt",
+        ],
         services as unknown as Record<string, unknown>[]
       )
     );
@@ -156,22 +180,77 @@ export async function GET() {
       )
     );
 
-    // 4. Customers
+    // 4. Promo Package Templates
+    sqlParts.push(
+      buildInsertStatement(
+        "promo_packages",
+        [
+          "id",
+          "name",
+          "description",
+          "priceCents",
+          "totalSessions",
+          "serviceIds",
+          "validityMonths",
+          "isActive",
+          "createdAt",
+          "updatedAt",
+        ],
+        promoPackages as unknown as Record<string, unknown>[]
+      )
+    );
+
+    // 5. Customers & Member Credit Balances
     sqlParts.push(
       buildInsertStatement(
         "customers",
-        ["id", "name", "phoneNumber", "createdAt", "updatedAt"],
+        [
+          "id",
+          "name",
+          "phoneNumber",
+          "isMember",
+          "creditBalanceCents",
+          "notes",
+          "memberSince",
+          "createdAt",
+          "updatedAt",
+        ],
         customers as unknown as Record<string, unknown>[]
       )
     );
 
-    // 5. Bookings
+    // 6. Member Packages
+    sqlParts.push(
+      buildInsertStatement(
+        "member_packages",
+        [
+          "id",
+          "customerId",
+          "promoPackageId",
+          "name",
+          "serviceIds",
+          "totalSessions",
+          "remainingSessions",
+          "pricePaidCents",
+          "paymentMethod",
+          "expiresAt",
+          "status",
+          "notes",
+          "createdAt",
+          "updatedAt",
+        ],
+        memberPackages as unknown as Record<string, unknown>[]
+      )
+    );
+
+    // 7. Bookings
     sqlParts.push(
       buildInsertStatement(
         "bookings",
         [
           "id",
           "referenceCode",
+          "checkoutIdempotencyKey",
           "customerId",
           "serviceId",
           "startDatetime",
@@ -179,6 +258,8 @@ export async function GET() {
           "totalPriceCents",
           "depositDueCents",
           "balanceDueCents",
+          "creditUsedCents",
+          "promoDiscountCents",
           "status",
           "notes",
           "receiptSubmittedAt",
@@ -189,12 +270,44 @@ export async function GET() {
       )
     );
 
-    // 6. Booking Items
+    // 8. Booking Items
     sqlParts.push(
       buildInsertStatement(
         "booking_items",
-        ["id", "bookingId", "serviceId", "priceCents", "createdAt"],
+        [
+          "id",
+          "bookingId",
+          "serviceId",
+          "priceCents",
+          "originalPriceCents",
+          "memberPackageId",
+          "createdAt",
+        ],
         bookingItems as unknown as Record<string, unknown>[]
+      )
+    );
+
+    // 9. Member Credit & Package Transactions Ledger
+    sqlParts.push(
+      buildInsertStatement(
+        "member_transactions",
+        [
+          "id",
+          "customerId",
+          "memberPackageId",
+          "bookingId",
+          "idempotencyKey",
+          "type",
+          "creditChangeCents",
+          "balanceAfterCents",
+          "sessionsChange",
+          "sessionsAfter",
+          "cashPaidCents",
+          "paymentMethod",
+          "description",
+          "createdAt",
+        ],
+        memberTransactions as unknown as Record<string, unknown>[]
       )
     );
 

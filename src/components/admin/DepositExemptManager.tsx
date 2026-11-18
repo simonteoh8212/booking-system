@@ -251,7 +251,7 @@ export function DepositExemptManager({
                   <div className="space-y-1 flex-1">
                     <div className="flex items-center gap-2">
                       <span className="font-bold">
-                        {resolveLabel({ zh: "✅ 已在白名单（免付定金）", en: "✅ EXEMPT (Deposit Waived)" }, langMode)}
+                        {resolveLabel({ zh: "已在白名单（免付定金）", en: "EXEMPT (Deposit Waived)" }, langMode)}
                       </span>
                       <span className="font-mono text-xs bg-emerald-500/20 px-2 py-0.5 rounded font-bold">
                         {verifyResult.normalizedPhone}

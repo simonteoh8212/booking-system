@@ -11,6 +11,8 @@ import {
 } from "@/actions/emergency";
 import { buildEmergencyApologyWhatsAppUrl } from "@/lib/whatsapp";
 import { formatPrice } from "@/lib/utils";
+import { normalizeDeskLanguageMode } from "@/lib/desk-i18n";
+import type { DeskLanguageMode } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -44,7 +46,7 @@ import toast from "react-hot-toast";
 interface EmergencyClosureModalProps {
   isOpen: boolean;
   onClose: () => void;
-  langMode?: "ONLY_ZH" | "ONLY_EN" | "BILINGUAL_ZH_FIRST" | "BILINGUAL_EN_FIRST";
+  langMode?: DeskLanguageMode;
   currencySymbol?: string;
 }
 
@@ -58,10 +60,10 @@ const COMMON_REASONS = [
 export function EmergencyClosureModal({
   isOpen,
   onClose,
-  langMode = "BILINGUAL_ZH_FIRST",
+  langMode = "ONLY_EN",
   currencySymbol = "RM",
 }: EmergencyClosureModalProps) {
-  const isZh = langMode === "ONLY_ZH" || langMode === "BILINGUAL_ZH_FIRST";
+  const isZh = normalizeDeskLanguageMode(langMode) === "ONLY_ZH";
 
   // Calculate default sensible date:
   // If current local time is past 18:00 (6 PM) in the evening, default to Tomorrow!
@@ -538,8 +540,8 @@ export function EmergencyClosureModal({
                   <div className="mt-2 space-y-1.5 pl-2 border-l-2 border-muted">
                     <p className="text-[11px] text-muted-foreground italic mb-1">
                       {isZh
-                        ? "💡 以下预约时段已过，顾客已结束服务，系统已自动排除在短信通知与批量作废之外："
-                        : "💡 These appointments have already concluded and are excluded from apologies and cancellations:"}
+                        ? "以下预约时段已过，顾客已结束服务，系统已自动排除在短信通知与批量作废之外："
+                        : "These appointments have already concluded and are excluded from apologies and cancellations:"}
                     </p>
                     {pastBookings.map((b) => (
                       <div
@@ -608,11 +610,14 @@ export function EmergencyClosureModal({
                   size="sm"
                   variant="ghost"
                   onClick={() => setShowConfirmCancelAll(true)}
-                  className="h-8 text-xs text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                  className="h-8 text-xs text-muted-foreground hover:text-destructive hover:bg-destructive/10 inline-flex items-center gap-1"
                 >
-                  {isZh
-                    ? `⚠️ 批量作废这 ${upcomingBookings.length} 笔受影响预约`
-                    : `⚠️ Batch cancel ${upcomingBookings.length} upcoming booking(s)`}
+                  <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                  <span>
+                    {isZh
+                      ? `批量作废这 ${upcomingBookings.length} 笔受影响预约`
+                      : `Batch cancel ${upcomingBookings.length} upcoming booking(s)`}
+                  </span>
                 </Button>
               )}
             </div>

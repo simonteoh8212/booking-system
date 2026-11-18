@@ -6,7 +6,7 @@ import { upsertBusinessSchedule } from "@/actions/schedule";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, Save } from "lucide-react";
+import { Loader2, Save, Check } from "lucide-react";
 import type { BusinessScheduleDto } from "@/types";
 import { cn } from "@/lib/utils";
 import { useDeskLanguage } from "@/lib/use-desk-language";
@@ -201,7 +201,10 @@ export function BusinessHoursForm({ initialSchedules }: BusinessHoursFormProps) 
             {isPending && savedIdx === null ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
             ) : savedIdx === row.dayOfWeek ? (
-              resolveLabel({ zh: "✓ 已保存", en: "✓ Saved" }, langMode)
+              <>
+                <Check className="h-3.5 w-3.5 mr-1" />
+                {resolveLabel({ zh: "已保存", en: "Saved" }, langMode)}
+              </>
             ) : (
               <>
                 <Save className="h-3.5 w-3.5 mr-1" />

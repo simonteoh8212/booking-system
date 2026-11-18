@@ -9,7 +9,7 @@ export interface LanguageOption {
   id: DeskLanguageMode;
   label: string;
   subLabel: string;
-  flag: string;
+  country: "UK" | "CN";
   description: string;
   previewPrimary: string;
   previewSecondary?: string;
@@ -18,82 +18,49 @@ export interface LanguageOption {
 export const DESK_LANGUAGE_OPTIONS: LanguageOption[] = [
   {
     id: "ONLY_EN",
-    label: "English Only",
-    subLabel: "纯英文",
-    flag: "🇬🇧",
-    description: "Pure English interface without Chinese characters",
-    previewPrimary: "Count Sales",
-  },
-  {
-    id: "BILINGUAL_EN_FIRST",
-    label: "English First (Bilingual)",
-    subLabel: "英文优先 (双语)",
-    flag: "🇬🇧",
-    description: "大号英文醒目突出，下方配小号中文注释（适合澳洲本土或英文为主习惯）",
-    previewPrimary: "Count Sales",
-    previewSecondary: "收款开单",
-  },
-  {
-    id: "BILINGUAL_ZH_FIRST",
-    label: "中文优先 (双语)",
-    subLabel: "Chinese Priority",
-    flag: "🇨🇳",
-    description: "大号中文醒目突出，下方配小号英文注释（适合华人老板与多元化员工）",
-    previewPrimary: "收款开单",
-    previewSecondary: "Count Sales",
+    label: "English",
+    subLabel: "English",
+    country: "UK",
+    description: "English interface",
+    previewPrimary: "New Sale",
   },
   {
     id: "ONLY_ZH",
-    label: "纯中文",
-    subLabel: "Chinese Only",
-    flag: "🇨🇳",
-    description: "界面完全只显示中文，字体清晰简洁，无英文干扰",
-    previewPrimary: "收款开单",
+    label: "中文",
+    subLabel: "Chinese",
+    country: "CN",
+    description: "纯中文界面",
+    previewPrimary: "收银开单",
   },
 ];
 
+export function normalizeDeskLanguageMode(mode?: string | null): "ONLY_EN" | "ONLY_ZH" {
+  if (mode === "ONLY_ZH" || mode === "BILINGUAL_ZH_FIRST") {
+    return "ONLY_ZH";
+  }
+  return "ONLY_EN";
+}
+
 /**
- * Resolve display text based on language mode and priority.
+ * Resolve display text as a single language (English or Chinese only).
  */
 export function resolveDeskText(
   text: BilingualText,
   mode: DeskLanguageMode = "ONLY_EN"
 ): { primary: string; secondary?: string } {
-  switch (mode) {
-    case "ONLY_ZH":
-      return { primary: text.zh };
-    case "ONLY_EN":
-      return { primary: text.en };
-    case "BILINGUAL_EN_FIRST":
-      return { primary: text.en, secondary: text.zh };
-    case "BILINGUAL_ZH_FIRST":
-    default:
-      return { primary: text.zh, secondary: text.en };
-  }
+  return normalizeDeskLanguageMode(mode) === "ONLY_ZH"
+    ? { primary: text.zh }
+    : { primary: text.en };
 }
 
 /**
- * Resolve a single formatted label string based on language mode:
- * ONLY_ZH: "系统设置"
- * ONLY_EN: "Settings"
- * BILINGUAL_ZH_FIRST: "系统设置 (Settings)"
- * BILINGUAL_EN_FIRST: "Settings (系统设置)"
+ * Resolve a single formatted label string (English or Chinese only).
  */
 export function resolveLabel(
   text: BilingualText,
   mode: DeskLanguageMode = "ONLY_EN"
 ): string {
-  switch (mode) {
-    case "ONLY_ZH":
-      return text.zh;
-    case "ONLY_EN":
-      return text.en;
-    case "BILINGUAL_EN_FIRST":
-      return text.zh === text.en ? text.en : `${text.en} (${text.zh})`;
-    case "BILINGUAL_ZH_FIRST":
-    default:
-      return text.zh === text.en ? text.zh : `${text.zh} (${text.en})`;
-  }
+  return normalizeDeskLanguageMode(mode) === "ONLY_ZH" ? text.zh : text.en;
 }
 
 /**
@@ -210,8 +177,8 @@ export const DESK_DICT = {
   appointmentView: {
     backToMain: { zh: "返回主菜单", en: "Back to Main Menu" },
     appointmentsHeader: { zh: "今日预约清单", en: "Today's Schedule" },
-    checklistTab: { zh: "📋 清单模式", en: "📋 Checklist" },
-    calendarTab: { zh: "📅 日历模式", en: "📅 Calendar" },
+    checklistTab: { zh: "清单模式", en: "Checklist" },
+    calendarTab: { zh: "日历模式", en: "Calendar" },
     addAppointmentBtn: { zh: "+ 新增预约", en: "+ Add Appointment" },
     noAppointmentsTitle: {
       zh: "该日期暂无预约",
@@ -223,8 +190,8 @@ export const DESK_DICT = {
     },
     feeLabel: { zh: "费用", en: "Fee" },
     depositPaidLabel: { zh: "已付定金", en: "Deposit Paid" },
-    markDoneBtn: { zh: "✓ 完成", en: "✓ Done" },
-    ringUpBtn: { zh: "💰 去结账", en: "💰 Ring Up" },
+    markDoneBtn: { zh: "完成", en: "Done" },
+    ringUpBtn: { zh: "去结账", en: "Ring Up" },
     modalTitle: { zh: "登记新预约", en: "Add New Appointment" },
     customerName: { zh: "顾客姓名", en: "Customer Name" },
     phoneNumber: { zh: "电话号码", en: "Phone Number" },
@@ -253,8 +220,8 @@ export const DESK_DICT = {
   countSalesView: {
     cancelBack: { zh: "取消 / 返回主菜单", en: "Cancel / Back" },
     step1Client: { zh: "1. 结算对象", en: "1. Select Client" },
-    walkinTab: { zh: "🚶 散客", en: "🚶 Walk-in" },
-    appointmentTab: { zh: "📅 预约顾客结账", en: "📅 Appointment" },
+    walkinTab: { zh: "散客", en: "Walk-in" },
+    appointmentTab: { zh: "预约顾客结账", en: "Appointment" },
     walkinDefault: { zh: "散客", en: "Walk-in" },
     walkinFastNotice: {
       zh: "快速散客模式 — 无需输入资料，3秒直接选项目开单",
@@ -314,7 +281,7 @@ export const DESK_DICT = {
 
   // Monthly Financial & Profit Report Module
   financialReport: {
-    navBtn: { zh: "📊 财务月报", en: "📊 Monthly Report" },
+    navBtn: { zh: "财务月报", en: "Monthly Report" },
     title: { zh: "月度财报与净利润", en: "Monthly Financial & Net Profit" },
     subtitle: {
       zh: "核算每月营业额、进货成本、日常开支及纯利润",
@@ -349,7 +316,7 @@ export const DESK_DICT = {
     btnSaveExpense: { zh: "保存开销记录", en: "Save Expense" },
     btnSavingExpense: { zh: "正在保存…", en: "Saving…" },
     saveAndAddNext: { zh: "+ 保存并记下一笔", en: "+ Save & Add Next" },
-    saveAndClose: { zh: "✓ 完成并关闭", en: "✓ Done & Close" },
+    saveAndClose: { zh: "完成并关闭", en: "Done & Close" },
     fastModeTab: { zh: "连续快捷录入", en: "Fast Stream" },
     batchModeTab: { zh: "批量多行添加", en: "Batch Multi-Row" },
     addRowBtn: { zh: "+ 添加一行", en: "+ Add Row" },
@@ -408,8 +375,8 @@ export const DESK_DICT = {
       zh: "填写“其他杂费”时必须输入具体说明",
       en: "Please enter description for Other Misc expense.",
     },
-    profitTag: { zh: "✓ 盈利", en: "✓ Profit" },
-    lossTag: { zh: "⚠ 亏损", en: "⚠ Loss" },
+    profitTag: { zh: "盈利", en: "Profit" },
+    lossTag: { zh: "亏损", en: "Loss" },
     revenueMinusExpenses: { zh: "营业额 − 开销", en: "Sales − Expenses" },
     costOutflow: { zh: "进货/杂支", en: "Cost Outflow" },
     categoriesCountUnit: { zh: "类开销", en: "Categories" },
@@ -429,7 +396,7 @@ export const DESK_DICT = {
     },
     notesDefaultPrefix: { zh: "备注 (选填，留空默认“", en: "Notes (optional, defaults to \"" },
     notesDefaultSuffix: { zh: "”)", en: "\")" },
-    saveAllWithCountPrefix: { zh: "✓ 一键保存全部 (", en: "✓ Save All (" },
+    saveAllWithCountPrefix: { zh: "一键保存全部 (", en: "Save All (" },
     saveAllWithCountSuffix: { zh: " 笔)", en: " items)" },
     enterAmountFirst: { zh: "请先输入金额", en: "Enter amount first" },
     expenseAllocation: { zh: "开销分类占比", en: "Expense Allocation" },
@@ -443,16 +410,16 @@ export const DESK_DICT = {
       en: "Export full SQL database dump or monthly CSV sales spreadsheet",
     },
     downloadSqlBtn: {
-      zh: "💾 立即下载完整数据库备份 (.sql)",
-      en: "💾 Download Full Database Backup (.sql)",
+      zh: "立即下载完整数据库备份 (.sql)",
+      en: "Download Full Database Backup (.sql)",
     },
     downloadingSql: { zh: "正在生成备份文件...", en: "Generating backup..." },
     sqlHelpText: {
       zh: "包含所有顾客、开单销售、明细项目、开销支出及系统设置。可在 Supabase 或任意 PostgreSQL 数据库直接运行恢复。",
       en: "Includes all customers, sales, booking items, expenses, and settings. Can be directly restored in Supabase or any PostgreSQL database.",
     },
-    exportMonthCsvBtn: { zh: "📥 导出本月销售明细 (CSV)", en: "📥 Export Monthly Sales (CSV)" },
-    exportAllCsvBtn: { zh: "📥 导出全部历史销售 (CSV)", en: "📥 Export All-Time Sales (CSV)" },
+    exportMonthCsvBtn: { zh: "导出本月销售明细 (CSV)", en: "Export Monthly Sales (CSV)" },
+    exportAllCsvBtn: { zh: "导出全部历史销售 (CSV)", en: "Export All-Time Sales (CSV)" },
     exportSalesShort: { zh: "导出账单", en: "Export CSV" },
     exportingCsv: { zh: "正在下载本月销售账单 (CSV)...", en: "Downloading monthly sales CSV..." },
     tablesIncluded: { zh: "包含数据表", en: "Tables Included" },
@@ -476,8 +443,8 @@ export const DESK_DICT = {
     period: { zh: "账单周期", en: "Statement Period" },
     issueDate: { zh: "生成时间", en: "Issue Date" },
     currency: { zh: "结算币种", en: "Currency" },
-    printPdfBtn: { zh: "🖨️ 打印 / 另存为 PDF", en: "🖨️ Print / Save as PDF" },
-    exportCsvBtn: { zh: "📥 导出 Excel / CSV", en: "📥 Export Excel / CSV" },
+    printPdfBtn: { zh: "打印 / 另存为 PDF", en: "Print / Save as PDF" },
+    exportCsvBtn: { zh: "导出 Excel / CSV", en: "Export Excel / CSV" },
     backBtn: { zh: "返回", en: "Back" },
     includeExpenses: { zh: "包含店铺开销与纯利润", en: "Include Expenses & Net Profit" },
     excludeExpenses: { zh: "仅销售交易明细", en: "Sales Only" },
@@ -506,7 +473,7 @@ export const DESK_DICT = {
       zh: "机密文件 · 本对账单仅供店铺内部核账、税务合规与财务审计使用 · 由沙龙系统自动生成",
       en: "CONFIDENTIAL · FOR INTERNAL BUSINESS, TAX COMPLIANCE & ACCOUNTING USE ONLY · AUTOMATICALLY GENERATED",
     },
-    statementActionBtn: { zh: "📄 月度对账单", en: "📄 Monthly Statement" },
+    statementActionBtn: { zh: "月度对账单", en: "Monthly Statement" },
     viewStatement: { zh: "查看完整对账单", en: "View Statement" },
   },
 } as const;

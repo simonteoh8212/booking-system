@@ -16,6 +16,7 @@ import type { DepositSettingDto, DeskLanguageMode } from "@/types";
 import { DESK_LANGUAGE_OPTIONS, resolveLabel } from "@/lib/desk-i18n";
 import { useDeskLanguage, saveDeskLanguage } from "@/lib/use-desk-language";
 import { FloatingSaveBtn } from "@/components/admin/FloatingSaveBtn";
+import { FlagIcon } from "@/components/FlagIcon";
 import jsQR from "jsqr";
 import {
   Wallet,
@@ -30,6 +31,7 @@ import {
   DollarSign,
   Percent,
   Languages,
+  Coins,
 } from "lucide-react";
 
 interface DepositSettingsFormProps {
@@ -353,7 +355,9 @@ export function DepositSettingsForm({ initialSetting }: DepositSettingsFormProps
             </Label>
             <div className="p-3.5 rounded-xl border-2 border-primary/40 bg-card flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <span className="text-2xl">🇲🇾</span>
+                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                  <Coins className="h-4 w-4" />
+                </div>
                 <div>
                   <p className="font-bold text-sm text-foreground">Malaysia</p>
                   <p className="text-xs text-muted-foreground">RM (MYR) · DuitNow QR & Ringgit</p>
@@ -371,7 +375,7 @@ export function DepositSettingsForm({ initialSetting }: DepositSettingsFormProps
               <Languages className="h-4 w-4 text-primary" />
               <Label className="text-xs font-semibold uppercase text-muted-foreground tracking-wider">
                 {resolveLabel(
-                  { zh: "前台语言显示模式与优先级", en: "Desk Language & Priority Mode" },
+                  { zh: "系统显示语言", en: "Desk & Admin Language" },
                   deskLanguage
                 )}
               </Label>
@@ -401,8 +405,8 @@ export function DepositSettingsForm({ initialSetting }: DepositSettingsFormProps
                     }`}
                   >
                     <div className="flex items-start justify-between w-full">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-base">{opt.flag}</span>
+                      <div className="flex items-center gap-2">
+                        <FlagIcon country={opt.country} />
                         <span className="font-bold text-sm text-foreground">{opt.label}</span>
                       </div>
                       {isSelected && <CheckCircle2 className="h-5 w-5 text-primary shrink-0" />}
@@ -656,8 +660,11 @@ export function DepositSettingsForm({ initialSetting }: DepositSettingsFormProps
                   />
                 </div>
                 <div className="flex items-center justify-between pt-1">
-                  <p className="text-[11px] text-emerald-700 dark:text-emerald-300 font-medium">
-                    ✓ {resolveLabel({ zh: "顾客在在线预约结账时将直接看到此收款图片", en: "This exact downloaded image is displayed to customers at checkout." }, deskLanguage)}
+                  <p className="text-[11px] text-emerald-700 dark:text-emerald-300 font-medium flex items-center gap-1">
+                    <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                    <span>
+                      {resolveLabel({ zh: "顾客在在线预约结账时将直接看到此收款图片", en: "This exact downloaded image is displayed to customers at checkout." }, deskLanguage)}
+                    </span>
                   </p>
                   <Button
                     type="button"

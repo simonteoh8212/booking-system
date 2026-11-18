@@ -141,7 +141,7 @@ export function StepPaymentInstructions() {
         <div className="p-4 rounded-2xl bg-amber-500/10 border-2 border-amber-500/40 text-amber-950 dark:text-amber-200 space-y-2 text-left shadow-xs">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-full bg-amber-500 text-white flex items-center justify-center font-bold text-sm shrink-0 shadow-xs">
-              🌟
+              <Sparkles className="h-4 w-4" />
             </div>
             <div>
               <h3 className="font-bold text-base text-amber-900 dark:text-amber-100">
@@ -257,7 +257,8 @@ export function StepPaymentInstructions() {
                   <Separator className="bg-primary/20" />
                   <div className="flex justify-between items-center text-sm">
                     <span className="font-semibold text-amber-700 dark:text-amber-400 flex items-center gap-1.5">
-                      🌟 {t.step4.depositDue[language]}
+                      <Sparkles className="h-3.5 w-3.5 shrink-0" />
+                      <span>{t.step4.depositDue[language]}</span>
                     </span>
                     <span className="font-bold text-amber-700 dark:text-amber-400">
                       {t.step4.vipWaivedBadge[language]}

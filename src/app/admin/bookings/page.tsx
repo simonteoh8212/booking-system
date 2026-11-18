@@ -1,12 +1,14 @@
 import type { Metadata } from "next";
+import { cookies } from "next/headers";
+import { connection } from "next/server";
 import { getAllBookings, type BookingTimeframe } from "@/actions/admin-bookings";
 import { getActiveServices } from "@/actions/services";
 import { AdminBookingsManager } from "@/components/admin/AdminBookingsManager";
 import { prisma } from "@/lib/prisma";
-import { connection } from "next/server";
-import type { BookingStatus } from "@/types";
+import type { BookingStatus, DeskLanguageMode } from "@/types";
+import { normalizeDeskLanguageMode } from "@/lib/desk-i18n";
 
-export const metadata: Metadata = { title: "All Bookings" };
+export const metadata: Metadata = { title: "Bookings" };
 
 interface BookingsPageProps {
   searchParams?: Promise<{
@@ -24,7 +26,7 @@ export default async function BookingsPage({ searchParams }: BookingsPageProps) 
   const searchParam = params.search || params.ref || undefined;
   const timeframeParam = (params.timeframe as BookingTimeframe) || "6_MONTHS";
 
-  const [result, depositSetting, servicesRes] = await Promise.all([
+  const [result, depositSetting, servicesRes, cookieStore] = await Promise.all([
     getAllBookings({
       status: statusParam,
       search: searchParam,
@@ -35,6 +37,7 @@ export default async function BookingsPage({ searchParams }: BookingsPageProps) 
       orderBy: { updatedAt: "desc" },
     }),
     getActiveServices(),
+    cookies(),
   ]);
 
   const bookings = result.success ? result.data.bookings : [];
@@ -42,8 +45,10 @@ export default async function BookingsPage({ searchParams }: BookingsPageProps) 
     ? result.data.counts
     : { all: 0, pending: 0, confirmed: 0, completed: 0, cancelled: 0, noShow: 0 };
   const services = servicesRes.success ? servicesRes.data : [];
+  const currencySymbol = depositSetting?.currencySymbol || "RM";
 
-  const currencySymbol = "RM";
+  const cookieLang = cookieStore.get("app_desk_language")?.value as DeskLanguageMode | undefined;
+  const initialLanguage: DeskLanguageMode = normalizeDeskLanguageMode(cookieLang);
 
   return (
     <AdminBookingsManager
@@ -55,6 +60,7 @@ export default async function BookingsPage({ searchParams }: BookingsPageProps) 
       initialRef={params.ref}
       initialSearch={params.search}
       initialTimeframe={timeframeParam}
+      initialLanguage={initialLanguage}
     />
   );
 }

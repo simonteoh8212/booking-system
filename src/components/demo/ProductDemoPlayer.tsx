@@ -375,7 +375,7 @@ export function ProductDemoPlayer() {
                           : "bg-slate-800 text-slate-500"
                       )}
                     >
-                      {isCompleted ? "✓" : stepNum}
+                      {isCompleted ? <Check className="h-3 w-3" /> : stepNum}
                     </div>
                     {stepNum < 4 && (
                       <div
@@ -527,8 +527,9 @@ export function ProductDemoPlayer() {
                   </div>
 
                   {/* Hold Notice */}
-                  <div className="p-2 rounded-lg bg-amber-500/10 border border-amber-500/20 text-[10px] text-amber-200">
-                    🔒 Clicking continue secures a 7-minute reservation lock to prevent anyone else from taking this slot.
+                  <div className="p-2 rounded-lg bg-amber-500/10 border border-amber-500/20 text-[10px] text-amber-200 flex items-start gap-1.5">
+                    <ShieldCheck className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                    <span>Clicking continue secures a 7-minute reservation lock to prevent anyone else from taking this slot.</span>
                   </div>
                 </div>
               )}

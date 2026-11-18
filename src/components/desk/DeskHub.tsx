@@ -28,10 +28,13 @@ import { DeskPinUnlockDialog } from "./DeskPinUnlockDialog";
 import { DeskLanguageSwitcher } from "./DeskLanguageSwitcher";
 import { DeskLanguageFirstTimeModal } from "./DeskLanguageFirstTimeModal";
 import { DeskText } from "./DeskText";
+import { FlagIcon } from "@/components/FlagIcon";
 import { RushModeControl } from "@/components/admin/RushModeControl";
 import { EmergencyClosureModal } from "@/components/admin/EmergencyClosureModal";
 import {
   DESK_DICT,
+  DESK_LANGUAGE_OPTIONS,
+  normalizeDeskLanguageMode,
   resolveServiceName,
   resolveDeskText,
 } from "@/lib/desk-i18n";
@@ -56,6 +59,7 @@ import {
   ShieldAlert,
   Users,
   LayoutDashboard,
+  Coins,
 } from "lucide-react";
 import {
   Sheet,
@@ -176,11 +180,8 @@ export function DeskHub({
         localStorage.setItem("app_currency_symbol", "RM");
         const storedLang = localStorage.getItem("app_desk_language") as DeskLanguageMode | null;
         const hasSelectedBefore = localStorage.getItem("desk_language_selected");
-        if (
-          storedLang &&
-          ["ONLY_ZH", "ONLY_EN", "BILINGUAL_ZH_FIRST", "BILINGUAL_EN_FIRST"].includes(storedLang)
-        ) {
-          setLanguageMode(storedLang);
+        if (storedLang) {
+          setLanguageMode(normalizeDeskLanguageMode(storedLang));
         } else if (!hasSelectedBefore) {
           setShowFirstTimeLangModal(true);
         }
@@ -407,7 +408,6 @@ export function DeskHub({
           : `开单结账成功！Sale recorded! ${serviceNamesStr ? `(${serviceNamesStr})` : ""} +${formattedTotal}`,
         {
           duration: 4500,
-          icon: "🎉",
         }
       );
     }
@@ -1066,7 +1066,7 @@ export function DeskHub({
               {/* Currency Display */}
               <div className="w-full h-12 px-3.5 rounded-xl border border-border/80 bg-muted/30 font-bold text-sm flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
-                  <span className="text-base">🇲🇾</span>
+                  <Coins className="h-4 w-4 text-muted-foreground shrink-0" />
                   <span className="text-xs text-muted-foreground">
                     {resolveDeskText(DESK_DICT.header.currency, languageMode).primary}
                   </span>
@@ -1082,23 +1082,19 @@ export function DeskHub({
                   {resolveDeskText(DESK_DICT.header.languageMode, languageMode).primary}
                 </div>
                 <div className="grid grid-cols-2 gap-1.5">
-                  {[
-                    { id: "ONLY_ZH", label: "纯中文" },
-                    { id: "ONLY_EN", label: "English" },
-                    { id: "BILINGUAL_ZH_FIRST", label: "中/英 (双语)" },
-                    { id: "BILINGUAL_EN_FIRST", label: "EN/中 (双语)" },
-                  ].map((item) => (
+                  {DESK_LANGUAGE_OPTIONS.map((item) => (
                     <button
                       key={item.id}
                       type="button"
-                      onClick={() => handleLanguageChange(item.id as DeskLanguageMode)}
-                      className={`h-9 px-2 text-xs font-bold rounded-lg border transition-all cursor-pointer ${
-                        languageMode === item.id
+                      onClick={() => handleLanguageChange(item.id)}
+                      className={`h-9 px-2 text-xs font-bold rounded-lg border transition-all cursor-pointer flex items-center justify-center gap-2 ${
+                        normalizeDeskLanguageMode(languageMode) === item.id
                           ? "bg-foreground text-background border-foreground shadow-xs"
                           : "bg-muted/40 text-muted-foreground border-border hover:bg-muted"
                       }`}
                     >
-                      {item.label}
+                      <FlagIcon country={item.country} />
+                      <span>{item.label}</span>
                     </button>
                   ))}
                 </div>

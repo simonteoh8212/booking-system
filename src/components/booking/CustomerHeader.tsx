@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { useCustomerLanguage } from "./CustomerLanguageContext";
-import { CalendarDays, Search, Globe } from "lucide-react";
+import { CalendarDays, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { FlagIcon } from "@/components/FlagIcon";
 
 interface CustomerHeaderProps {
   businessName?: string;
@@ -32,29 +33,19 @@ export function CustomerHeader({ businessName = "Our Salon" }: CustomerHeaderPro
 
         {/* Right Actions: Language Switcher + Check Booking */}
         <div className="flex items-center gap-1.5 shrink-0">
-          {/* Top Bar Language Switcher Button */}
           <Button
             type="button"
             variant="outline"
             size="sm"
             onClick={toggleLanguage}
-            className="h-9 px-2.5 rounded-xl text-xs font-bold border border-border/80 bg-card hover:bg-muted text-foreground flex items-center gap-1.5 shadow-2xs cursor-pointer active:scale-95"
-            title="Switch Language (English / 中文)"
+            className="h-9 px-2.5 rounded-xl text-xs font-semibold border border-border/80 bg-card hover:bg-muted text-foreground flex items-center gap-1.5 shadow-2xs cursor-pointer active:scale-95"
+            title={language === "zh" ? "Switch to English" : "切换中文"}
             aria-label="Switch Language"
           >
-            <Globe className="h-3.5 w-3.5 text-primary shrink-0" />
-            <div className="flex items-center gap-1 text-[11px]">
-              <span className={language === "zh" ? "font-black text-primary" : "text-muted-foreground"}>
-                中
-              </span>
-              <span className="text-muted-foreground/40">/</span>
-              <span className={language === "en" ? "font-black text-primary" : "text-muted-foreground"}>
-                EN
-              </span>
-            </div>
+            <FlagIcon country={language === "zh" ? "CN" : "UK"} />
+            <span>{language === "zh" ? "中文" : "EN"}</span>
           </Button>
 
-          {/* Check Booking Button */}
           <Link
             href="/check-booking"
             className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground px-2.5 py-1.5 rounded-xl hover:bg-muted transition-colors border shadow-2xs h-9"

@@ -9,6 +9,7 @@ import {
   generateDuitNowQRDataUrl,
 } from "@/lib/duitnow";
 import type { ActionResult, DepositSettingDto, DeskLanguageMode } from "@/types";
+import { normalizeDeskLanguageMode } from "@/lib/desk-i18n";
 
 const DEFAULT_SETTING: DepositSettingDto = {
   isEnabled: false,
@@ -20,7 +21,7 @@ const DEFAULT_SETTING: DepositSettingDto = {
   recipientName: "TEOH CHUN SEONG",
   currency: process.env.NEXT_PUBLIC_CURRENCY_CODE || "MYR",
   currencySymbol: process.env.NEXT_PUBLIC_CURRENCY_SYMBOL || "RM",
-  deskLanguage: "BILINGUAL_ZH_FIRST",
+  deskLanguage: "ONLY_EN",
   showTodaySales: true,
   showYesterdaySales: true,
   showMonthlySales: true,
@@ -46,7 +47,7 @@ export async function getOrEnsurePrimaryDepositSetting() {
         id: "default",
         currency: process.env.NEXT_PUBLIC_CURRENCY_CODE || "MYR",
         currencySymbol: process.env.NEXT_PUBLIC_CURRENCY_SYMBOL || "RM",
-        deskLanguage: "BILINGUAL_ZH_FIRST",
+        deskLanguage: "ONLY_EN",
       },
     });
   }
@@ -93,7 +94,7 @@ export async function getDepositSetting(): Promise<ActionResult<DepositSettingDt
         recipientName: setting.recipientName ?? "TEOH CHUN SEONG",
         currency,
         currencySymbol,
-        deskLanguage: (setting.deskLanguage as DeskLanguageMode) || "BILINGUAL_ZH_FIRST",
+        deskLanguage: normalizeDeskLanguageMode(setting.deskLanguage),
         showTodaySales: setting.showTodaySales ?? true,
         showYesterdaySales: setting.showYesterdaySales ?? true,
         showMonthlySales: setting.showMonthlySales ?? true,
@@ -128,7 +129,7 @@ export async function updateDepositSetting(
 
     const currency = "MYR";
     const currencySymbol = "RM";
-    const deskLanguage = input.deskLanguage || "BILINGUAL_ZH_FIRST";
+    const deskLanguage = normalizeDeskLanguageMode(input.deskLanguage);
 
     // Find primary canonical row
     const primary = await getOrEnsurePrimaryDepositSetting();
@@ -177,7 +178,7 @@ export async function updateDepositSetting(
         recipientName: updated.recipientName,
         currency: updated.currency,
         currencySymbol: updated.currencySymbol,
-        deskLanguage: (updated.deskLanguage as DeskLanguageMode) || "BILINGUAL_ZH_FIRST",
+        deskLanguage: normalizeDeskLanguageMode(updated.deskLanguage),
       },
     };
   } catch (error) {
@@ -194,10 +195,11 @@ export async function updateDeskLanguageSetting(
 ): Promise<ActionResult<{ deskLanguage: DeskLanguageMode }>> {
   await requireAdmin();
   try {
+    const normalized = normalizeDeskLanguageMode(mode);
     const primary = await getOrEnsurePrimaryDepositSetting();
     const updated = await prisma.depositSetting.update({
       where: { id: primary.id },
-      data: { deskLanguage: mode },
+      data: { deskLanguage: normalized },
     });
 
     revalidatePath("/admin/desk");
@@ -205,7 +207,7 @@ export async function updateDeskLanguageSetting(
 
     return {
       success: true,
-      data: { deskLanguage: (updated.deskLanguage as DeskLanguageMode) || "BILINGUAL_ZH_FIRST" },
+      data: { deskLanguage: normalizeDeskLanguageMode(updated.deskLanguage) },
     };
   } catch (error) {
     console.error("[updateDeskLanguageSetting]", error);
@@ -335,7 +337,7 @@ export async function updateDeskScoreboardSettings(input: {
         recipientName: updated.recipientName ?? "Merchant",
         currency: updated.currency,
         currencySymbol: updated.currencySymbol,
-        deskLanguage: (updated.deskLanguage as DeskLanguageMode) || "BILINGUAL_ZH_FIRST",
+        deskLanguage: normalizeDeskLanguageMode(updated.deskLanguage),
         showTodaySales: updated.showTodaySales ?? true,
         showYesterdaySales: updated.showYesterdaySales ?? true,
         showMonthlySales: updated.showMonthlySales ?? true,

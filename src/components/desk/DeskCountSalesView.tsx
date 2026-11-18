@@ -1,10 +1,9 @@
 "use client";
 
-import { useState, useTransition, useEffect } from "react";
+import { useState, useTransition, useEffect, useRef } from "react";
 import { recordDeskSale, type DeskAppointmentItem } from "@/actions/desk";
 import { lookupMembersForCheckout } from "@/actions/members";
-import { formatPrice, getServiceImage } from "@/lib/utils";
-import Image from "next/image";
+import { formatPrice, generateIdempotencyKey } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -17,21 +16,19 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import type { ServiceDto, DeskLanguageMode, MemberDto } from "@/types";
-import { DESK_DICT, resolveServiceName, resolveDeskText } from "@/lib/desk-i18n";
+import { resolveServiceName } from "@/lib/desk-i18n";
 import {
   ArrowLeft,
   CalendarCheck,
   UserPlus,
-  CheckCircle2,
+  Check,
   Loader2,
   AlertCircle,
   Receipt,
-  Scissors,
   Search,
   Wallet,
   Ticket,
   X,
-  ShoppingBag,
   Banknote,
   QrCode,
   CreditCard,
@@ -66,6 +63,9 @@ export function DeskCountSalesView({
   onBack,
   onSuccess,
 }: DeskCountSalesViewProps) {
+  const isZh = languageMode === "ONLY_ZH";
+  const t = (en: string, zh: string) => (isZh ? zh : en);
+
   const fallbackShowBoth = !showWalkIn && !showBookedCheckout;
   const canShowWalkIn = fallbackShowBoth || showWalkIn;
   const canShowBooked = fallbackShowBoth || showBookedCheckout;
@@ -82,10 +82,8 @@ export function DeskCountSalesView({
   const [walkinName, setWalkinName] = useState<string>("");
   const [walkinPhone, setWalkinPhone] = useState<string>("");
 
-  // Catalog filter tab
   const [catalogFilter, setCatalogFilter] = useState<"ALL" | "SERVICE" | "PRODUCT">("ALL");
 
-  // Member lookup & redemption state
   const [memberSearchQuery, setMemberSearchQuery] = useState<string>("");
   const [memberSearchResults, setMemberSearchResults] = useState<MemberDto[]>([]);
   const [isSearchingMember, setIsSearchingMember] = useState(false);
@@ -115,6 +113,8 @@ export function DeskCountSalesView({
 
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const checkoutIdempotencyKeyRef = useRef<string | null>(null);
+  const isSubmittingSaleRef = useRef(false);
   const [isPending, startTransition] = useTransition();
 
   const activeAppointment = todayAppointments.find(
@@ -153,7 +153,6 @@ export function DeskCountSalesView({
     return next;
   }
 
-  // Auto-load member profile when an appointment is selected
   useEffect(() => {
     let ignore = false;
     async function loadAppointmentMember() {
@@ -269,55 +268,68 @@ export function DeskCountSalesView({
   function handleOpenConfirm() {
     setErrorMessage(null);
     if (selectedServiceIds.length === 0) {
-      setErrorMessage("Select at least 1 item");
+      setErrorMessage(t("Select at least 1 item.", "请至少选择 1 项服务或商品。"));
       return;
     }
     if (sourceType === "APPOINTMENT" && !selectedAppointmentId) {
-      setErrorMessage("Select an appointment");
+      setErrorMessage(t("Select an appointment.", "请选择要结账的预约。"));
       return;
     }
+    checkoutIdempotencyKeyRef.current = generateIdempotencyKey();
+    isSubmittingSaleRef.current = false;
     setIsConfirmOpen(true);
   }
 
   function handleFinalizeSale() {
+    if (isSubmittingSaleRef.current) return;
+    isSubmittingSaleRef.current = true;
     setErrorMessage(null);
+    const key = checkoutIdempotencyKeyRef.current || generateIdempotencyKey();
+    checkoutIdempotencyKeyRef.current = key;
+
     startTransition(async () => {
-      const redemptionArray = Object.entries(promoRedemptions)
-        .filter(([sid, pkgId]) => selectedServiceIds.includes(sid) && Boolean(pkgId))
-        .map(([serviceId, memberPackageId]) => ({ serviceId, memberPackageId }));
+      try {
+        const redemptionArray = Object.entries(promoRedemptions)
+          .filter(([sid, pkgId]) => selectedServiceIds.includes(sid) && Boolean(pkgId))
+          .map(([serviceId, memberPackageId]) => ({ serviceId, memberPackageId }));
 
-      const res = await recordDeskSale({
-        type: sourceType,
-        bookingId: sourceType === "APPOINTMENT" ? selectedAppointmentId : undefined,
-        customerId: selectedMember?.id,
-        customerName:
-          sourceType === "WALKIN"
-            ? selectedMember?.name || walkinName.trim() || undefined
-            : undefined,
-        phoneNumber:
-          sourceType === "WALKIN"
-            ? selectedMember?.phoneNumber || walkinPhone.trim() || undefined
-            : undefined,
-        serviceIds: selectedServiceIds,
-        promoRedemptions: redemptionArray,
-        useCreditCents: creditDeductedCents,
-        paymentMethod,
-        notes: notes.trim() || undefined,
-      });
-
-      if (res.success) {
-        setIsConfirmOpen(false);
-        const chosenServices = services.filter((s) =>
-          selectedServiceIds.includes(s.id)
-        );
-        onSuccess({
+        const res = await recordDeskSale({
+          type: sourceType,
+          bookingId: sourceType === "APPOINTMENT" ? selectedAppointmentId : undefined,
+          customerId: selectedMember?.id,
+          customerName:
+            sourceType === "WALKIN"
+              ? selectedMember?.name || walkinName.trim() || undefined
+              : undefined,
+          phoneNumber:
+            sourceType === "WALKIN"
+              ? selectedMember?.phoneNumber || walkinPhone.trim() || undefined
+              : undefined,
           serviceIds: selectedServiceIds,
-          serviceNames: chosenServices.map((s) => s.name),
-          totalCents: res.data?.totalCents ?? netPayableCents,
+          promoRedemptions: redemptionArray,
+          useCreditCents: creditDeductedCents,
+          paymentMethod,
+          notes: notes.trim() || undefined,
+          idempotencyKey: key,
         });
-      } else {
-        setErrorMessage(res.error);
-        setIsConfirmOpen(false);
+
+        if (res.success) {
+          setIsConfirmOpen(false);
+          checkoutIdempotencyKeyRef.current = null;
+          const chosenServices = services.filter((s) =>
+            selectedServiceIds.includes(s.id)
+          );
+          onSuccess({
+            serviceIds: selectedServiceIds,
+            serviceNames: chosenServices.map((s) => s.name),
+            totalCents: res.data?.totalCents ?? netPayableCents,
+          });
+        } else {
+          setErrorMessage(res.error);
+          setIsConfirmOpen(false);
+        }
+      } finally {
+        isSubmittingSaleRef.current = false;
       }
     });
   }
@@ -333,132 +345,127 @@ export function DeskCountSalesView({
     return true;
   });
 
-  const isZh = languageMode === "ONLY_ZH";
+  const paymentLabel =
+    paymentMethod === "CASH"
+      ? t("Cash", "现金")
+      : paymentMethod === "DUITNOW_QR"
+      ? "QR"
+      : t("Card", "刷卡");
+
+  const itemCountLabel = isZh
+    ? `${selectedServices.length} 项`
+    : `${selectedServices.length} ${selectedServices.length === 1 ? "item" : "items"}`;
 
   return (
-    <div className="space-y-5 pb-44 md:pb-24 lg:pb-8 max-w-6xl mx-auto select-none">
+    <div className="space-y-5 pb-36 md:pb-6 select-none">
       {/* Top Bar */}
-      <div className="flex items-center justify-between border-b border-border pb-3.5 gap-3">
-        <Button
-          type="button"
-          onClick={onBack}
-          variant="outline"
-          size="sm"
-          className="h-10 px-4 rounded-lg font-semibold gap-2 cursor-pointer"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          <span>{isZh ? "返回" : "Back"}</span>
-        </Button>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5">
+          <Button
+            type="button"
+            onClick={onBack}
+            variant="outline"
+            size="sm"
+            className="h-9 px-3 rounded-lg font-semibold gap-1.5 cursor-pointer"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            <span>{t("Back", "返回")}</span>
+          </Button>
+          <h1 className="text-lg sm:text-xl font-bold tracking-tight text-foreground">
+            {t("New Sale", "收银开单")}
+          </h1>
+        </div>
 
-        <h1 className="text-lg sm:text-xl font-bold tracking-tight text-foreground">
-          {isZh ? "收银开单" : "New Sale"}
-        </h1>
-
-        <div className="w-16" />
+        {canShowWalkIn && canShowBooked && (
+          <div className="inline-flex rounded-lg border border-border bg-muted/60 p-1">
+            <button
+              type="button"
+              onClick={() => {
+                setSourceType("WALKIN");
+                setSelectedAppointmentId("");
+              }}
+              className={`px-3 py-1.5 rounded-md text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-colors ${
+                sourceType === "WALKIN"
+                  ? "bg-card text-foreground shadow-2xs"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <UserPlus className="h-3.5 w-3.5" />
+              <span>{t("Walk-in", "散客")}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setSourceType("APPOINTMENT")}
+              className={`px-3 py-1.5 rounded-md text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-colors ${
+                sourceType === "APPOINTMENT"
+                  ? "bg-card text-foreground shadow-2xs"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <CalendarCheck className="h-3.5 w-3.5" />
+              <span>
+                {t("Booked", "预约")} ({pendingAppointments.length})
+              </span>
+            </button>
+          </div>
+        )}
       </div>
 
       {errorMessage && (
-        <div className="p-3.5 rounded-xl bg-destructive/10 text-destructive text-sm font-medium flex items-center gap-2.5 border border-destructive/20">
+        <div className="p-3 rounded-xl bg-destructive/10 text-destructive text-sm font-medium flex items-center gap-2 border border-destructive/20">
           <AlertCircle className="h-4 w-4 shrink-0" />
           <span>{errorMessage}</span>
         </div>
       )}
 
-      {/* SPLIT-PANE POS WORKSPACE */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        {/* =============================================================== */}
-        {/* LEFT PANE: Client / Member + Catalog Grid                       */}
-        {/* =============================================================== */}
-        <div className="lg:col-span-7 space-y-4">
-          {/* Source Segmented Switch */}
-          {canShowWalkIn && canShowBooked && (
-            <div className="inline-flex w-full sm:w-auto rounded-lg border border-border bg-muted/60 p-1">
-              <button
-                type="button"
-                onClick={() => {
-                  setSourceType("WALKIN");
-                  setSelectedAppointmentId("");
-                }}
-                className={`flex-1 sm:flex-initial px-4 py-2 rounded-md text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer transition-colors ${
-                  sourceType === "WALKIN"
-                    ? "bg-card text-foreground shadow-2xs"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                <UserPlus className="h-3.5 w-3.5" />
-                <span>{isZh ? "散客开单" : "Walk-in"}</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setSourceType("APPOINTMENT")}
-                className={`flex-1 sm:flex-initial px-4 py-2 rounded-md text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer transition-colors ${
-                  sourceType === "APPOINTMENT"
-                    ? "bg-card text-foreground shadow-2xs"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                <CalendarCheck className="h-3.5 w-3.5" />
-                <span>
-                  {isZh ? "预约核销" : "Booked"} ({pendingAppointments.length})
-                </span>
-              </button>
-            </div>
-          )}
-
-          {/* Booked Appointment Selector */}
+      {/* Split-Pane POS Workspace (md+ side-by-side) */}
+      <div className="grid grid-cols-1 md:grid-cols-12 gap-5 items-start">
+        {/* LEFT PANE: Client & Catalog */}
+        <div className="md:col-span-7 space-y-4">
           {sourceType === "APPOINTMENT" && (
-            <div className="p-3.5 rounded-xl border border-border bg-card space-y-2.5">
+            <div className="rounded-xl border border-border bg-card divide-y divide-border overflow-hidden max-h-52 overflow-y-auto">
               {pendingAppointments.length === 0 ? (
-                <p className="text-xs text-muted-foreground py-2">
-                  {isZh ? "今日暂无待结账预约" : "No pending appointments today"}
+                <p className="text-xs text-muted-foreground py-6 text-center">
+                  {t("No pending appointments today", "今日暂无待结账预约")}
                 </p>
               ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto">
-                  {pendingAppointments.map((apt) => {
-                    const isSelected = apt.id === selectedAppointmentId;
-                    return (
-                      <button
-                        key={apt.id}
-                        type="button"
-                        onClick={() => handleSelectAppointment(apt.id)}
-                        className={`p-3 rounded-lg border text-left cursor-pointer transition-colors ${
-                          isSelected
-                            ? "border-primary bg-accent"
-                            : "bg-background hover:bg-muted/40"
-                        }`}
-                      >
-                        <div className="flex justify-between items-center text-sm font-semibold">
-                          <span className="truncate">{apt.customerName}</span>
-                          <span className="font-mono text-xs text-muted-foreground tabular-nums">
-                            {apt.startDatetime.slice(11, 16)}
-                          </span>
+                pendingAppointments.map((apt) => {
+                  const isSelected = apt.id === selectedAppointmentId;
+                  return (
+                    <button
+                      key={apt.id}
+                      type="button"
+                      onClick={() => handleSelectAppointment(apt.id)}
+                      className={`w-full px-3.5 py-2.5 text-left cursor-pointer transition-colors flex items-center justify-between gap-2 ${
+                        isSelected ? "bg-accent" : "hover:bg-muted/40"
+                      }`}
+                    >
+                      <div className="min-w-0">
+                        <div className="text-sm font-semibold truncate">{apt.customerName}</div>
+                        <div className="text-xs text-muted-foreground truncate">
+                          {resolveServiceName(apt.serviceName, languageMode).primary}
                         </div>
-                        <div className="text-xs text-muted-foreground truncate mt-0.5">
-                          {apt.serviceName}
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
+                      </div>
+                      <span className="text-xs text-muted-foreground tabular-nums shrink-0">
+                        {apt.startDatetime.slice(11, 16)}
+                      </span>
+                    </button>
+                  );
+                })
               )}
             </div>
           )}
 
-          {/* Walk-in Member Lookup / Optional Info */}
           {sourceType === "WALKIN" && !selectedMember && (
-            <div className="p-3.5 rounded-xl border border-border bg-card space-y-2.5">
+            <div className="space-y-2">
               <div className="flex items-center gap-2">
                 <div className="relative flex-1">
-                  <Search className="h-4 w-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
+                  <Search className="h-4 w-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                   <Input
-                    placeholder={
-                      isZh
-                        ? "搜索会员手机或姓名..."
-                        : "Search member phone or name..."
-                    }
+                    placeholder={t("Member phone or name…", "搜索会员手机或姓名…")}
                     value={memberSearchQuery}
                     onChange={(e) => handleMemberSearchChange(e.target.value)}
-                    className="pl-9 h-9 rounded-lg text-sm"
+                    className="pl-9 h-9 rounded-lg text-base sm:text-sm bg-card"
                   />
                   {isSearchingMember && (
                     <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground absolute right-3 top-1/2 -translate-y-1/2" />
@@ -469,31 +476,31 @@ export function DeskCountSalesView({
                   size="sm"
                   variant="outline"
                   onClick={() => setShowWalkinFields(!showWalkinFields)}
-                  className="h-9 rounded-lg text-xs cursor-pointer"
+                  className="h-9 rounded-lg text-xs cursor-pointer shrink-0"
                 >
-                  {showWalkinFields ? "Hide" : "+ Info"}
+                  {showWalkinFields ? t("Hide", "收起") : t("+ Walk-in Info", "+ 填写资料")}
                 </Button>
               </div>
 
               {memberSearchResults.length > 0 && (
-                <div className="divide-y divide-border border border-border rounded-lg overflow-hidden max-h-44 overflow-y-auto">
+                <div className="divide-y divide-border border border-border rounded-xl bg-card overflow-hidden max-h-44 overflow-y-auto">
                   {memberSearchResults.map((m) => (
                     <button
                       key={m.id}
                       type="button"
                       onClick={() => handleSelectWalkinMember(m)}
-                      className="w-full p-2.5 bg-background hover:bg-muted/50 text-left flex items-center justify-between gap-2 cursor-pointer"
+                      className="w-full px-3.5 py-2.5 hover:bg-muted/40 text-left flex items-center justify-between gap-2 cursor-pointer"
                     >
-                      <div>
-                        <div className="text-sm font-semibold">{m.name}</div>
-                        <div className="text-xs font-mono text-muted-foreground">
+                      <div className="min-w-0">
+                        <div className="text-sm font-semibold truncate">{m.name}</div>
+                        <div className="text-xs text-muted-foreground tabular-nums">
                           {m.phoneNumber}
                           {m.activePackages.length > 0
-                            ? ` · ${m.activePackages.length} promo`
+                            ? ` · ${m.activePackages.length} ${t("promo", "配套")}`
                             : ""}
                         </div>
                       </div>
-                      <span className="font-mono font-bold text-xs text-primary tabular-nums">
+                      <span className="font-semibold text-xs text-primary tabular-nums shrink-0">
                         {formatPrice(m.creditBalanceCents, currencySymbol)}
                       </span>
                     </button>
@@ -502,39 +509,37 @@ export function DeskCountSalesView({
               )}
 
               {showWalkinFields && (
-                <div className="grid grid-cols-2 gap-2 pt-1">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <Input
-                    placeholder="Customer Name"
+                    placeholder={t("Customer Name", "顾客姓名")}
                     value={walkinName}
                     onChange={(e) => setWalkinName(e.target.value)}
-                    className="h-9 rounded-lg text-sm"
+                    className="h-9 rounded-lg text-base sm:text-sm bg-card"
                   />
                   <Input
                     type="tel"
-                    placeholder="Phone Number"
+                    placeholder={t("Phone Number", "手机号码")}
                     value={walkinPhone}
                     onChange={(e) => setWalkinPhone(e.target.value)}
-                    className="h-9 rounded-lg text-sm font-mono"
+                    className="h-9 rounded-lg text-base sm:text-sm bg-card tabular-nums"
                   />
                 </div>
               )}
             </div>
           )}
 
-          {/* Selected Member Strip */}
           {selectedMember && (
-            <div className="p-3.5 rounded-xl border border-primary/40 bg-accent/50 flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-2.5 flex-wrap">
-                <Badge className="text-[11px]">Member</Badge>
-                <span className="font-bold text-sm">{selectedMember.name}</span>
-                <span className="font-mono text-xs text-muted-foreground">
+            <div className="px-3.5 py-2.5 rounded-xl border border-primary/30 bg-accent/50 flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-semibold text-sm text-foreground">{selectedMember.name}</span>
+                <span className="text-xs text-muted-foreground tabular-nums">
                   {selectedMember.phoneNumber}
                 </span>
-                <span className="text-xs font-mono font-bold text-primary tabular-nums">
+                <span className="text-xs font-semibold text-primary tabular-nums">
                   {formatPrice(selectedMember.creditBalanceCents, currencySymbol)}
                 </span>
                 {selectedMember.activePackages.map((pkg) => (
-                  <Badge key={pkg.id} variant="secondary" className="text-[11px] font-mono">
+                  <Badge key={pkg.id} variant="secondary" className="text-[11px] tabular-nums">
                     {pkg.name} ({pkg.remainingSessions}/{pkg.totalSessions})
                   </Badge>
                 ))}
@@ -548,8 +553,8 @@ export function DeskCountSalesView({
                     setWalkinPhone("");
                     setPromoRedemptions({});
                   }}
-                  className="text-muted-foreground hover:text-foreground cursor-pointer"
-                  aria-label="Clear member"
+                  className="text-muted-foreground hover:text-foreground cursor-pointer p-1"
+                  aria-label={t("Clear member", "清除会员")}
                 >
                   <X className="h-4 w-4" />
                 </button>
@@ -557,7 +562,6 @@ export function DeskCountSalesView({
             </div>
           )}
 
-          {/* Catalog Filter Bar (only shown if products exist) */}
           {hasProducts && (
             <div className="inline-flex rounded-lg border border-border bg-muted/60 p-1">
               {(["ALL", "SERVICE", "PRODUCT"] as const).map((tab) => (
@@ -571,18 +575,21 @@ export function DeskCountSalesView({
                       : "text-muted-foreground hover:text-foreground"
                   }`}
                 >
-                  {tab === "ALL" ? "All" : tab === "SERVICE" ? "Services" : "Products"}
+                  {tab === "ALL"
+                    ? t("All", "全部")
+                    : tab === "SERVICE"
+                    ? t("Services", "服务")
+                    : t("Products", "商品")}
                 </button>
               ))}
             </div>
           )}
 
-          {/* Service & Product Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+          {/* Unified Clean POS Catalog List (No clipart or orphan grid cells) */}
+          <div className="rounded-xl border border-border bg-card divide-y divide-border overflow-hidden">
             {visibleServices.map((service) => {
               const isSelected = selectedServiceIds.includes(service.id);
               const svcResolved = resolveServiceName(service.name, languageMode);
-              const svcImage = getServiceImage(service.name);
               const isPromoCovered = Boolean(promoRedemptions[service.id]);
 
               return (
@@ -590,63 +597,45 @@ export function DeskCountSalesView({
                   key={service.id}
                   type="button"
                   onClick={() => toggleService(service.id)}
-                  className={`p-3.5 rounded-xl text-left flex items-center justify-between gap-3 transition-all cursor-pointer border ${
-                    isSelected
-                      ? "border-primary bg-accent/60 ring-1 ring-primary"
-                      : "border-border bg-card hover:bg-muted/30"
+                  className={`w-full px-4 py-3 text-left flex items-center justify-between gap-3 transition-colors cursor-pointer ${
+                    isSelected ? "bg-accent/55" : "hover:bg-muted/35"
                   }`}
                 >
                   <div className="flex items-center gap-3 min-w-0 flex-1">
-                    {svcImage ? (
-                      <div className="relative w-11 h-11 rounded-lg overflow-hidden shrink-0 border border-border bg-muted/40">
-                        <Image
-                          src={svcImage}
-                          alt={service.name}
-                          fill
-                          unoptimized
-                          className="object-contain p-1"
-                          sizes="44px"
-                        />
-                      </div>
-                    ) : service.type === "PRODUCT" ? (
-                      <div className="w-11 h-11 rounded-lg bg-muted text-muted-foreground flex items-center justify-center shrink-0">
-                        <ShoppingBag className="h-5 w-5" />
-                      </div>
-                    ) : (
-                      <div className="w-11 h-11 rounded-lg bg-muted text-muted-foreground flex items-center justify-center shrink-0">
-                        <Scissors className="h-5 w-5" />
-                      </div>
-                    )}
+                    <span
+                      className={`w-5 h-5 rounded-md border flex items-center justify-center shrink-0 transition-colors ${
+                        isSelected
+                          ? "bg-primary border-primary text-primary-foreground"
+                          : "border-muted-foreground/35 bg-background"
+                      }`}
+                    >
+                      {isSelected && <Check className="h-3.5 w-3.5 stroke-[2.5]" />}
+                    </span>
 
                     <div className="min-w-0">
-                      <div className="flex items-center gap-1.5">
-                        {isSelected && (
-                          <CheckCircle2 className="h-3.5 w-3.5 text-primary shrink-0" />
-                        )}
-                        <span className="font-semibold text-sm truncate text-foreground">
-                          {svcResolved.primary}
-                        </span>
+                      <div className="font-semibold text-sm text-foreground truncate">
+                        {svcResolved.primary}
                       </div>
                       <div className="text-xs text-muted-foreground tabular-nums">
                         {service.type === "PRODUCT"
-                          ? "Product"
+                          ? t("Product", "零售商品")
                           : `${service.durationMinutes} min`}
                       </div>
                     </div>
                   </div>
 
-                  <div className="text-right shrink-0 font-mono tabular-nums">
+                  <div className="text-right shrink-0 tabular-nums">
                     {isPromoCovered ? (
-                      <div className="flex flex-col items-end">
-                        <span className="text-[11px] line-through text-muted-foreground">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs line-through text-muted-foreground">
                           {formatPrice(service.priceCents, currencySymbol)}
                         </span>
-                        <span className="text-sm font-bold text-primary">
+                        <span className="text-sm font-semibold text-primary">
                           {currencySymbol} 0.00
                         </span>
                       </div>
                     ) : (
-                      <span className="text-sm font-bold text-foreground">
+                      <span className="text-sm font-semibold text-foreground">
                         {formatPrice(service.priceCents, currencySymbol)}
                       </span>
                     )}
@@ -657,27 +646,23 @@ export function DeskCountSalesView({
           </div>
         </div>
 
-        {/* =============================================================== */}
-        {/* RIGHT PANE (STICKY): Live Order Ticket                          */}
-        {/* =============================================================== */}
-        <div className="lg:col-span-5 lg:sticky lg:top-6 rounded-xl border border-border bg-card p-5 space-y-4">
+        {/* RIGHT PANE (STICKY on md+): Live Order Ticket */}
+        <div className="md:col-span-5 md:sticky md:top-6 rounded-xl border border-border bg-card p-4 sm:p-5 space-y-4">
           <div className="flex items-center justify-between border-b border-border pb-3">
             <span className="text-sm font-bold text-foreground">
-              {isZh ? "结账明细" : "Order Ticket"}
+              {t("Order Ticket", "结账明细")}
             </span>
-            <span className="text-xs font-mono text-muted-foreground tabular-nums">
-              {selectedServices.length} items
-            </span>
+            <span className="text-xs text-muted-foreground tabular-nums">{itemCountLabel}</span>
           </div>
 
-          {/* Line Items */}
           {selectedServices.length === 0 ? (
             <p className="text-xs text-muted-foreground py-6 text-center">
-              Select services or products from the catalog
+              {t("Select items from the catalog", "请从左侧选择服务或商品")}
             </p>
           ) : (
-            <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+            <div className="divide-y divide-border/60 max-h-60 overflow-y-auto">
               {selectedServices.map((s) => {
+                const displayName = resolveServiceName(s.name, languageMode).primary;
                 const matchingPkg = selectedMember?.activePackages.find((p) =>
                   p.serviceIds.includes(s.id)
                 );
@@ -686,12 +671,9 @@ export function DeskCountSalesView({
                 );
 
                 return (
-                  <div
-                    key={s.id}
-                    className="flex items-center justify-between gap-2 text-sm py-1.5 border-b border-border/50 last:border-0"
-                  >
+                  <div key={s.id} className="flex items-center justify-between gap-2 text-sm py-2">
                     <div className="min-w-0 flex-1">
-                      <div className="font-medium truncate">{s.name}</div>
+                      <div className="font-medium truncate text-foreground">{displayName}</div>
                       {matchingPkg && (
                         <button
                           type="button"
@@ -705,15 +687,15 @@ export function DeskCountSalesView({
                           <Ticket className="h-3 w-3" />
                           <span>
                             {isRedeemed
-                              ? `Promo Applied (-1)`
-                              : `Use ${matchingPkg.name}`}
+                              ? t("Promo Applied (-1)", "已使用配套 (-1)")
+                              : `${t("Use", "使用")} ${matchingPkg.name}`}
                           </span>
                         </button>
                       )}
                     </div>
 
                     <div className="flex items-center gap-2 shrink-0">
-                      <span className="font-mono font-semibold tabular-nums">
+                      <span className="font-semibold tabular-nums">
                         {isRedeemed
                           ? `${currencySymbol} 0.00`
                           : formatPrice(s.priceCents, currencySymbol)}
@@ -721,8 +703,8 @@ export function DeskCountSalesView({
                       <button
                         type="button"
                         onClick={() => toggleService(s.id)}
-                        className="text-muted-foreground hover:text-destructive cursor-pointer"
-                        aria-label={`Remove ${s.name}`}
+                        className="text-muted-foreground hover:text-destructive cursor-pointer p-0.5"
+                        aria-label={t(`Remove ${displayName}`, `移除 ${displayName}`)}
                       >
                         <X className="h-3.5 w-3.5" />
                       </button>
@@ -733,7 +715,6 @@ export function DeskCountSalesView({
             </div>
           )}
 
-          {/* Member Credit Toggle */}
           {selectedMember &&
             selectedMember.creditBalanceCents > 0 &&
             balanceBeforeCreditCents > 0 && (
@@ -746,107 +727,96 @@ export function DeskCountSalesView({
                     className="h-4 w-4 rounded"
                   />
                   <Wallet className="h-3.5 w-3.5 text-primary" />
-                  <span>Deduct Member Credit</span>
+                  <span>{t("Deduct Member Credit", "扣除会员余额")}</span>
                 </span>
-                <span className="font-mono text-primary tabular-nums">
+                <span className="text-primary tabular-nums">
                   -{formatPrice(creditDeductedCents, currencySymbol)}
                 </span>
               </label>
             )}
 
-          {/* Deductions Summary */}
           {(promoDiscountCents > 0 || depositPaidCents > 0 || creditDeductedCents > 0) && (
             <div className="space-y-1 pt-2 border-t border-border text-xs tabular-nums">
               <div className="flex justify-between text-muted-foreground">
-                <span>Subtotal</span>
-                <span className="font-mono">{formatPrice(totalCents, currencySymbol)}</span>
+                <span>{t("Subtotal", "小计")}</span>
+                <span>{formatPrice(totalCents, currencySymbol)}</span>
               </div>
               {promoDiscountCents > 0 && (
                 <div className="flex justify-between text-primary">
-                  <span>Promo</span>
-                  <span className="font-mono">
-                    -{formatPrice(promoDiscountCents, currencySymbol)}
-                  </span>
+                  <span>{t("Promo", "配套抵扣")}</span>
+                  <span>-{formatPrice(promoDiscountCents, currencySymbol)}</span>
                 </div>
               )}
               {depositPaidCents > 0 && (
                 <div className="flex justify-between text-primary">
-                  <span>Deposit</span>
-                  <span className="font-mono">
-                    -{formatPrice(depositPaidCents, currencySymbol)}
-                  </span>
+                  <span>{t("Deposit", "已付定金")}</span>
+                  <span>-{formatPrice(depositPaidCents, currencySymbol)}</span>
                 </div>
               )}
               {creditDeductedCents > 0 && (
                 <div className="flex justify-between text-primary">
-                  <span>Credit</span>
-                  <span className="font-mono">
-                    -{formatPrice(creditDeductedCents, currencySymbol)}
-                  </span>
+                  <span>{t("Credit", "会员余额")}</span>
+                  <span>-{formatPrice(creditDeductedCents, currencySymbol)}</span>
                 </div>
               )}
             </div>
           )}
 
-          {/* Payment Method Segmented Bar */}
-          <div className="space-y-1.5 pt-2 border-t border-border">
-            <div className="grid grid-cols-3 gap-2">
-              {(
-                [
-                  { id: "CASH", label: isZh ? "现金" : "Cash", icon: Banknote },
-                  { id: "DUITNOW_QR", label: "QR", icon: QrCode },
-                  { id: "CARD", label: isZh ? "刷卡" : "Card", icon: CreditCard },
-                ] as const
-              ).map((pm) => {
-                const active = paymentMethod === pm.id;
-                return (
-                  <button
-                    key={pm.id}
-                    type="button"
-                    onClick={() => setPaymentMethod(pm.id)}
-                    className={`py-2.5 rounded-lg text-xs font-semibold border flex items-center justify-center gap-1.5 cursor-pointer transition-colors ${
-                      active
-                        ? "border-primary bg-accent text-accent-foreground"
-                        : "border-border bg-background text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    <pm.icon className="h-3.5 w-3.5" />
-                    <span>{pm.label}</span>
-                  </button>
-                );
-              })}
-            </div>
+          <div className="grid grid-cols-3 gap-2 pt-2 border-t border-border">
+            {(
+              [
+                { id: "CASH", label: t("Cash", "现金"), icon: Banknote },
+                { id: "DUITNOW_QR", label: "QR", icon: QrCode },
+                { id: "CARD", label: t("Card", "刷卡"), icon: CreditCard },
+              ] as const
+            ).map((pm) => {
+              const active = paymentMethod === pm.id;
+              return (
+                <button
+                  key={pm.id}
+                  type="button"
+                  onClick={() => setPaymentMethod(pm.id)}
+                  className={`py-2 rounded-lg text-xs font-semibold border flex items-center justify-center gap-1.5 cursor-pointer transition-colors ${
+                    active
+                      ? "border-primary bg-accent text-accent-foreground"
+                      : "border-border bg-background text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  <pm.icon className="h-3.5 w-3.5" />
+                  <span>{pm.label}</span>
+                </button>
+              );
+            })}
           </div>
 
           <Input
-            placeholder={isZh ? "备注 (可选)" : "Note (optional)"}
+            placeholder={t("Note (optional)", "备注 (可选)")}
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
-            className="h-9 rounded-lg text-xs"
+            className="h-9 rounded-lg text-base sm:text-xs"
           />
 
-          {/* Desktop / Tablet Collect CTA */}
-          <div className="hidden lg:block pt-2">
+          <div className="hidden md:block pt-1">
             <Button
               type="button"
               onClick={handleOpenConfirm}
               disabled={selectedServiceIds.length === 0}
-              className="w-full h-12 rounded-xl font-bold text-base justify-between px-5 cursor-pointer"
+              className="w-full h-11 rounded-xl font-bold text-sm justify-between px-4 cursor-pointer"
             >
-              <span>{isZh ? "确认收款" : "Collect"}</span>
-              <span className="font-mono tabular-nums">
-                {formatPrice(netPayableCents, currencySymbol)}
-              </span>
+              <span>{t("Collect", "确认收款")}</span>
+              <span className="tabular-nums">{formatPrice(netPayableCents, currencySymbol)}</span>
             </Button>
           </div>
         </div>
       </div>
 
-      {/* Mobile Sticky Bottom Collect Bar (floats cleanly above the mobile pill bar) */}
-      <div className="lg:hidden fixed bottom-[84px] md:bottom-0 left-0 right-0 z-30 p-3 border-t border-border bg-card/95 backdrop-blur flex items-center justify-between gap-3">
+      {/* Mobile Sticky Bottom Collect Bar */}
+      <div className="md:hidden fixed bottom-[84px] left-0 right-0 z-30 p-3 border-t border-border bg-card/95 backdrop-blur flex items-center justify-between gap-3">
         <div>
-          <div className="text-[11px] text-muted-foreground font-medium">Total</div>
-          <div className="text-xl font-bold font-mono tabular-nums text-foreground">
+          <div className="text-[11px] text-muted-foreground font-medium">
+            {t("Total", "合计")}
+          </div>
+          <div className="text-lg font-bold tabular-nums text-foreground">
             {formatPrice(netPayableCents, currencySymbol)}
           </div>
         </div>
@@ -854,36 +824,36 @@ export function DeskCountSalesView({
           type="button"
           onClick={handleOpenConfirm}
           disabled={selectedServiceIds.length === 0}
-          className="h-11 px-6 rounded-xl font-bold gap-2 cursor-pointer"
+          className="h-10 px-5 rounded-xl font-bold gap-2 cursor-pointer"
         >
           <Receipt className="h-4 w-4" />
-          <span>{isZh ? "确认收款" : "Collect"}</span>
+          <span>{t("Collect", "确认收款")}</span>
         </Button>
       </div>
 
       {/* Receipt Confirmation Modal */}
       <Dialog open={isConfirmOpen} onOpenChange={setIsConfirmOpen}>
-        <DialogContent className="max-w-sm rounded-xl p-5">
+        <DialogContent className="max-w-sm rounded-2xl p-5">
           <DialogHeader>
             <DialogTitle className="text-lg font-bold">
-              {isZh ? "确认结账" : "Confirm Payment"}
+              {t("Confirm Payment", "确认结账")}
             </DialogTitle>
             <DialogDescription className="text-xs">
               {sourceType === "APPOINTMENT"
                 ? activeAppointment?.customerName
-                : selectedMember?.name || walkinName.trim() || "Walk-in"}{" "}
-              · {paymentMethod}
+                : selectedMember?.name || walkinName.trim() || t("Walk-in", "散客")}{" "}
+              · {paymentLabel}
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-2 py-2 border-y border-border text-sm">
             {selectedServices.map((s) => (
-              <div key={s.id} className="flex justify-between">
-                <span className="truncate pr-2">
-                  {s.name}
-                  {promoRedemptions[s.id] ? " (Promo)" : ""}
+              <div key={s.id} className="flex justify-between gap-2">
+                <span className="truncate">
+                  {resolveServiceName(s.name, languageMode).primary}
+                  {promoRedemptions[s.id] ? ` (${t("Promo", "配套")})` : ""}
                 </span>
-                <span className="font-mono font-semibold tabular-nums">
+                <span className="font-semibold tabular-nums shrink-0">
                   {promoRedemptions[s.id]
                     ? `${currencySymbol} 0.00`
                     : formatPrice(s.priceCents, currencySymbol)}
@@ -892,15 +862,15 @@ export function DeskCountSalesView({
             ))}
             {creditDeductedCents > 0 && (
               <div className="flex justify-between text-xs text-primary pt-1 border-t border-border">
-                <span>Member Credit</span>
-                <span className="font-mono tabular-nums">
+                <span>{t("Member Credit", "会员余额")}</span>
+                <span className="tabular-nums">
                   -{formatPrice(creditDeductedCents, currencySymbol)}
                 </span>
               </div>
             )}
             <div className="flex justify-between font-bold text-base pt-2 border-t border-border">
-              <span>{isZh ? "实收金额" : "Amount Due"}</span>
-              <span className="font-mono text-primary tabular-nums">
+              <span>{t("Amount Due", "实收金额")}</span>
+              <span className="text-primary tabular-nums">
                 {formatPrice(netPayableCents, currencySymbol)}
               </span>
             </div>
@@ -912,11 +882,11 @@ export function DeskCountSalesView({
               onClick={() => setIsConfirmOpen(false)}
               disabled={isPending}
             >
-              {resolveDeskText(DESK_DICT.countSalesView.modalCancelBtn, languageMode).primary}
+              {t("Back", "返回修改")}
             </Button>
             <Button onClick={handleFinalizeSale} disabled={isPending} className="gap-1.5">
               {isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-              <span>{isZh ? "完成" : "Confirm"}</span>
+              <span>{t("Confirm", "完成")}</span>
             </Button>
           </DialogFooter>
         </DialogContent>

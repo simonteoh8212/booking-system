@@ -60,7 +60,7 @@ export function DeskAppointmentsView({
   appointments,
   services,
   currencySymbol = "RM",
-  languageMode = "BILINGUAL_ZH_FIRST",
+  languageMode = "ONLY_EN",
   onBack,
   onRingUpAppointment,
   onRefresh,

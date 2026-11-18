@@ -1,5 +1,6 @@
 "use server";
 
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "./auth";
 import { getRequestClientIp, timingSafeSecretEqual } from "@/lib/auth";
@@ -12,8 +13,10 @@ import {
   toBusinessDateString,
   createBusinessDateTime,
   generateReferenceCode,
+  normalizePhoneNumber,
 } from "@/lib/utils";
 import { invalidateBookingCache } from "@/lib/booking-cache";
+import { normalizeDeskLanguageMode } from "@/lib/desk-i18n";
 import { revalidatePath } from "next/cache";
 import { getOrEnsurePrimaryDepositSetting } from "./deposit";
 import type {
@@ -267,8 +270,7 @@ export async function getDeskDailySummary(
 
     const currency = "MYR";
     const currencySymbol = "RM";
-    const deskLanguage =
-      (depositSetting?.deskLanguage as DeskLanguageMode) || "BILINGUAL_ZH_FIRST";
+    const deskLanguage = normalizeDeskLanguageMode(depositSetting?.deskLanguage);
     const showTodaySales = depositSetting?.showTodaySales ?? true;
     const showYesterdaySales = depositSetting?.showYesterdaySales ?? true;
     const showMonthlySales = depositSetting?.showMonthlySales ?? true;
@@ -397,6 +399,7 @@ interface RecordDeskSaleInput {
   useCreditCents?: number;
   paymentMethod: "CASH" | "DUITNOW_QR" | "CARD";
   notes?: string;
+  idempotencyKey?: string;
 }
 
 /**
@@ -407,6 +410,7 @@ export async function recordDeskSale(
   input: RecordDeskSaleInput
 ): Promise<ActionResult<{ referenceCode: string; totalCents: number }>> {
   await requireAdmin();
+  const idempotencyKey = input.idempotencyKey?.trim() || null;
 
   try {
     const {
@@ -461,222 +465,277 @@ export async function recordDeskSale(
     );
     const afterPromoCents = Math.max(0, grossSubtotalCents - promoDiscountCents);
 
-    const result = await prisma.$transaction(async (tx) => {
-      let targetCustomer = null;
-      let existingBooking = null;
-
-      if (type === "APPOINTMENT" && bookingId) {
-        existingBooking = await tx.booking.findUnique({
-          where: { id: bookingId },
-          include: { customer: true },
-        });
-        if (!existingBooking) {
-          throw new Error("Booking not found.");
+    const result = await prisma.$transaction(
+      async (tx) => {
+        if (idempotencyKey) {
+          const existingIdempotent = await tx.booking.findUnique({
+            where: { checkoutIdempotencyKey: idempotencyKey },
+            select: { referenceCode: true, totalPriceCents: true },
+          });
+          if (existingIdempotent) {
+            return {
+              referenceCode: existingIdempotent.referenceCode,
+              totalCents: existingIdempotent.totalPriceCents,
+            };
+          }
         }
-        targetCustomer = existingBooking.customer;
-      } else if (customerId) {
-        targetCustomer = await tx.customer.findUnique({ where: { id: customerId } });
-      }
 
-      if (!targetCustomer) {
-        const cleanPhone = (phoneNumber || "").replace(/\s/g, "");
-        const finalName = (customerName || "").trim() || "Walk-in Customer";
-        const finalPhone = cleanPhone || `WALKIN-${Date.now()}`;
-        targetCustomer = await tx.customer.upsert({
-          where: { phoneNumber: finalPhone },
-          update: { name: finalName },
-          create: { name: finalName, phoneNumber: finalPhone },
-        });
-      }
+        let targetCustomer = null;
+        let existingBooking = null;
 
-      const depositPaidCents =
-        existingBooking?.depositDueCents && existingBooking.depositDueCents > 0
-          ? existingBooking.depositDueCents
-          : 0;
-      const balanceBeforeCreditCents = Math.max(0, afterPromoCents - depositPaidCents);
-
-      // Process Promo Session Redemptions
-      const redeemedNotes: string[] = [];
-      for (const item of itemLineData) {
-        if (!item.memberPackageId) continue;
-        const pkg = await tx.memberPackage.findUnique({
-          where: { id: item.memberPackageId },
-        });
-        if (!pkg || pkg.customerId !== targetCustomer.id) {
-          throw new Error("Invalid member promo package selected.");
+        if (type === "APPOINTMENT" && bookingId) {
+          existingBooking = await tx.booking.findUnique({
+            where: { id: bookingId },
+            include: { customer: true },
+          });
+          if (!existingBooking) {
+            throw new Error("Booking not found.");
+          }
+          if (existingBooking.status === "COMPLETED") {
+            throw new Error("This appointment has already been checked out.");
+          }
+          if (existingBooking.status === "CANCELLED") {
+            throw new Error("Cannot check out a cancelled appointment.");
+          }
+          targetCustomer = existingBooking.customer;
+        } else if (customerId) {
+          targetCustomer = await tx.customer.findUnique({ where: { id: customerId } });
         }
-        if (pkg.remainingSessions < 1) {
-          throw new Error(`No sessions remaining on promo "${pkg.name}".`);
-        }
-        const nextRemaining = pkg.remainingSessions - 1;
-        await tx.memberPackage.update({
-          where: { id: pkg.id },
-          data: {
-            remainingSessions: nextRemaining,
-            status: nextRemaining === 0 ? "COMPLETED" : "ACTIVE",
-          },
-        });
-        redeemedNotes.push(`${pkg.name} (-1, ${nextRemaining}/${pkg.totalSessions} left)`);
-      }
 
-      // Process Member Credit Deduction
-      let actualCreditUsedCents = 0;
-      let nextCreditBalance = targetCustomer.creditBalanceCents;
-      if (useCreditCents > 0 && balanceBeforeCreditCents > 0) {
-        actualCreditUsedCents = Math.min(
-          useCreditCents,
-          targetCustomer.creditBalanceCents,
-          balanceBeforeCreditCents
-        );
-        if (actualCreditUsedCents > 0) {
-          nextCreditBalance = targetCustomer.creditBalanceCents - actualCreditUsedCents;
-          await tx.customer.update({
-            where: { id: targetCustomer.id },
-            data: { creditBalanceCents: nextCreditBalance },
+        if (!targetCustomer) {
+          const cleanPhone = phoneNumber ? normalizePhoneNumber(phoneNumber) : "";
+          const finalName = (customerName || "").trim() || "Walk-in Customer";
+          const finalPhone = cleanPhone || `WALKIN-${Date.now()}`;
+          targetCustomer = await tx.customer.upsert({
+            where: { phoneNumber: finalPhone },
+            update: { name: finalName },
+            create: { name: finalName, phoneNumber: finalPhone },
           });
         }
-      }
 
-      // Net Cash/QR/Card collected TODAY (stored in totalPriceCents so sales reports never double-count)
-      const netCashCollectedCents = Math.max(
-        0,
-        balanceBeforeCreditCents - actualCreditUsedCents
-      );
+        const depositPaidCents =
+          existingBooking?.depositDueCents && existingBooking.depositDueCents > 0
+            ? existingBooking.depositDueCents
+            : 0;
+        const balanceBeforeCreditCents = Math.max(0, afterPromoCents - depositPaidCents);
 
-      const serviceNames = services.map((s) => s.name).join(", ");
-      const noteParts: string[] = [];
-      if (netCashCollectedCents > 0) {
-        noteParts.push(`Paid RM ${(netCashCollectedCents / 100).toFixed(2)} via ${paymentMethod}`);
-      } else {
-        noteParts.push(`Paid RM 0.00 (Covered by Promo/Credit)`);
-      }
-      if (actualCreditUsedCents > 0) {
-        noteParts.push(`Credit Used: RM ${(actualCreditUsedCents / 100).toFixed(2)}`);
-      }
-      if (redeemedNotes.length > 0) {
-        noteParts.push(`Promo: ${redeemedNotes.join("; ")}`);
-      }
-      if (notes) {
-        noteParts.push(notes);
-      }
-      const paymentNote = noteParts.join(" | ");
-
-      let finalBookingId = "";
-      let finalRefCode = "";
-
-      if (existingBooking) {
-        await tx.bookingItem.deleteMany({ where: { bookingId: existingBooking.id } });
-        await tx.bookingItem.createMany({
-          data: itemLineData.map((it) => ({
-            bookingId: existingBooking.id,
-            serviceId: it.serviceId,
-            priceCents: it.priceCents,
-            originalPriceCents: it.originalPriceCents,
-            memberPackageId: it.memberPackageId,
-          })),
-        });
-
-        const updated = await tx.booking.update({
-          where: { id: existingBooking.id },
-          data: {
-            customerId: targetCustomer.id,
-            status: "COMPLETED",
-            totalPriceCents: netCashCollectedCents,
-            creditUsedCents: actualCreditUsedCents,
-            promoDiscountCents,
-            balanceDueCents: 0,
-            notes: existingBooking.notes
-              ? `${existingBooking.notes} | ${paymentNote}`
-              : paymentNote,
-            receiptSubmittedAt: existingBooking.receiptSubmittedAt || new Date(),
-          },
-        });
-        finalBookingId = updated.id;
-        finalRefCode = updated.referenceCode;
-        invalidateBookingCache(updated.referenceCode, targetCustomer.phoneNumber);
-      } else {
-        let refCode = generateReferenceCode();
-        let attempts = 0;
-        while (attempts < 5) {
-          const found = await tx.booking.findUnique({ where: { referenceCode: refCode } });
-          if (!found) break;
-          refCode = generateReferenceCode();
-          attempts++;
+        // Process Promo Session Redemptions atomically
+        const redeemedNotes: string[] = [];
+        for (const item of itemLineData) {
+          if (!item.memberPackageId) continue;
+          const decremented = await tx.memberPackage.updateMany({
+            where: {
+              id: item.memberPackageId,
+              customerId: targetCustomer.id,
+              remainingSessions: { gte: 1 },
+            },
+            data: {
+              remainingSessions: { decrement: 1 },
+            },
+          });
+          if (decremented.count === 0) {
+            const checkPkg = await tx.memberPackage.findUnique({
+              where: { id: item.memberPackageId },
+            });
+            if (!checkPkg || checkPkg.customerId !== targetCustomer.id) {
+              throw new Error("Invalid member promo package selected.");
+            }
+            throw new Error(`No sessions remaining on promo "${checkPkg.name}".`);
+          }
+          const updatedPkg = await tx.memberPackage.findUnique({
+            where: { id: item.memberPackageId },
+          });
+          const nextRemaining = updatedPkg?.remainingSessions ?? 0;
+          if (updatedPkg && nextRemaining === 0 && updatedPkg.status !== "COMPLETED") {
+            await tx.memberPackage.update({
+              where: { id: updatedPkg.id },
+              data: { status: "COMPLETED" },
+            });
+          }
+          redeemedNotes.push(
+            `${updatedPkg?.name || "Promo"} (-1, ${nextRemaining}/${updatedPkg?.totalSessions ?? 0} left)`
+          );
         }
 
-        const now = new Date();
-        const created = await tx.booking.create({
-          data: {
-            referenceCode: refCode,
-            customerId: targetCustomer.id,
-            serviceId: services[0].id,
-            startDatetime: now,
-            endDatetime: now,
-            totalPriceCents: netCashCollectedCents,
-            depositDueCents: 0,
-            balanceDueCents: 0,
-            creditUsedCents: actualCreditUsedCents,
-            promoDiscountCents,
-            status: "COMPLETED",
-            notes: `Items: ${serviceNames} | ${paymentNote}`,
-            receiptSubmittedAt: now,
-            items: {
-              create: itemLineData.map((it) => ({
-                serviceId: it.serviceId,
-                priceCents: it.priceCents,
-                originalPriceCents: it.originalPriceCents,
-                memberPackageId: it.memberPackageId,
-              })),
+        // Process Member Credit Deduction atomically with non-negative guard
+        let actualCreditUsedCents = 0;
+        let nextCreditBalance = targetCustomer.creditBalanceCents;
+        if (useCreditCents > 0 && balanceBeforeCreditCents > 0) {
+          actualCreditUsedCents = Math.min(
+            useCreditCents,
+            targetCustomer.creditBalanceCents,
+            balanceBeforeCreditCents
+          );
+          if (actualCreditUsedCents > 0) {
+            const deducted = await tx.customer.updateMany({
+              where: {
+                id: targetCustomer.id,
+                creditBalanceCents: { gte: actualCreditUsedCents },
+              },
+              data: {
+                creditBalanceCents: { decrement: actualCreditUsedCents },
+              },
+            });
+            if (deducted.count === 0) {
+              throw new Error(
+                "Insufficient member credit balance. Please refresh and try again."
+              );
+            }
+            const refreshedCustomer = await tx.customer.findUnique({
+              where: { id: targetCustomer.id },
+              select: { creditBalanceCents: true },
+            });
+            nextCreditBalance =
+              refreshedCustomer?.creditBalanceCents ??
+              Math.max(0, targetCustomer.creditBalanceCents - actualCreditUsedCents);
+          }
+        }
+
+        // Net Cash/QR/Card collected TODAY (stored in totalPriceCents so sales reports never double-count)
+        const netCashCollectedCents = Math.max(
+          0,
+          balanceBeforeCreditCents - actualCreditUsedCents
+        );
+
+        const serviceNames = services.map((s) => s.name).join(", ");
+        const noteParts: string[] = [];
+        if (netCashCollectedCents > 0) {
+          noteParts.push(`Paid RM ${(netCashCollectedCents / 100).toFixed(2)} via ${paymentMethod}`);
+        } else {
+          noteParts.push(`Paid RM 0.00 (Covered by Promo/Credit)`);
+        }
+        if (actualCreditUsedCents > 0) {
+          noteParts.push(`Credit Used: RM ${(actualCreditUsedCents / 100).toFixed(2)}`);
+        }
+        if (redeemedNotes.length > 0) {
+          noteParts.push(`Promo: ${redeemedNotes.join("; ")}`);
+        }
+        if (notes) {
+          noteParts.push(notes);
+        }
+        const paymentNote = noteParts.join(" | ");
+
+        let finalBookingId = "";
+        let finalRefCode = "";
+
+        if (existingBooking) {
+          await tx.bookingItem.deleteMany({ where: { bookingId: existingBooking.id } });
+          await tx.bookingItem.createMany({
+            data: itemLineData.map((it) => ({
+              bookingId: existingBooking.id,
+              serviceId: it.serviceId,
+              priceCents: it.priceCents,
+              originalPriceCents: it.originalPriceCents,
+              memberPackageId: it.memberPackageId,
+            })),
+          });
+
+          const updated = await tx.booking.update({
+            where: { id: existingBooking.id },
+            data: {
+              customerId: targetCustomer.id,
+              checkoutIdempotencyKey: idempotencyKey,
+              status: "COMPLETED",
+              totalPriceCents: netCashCollectedCents,
+              creditUsedCents: actualCreditUsedCents,
+              promoDiscountCents,
+              balanceDueCents: 0,
+              notes: existingBooking.notes
+                ? `${existingBooking.notes} | ${paymentNote}`
+                : paymentNote,
+              receiptSubmittedAt: existingBooking.receiptSubmittedAt || new Date(),
             },
-          },
-        });
-        finalBookingId = created.id;
-        finalRefCode = created.referenceCode;
-      }
+          });
+          finalBookingId = updated.id;
+          finalRefCode = updated.referenceCode;
+          invalidateBookingCache(updated.referenceCode, targetCustomer.phoneNumber);
+        } else {
+          let refCode = generateReferenceCode();
+          let attempts = 0;
+          while (attempts < 5) {
+            const found = await tx.booking.findUnique({ where: { referenceCode: refCode } });
+            if (!found) break;
+            refCode = generateReferenceCode();
+            attempts++;
+          }
 
-      // Write MemberTransaction audit entries for any promo or credit deductions
-      for (const item of itemLineData) {
-        if (!item.memberPackageId) continue;
-        const pkgAfter = await tx.memberPackage.findUnique({
-          where: { id: item.memberPackageId },
-        });
-        await tx.memberTransaction.create({
-          data: {
-            customerId: targetCustomer.id,
-            memberPackageId: item.memberPackageId,
-            bookingId: finalBookingId,
-            type: "PACKAGE_DEDUCT",
-            creditChangeCents: 0,
-            balanceAfterCents: nextCreditBalance,
-            sessionsChange: -1,
-            sessionsAfter: pkgAfter?.remainingSessions ?? null,
-            cashPaidCents: 0,
-            paymentMethod: "PROMO",
-            description: `Used 1x ${item.serviceName} from ${pkgAfter?.name || "Promo"} (${finalRefCode})`,
-          },
-        });
-      }
+          const now = new Date();
+          const created = await tx.booking.create({
+            data: {
+              referenceCode: refCode,
+              checkoutIdempotencyKey: idempotencyKey,
+              customerId: targetCustomer.id,
+              serviceId: services[0].id,
+              startDatetime: now,
+              endDatetime: now,
+              totalPriceCents: netCashCollectedCents,
+              depositDueCents: 0,
+              balanceDueCents: 0,
+              creditUsedCents: actualCreditUsedCents,
+              promoDiscountCents,
+              status: "COMPLETED",
+              notes: `Items: ${serviceNames} | ${paymentNote}`,
+              receiptSubmittedAt: now,
+              items: {
+                create: itemLineData.map((it) => ({
+                  serviceId: it.serviceId,
+                  priceCents: it.priceCents,
+                  originalPriceCents: it.originalPriceCents,
+                  memberPackageId: it.memberPackageId,
+                })),
+              },
+            },
+          });
+          finalBookingId = created.id;
+          finalRefCode = created.referenceCode;
+        }
 
-      if (actualCreditUsedCents > 0) {
-        await tx.memberTransaction.create({
-          data: {
-            customerId: targetCustomer.id,
-            bookingId: finalBookingId,
-            type: "CREDIT_DEDUCT",
-            creditChangeCents: -actualCreditUsedCents,
-            balanceAfterCents: nextCreditBalance,
-            sessionsChange: 0,
-            cashPaidCents: 0,
-            paymentMethod: "CREDIT",
-            description: `Deducted RM ${(actualCreditUsedCents / 100).toFixed(
-              2
-            )} credit for ${serviceNames} (${finalRefCode})`,
-          },
-        });
-      }
+        // Write MemberTransaction audit entries for any promo or credit deductions
+        for (const item of itemLineData) {
+          if (!item.memberPackageId) continue;
+          const pkgAfter = await tx.memberPackage.findUnique({
+            where: { id: item.memberPackageId },
+          });
+          await tx.memberTransaction.create({
+            data: {
+              customerId: targetCustomer.id,
+              memberPackageId: item.memberPackageId,
+              bookingId: finalBookingId,
+              type: "PACKAGE_DEDUCT",
+              creditChangeCents: 0,
+              balanceAfterCents: nextCreditBalance,
+              sessionsChange: -1,
+              sessionsAfter: pkgAfter?.remainingSessions ?? null,
+              cashPaidCents: 0,
+              paymentMethod: "PROMO",
+              description: `Used 1x ${item.serviceName} from ${pkgAfter?.name || "Promo"} (${finalRefCode})`,
+            },
+          });
+        }
 
-      return { referenceCode: finalRefCode, totalCents: netCashCollectedCents };
-    });
+        if (actualCreditUsedCents > 0) {
+          await tx.memberTransaction.create({
+            data: {
+              customerId: targetCustomer.id,
+              bookingId: finalBookingId,
+              idempotencyKey: idempotencyKey ? `${idempotencyKey}:credit` : null,
+              type: "CREDIT_DEDUCT",
+              creditChangeCents: -actualCreditUsedCents,
+              balanceAfterCents: nextCreditBalance,
+              sessionsChange: 0,
+              cashPaidCents: 0,
+              paymentMethod: "CREDIT",
+              description: `Deducted RM ${(actualCreditUsedCents / 100).toFixed(
+                2
+              )} credit for ${serviceNames} (${finalRefCode})`,
+            },
+          });
+        }
+
+        return { referenceCode: finalRefCode, totalCents: netCashCollectedCents };
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+    );
 
     revalidatePath("/admin/desk");
     revalidatePath("/admin/bookings");
@@ -688,8 +747,24 @@ export async function recordDeskSale(
       data: result,
     };
   } catch (error) {
+    if (
+      idempotencyKey &&
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002"
+    ) {
+      const existing = await prisma.booking.findUnique({
+        where: { checkoutIdempotencyKey: idempotencyKey },
+        select: { referenceCode: true, totalPriceCents: true },
+      });
+      if (existing) {
+        return {
+          success: true,
+          data: { referenceCode: existing.referenceCode, totalCents: existing.totalPriceCents },
+        };
+      }
+    }
     console.error("[recordDeskSale]", error);
-    const msg = error instanceof Error ? error.message : "Failed to record sale.";
+    const msg = error instanceof Error ? error.message : "Failed to process desk checkout.";
     return { success: false, error: msg };
   }
 }
@@ -717,7 +792,7 @@ export async function createDeskAppointment(input: {
     const start = new Date(startDatetimeIso);
     const end = new Date(start.getTime() + service.durationMinutes * 60000);
 
-    const cleanPhone = phoneNumber.replace(/\s/g, "");
+    const cleanPhone = normalizePhoneNumber(phoneNumber) || phoneNumber.replace(/\s/g, "");
     const customer = await prisma.customer.upsert({
       where: { phoneNumber: cleanPhone },
       update: { name: customerName },
@@ -942,12 +1017,12 @@ export async function getMonthlyFinancialReport(
     };
 
     const categoryMeta: Record<ExpenseCategory, { zh: string; en: string; icon: string }> = {
-      STOCK: { zh: "进货库存", en: "Stock / Supplies", icon: "📦" },
-      RENT: { zh: "店面租金", en: "Shop Rent", icon: "🏢" },
-      UTILITIES: { zh: "水电杂费", en: "Utilities", icon: "💡" },
-      SALARY: { zh: "员工薪资/提成", en: "Salary / Commission", icon: "👤" },
-      MARKETING: { zh: "推广广告", en: "Marketing", icon: "📣" },
-      OTHER: { zh: "其他杂费", en: "Other Misc", icon: "🧾" },
+      STOCK: { zh: "进货库存", en: "Stock / Supplies", icon: "package" },
+      RENT: { zh: "店面租金", en: "Shop Rent", icon: "building" },
+      UTILITIES: { zh: "水电杂费", en: "Utilities", icon: "lightbulb" },
+      SALARY: { zh: "员工薪资/提成", en: "Salary / Commission", icon: "user" },
+      MARKETING: { zh: "推广广告", en: "Marketing", icon: "megaphone" },
+      OTHER: { zh: "其他杂费", en: "Other Misc", icon: "receipt" },
     };
 
     for (const exp of expenses) {
@@ -971,7 +1046,7 @@ export async function getMonthlyFinancialReport(
           category: cat,
           labelZh: categoryMeta[cat]?.zh || cat,
           labelEn: categoryMeta[cat]?.en || cat,
-          icon: categoryMeta[cat]?.icon || "🧾",
+          icon: categoryMeta[cat]?.icon || "receipt",
           totalCents: item.totalCents,
           count: item.count,
           percentage: pct,

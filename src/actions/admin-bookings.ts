@@ -70,6 +70,29 @@ export async function updateBookingStatus(
 ): Promise<ActionResult<BookingDto>> {
   await requireAdmin();
   try {
+    const existing = await prisma.booking.findUnique({
+      where: { id },
+      select: {
+        status: true,
+        creditUsedCents: true,
+        items: { select: { memberPackageId: true } },
+      },
+    });
+    if (!existing) {
+      return { success: false, error: "Booking not found." };
+    }
+    if (
+      existing.status === "COMPLETED" &&
+      status !== "COMPLETED" &&
+      (existing.creditUsedCents > 0 || existing.items.some((i) => i.memberPackageId))
+    ) {
+      return {
+        success: false,
+        error:
+          "Completed bookings that used member credit or promo sessions cannot be reverted directly.",
+      };
+    }
+
     const booking = await prisma.booking.update({
       where: { id },
       data: { status },

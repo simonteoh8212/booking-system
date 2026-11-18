@@ -20,13 +20,13 @@ import {
   LogOut,
   Scissors,
   FileText,
-  Languages,
   Check,
   Loader2,
   Bell,
   MessageCircle,
   Users,
   Box,
+  PanelLeftClose,
 } from "lucide-react";
 import { useState, useEffect, useTransition, useRef } from "react";
 import { format } from "date-fns";
@@ -39,6 +39,8 @@ import {
 } from "@/actions/admin-bookings";
 import { RushModeControl } from "./RushModeControl";
 import { FloatingBottomNav, type FloatingNavItem } from "./FloatingBottomNav";
+import { FlagIcon } from "@/components/FlagIcon";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import type { DeskLanguageMode } from "@/types";
 
 interface NavItem {
@@ -62,15 +64,19 @@ const mobileMoreItems: NavItem[] = navItems.slice(4);
 
 interface AdminNavProps {
   initialLanguage?: DeskLanguageMode;
+  initialSidebarCollapsed?: boolean;
 }
 
-export function AdminNav({ initialLanguage = "ONLY_EN" }: AdminNavProps = {}) {
+export function AdminNav({
+  initialLanguage = "ONLY_EN",
+  initialSidebarCollapsed = false,
+}: AdminNavProps = {}) {
   const pathname = usePathname();
+  const [isCollapsed, setIsCollapsed] = useState(initialSidebarCollapsed);
   const [moreOpen, setMoreOpen] = useState(false);
   const [langMenuOpen, setLangMenuOpen] = useState(false);
   const [notifMenuOpen, setNotifMenuOpen] = useState(false);
   const notifRef = useRef<HTMLDivElement>(null);
-  const langRef = useRef<HTMLDivElement>(null);
   const [pendingCount, setPendingCount] = useState(0);
   const [pendingList, setPendingList] = useState<PendingBookingItemSummary[]>([]);
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
@@ -90,19 +96,15 @@ export function AdminNav({ initialLanguage = "ONLY_EN" }: AdminNavProps = {}) {
       if (notifMenuOpen && notifRef.current && !notifRef.current.contains(target)) {
         setNotifMenuOpen(false);
       }
-      if (langMenuOpen && langRef.current && !langRef.current.contains(target)) {
-        setLangMenuOpen(false);
-      }
     }
 
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
         setNotifMenuOpen(false);
-        setLangMenuOpen(false);
       }
     }
 
-    if (notifMenuOpen || langMenuOpen) {
+    if (notifMenuOpen) {
       document.addEventListener("mousedown", handleClickOutside);
       document.addEventListener("touchstart", handleClickOutside);
       document.addEventListener("keydown", handleKeyDown);
@@ -113,7 +115,7 @@ export function AdminNav({ initialLanguage = "ONLY_EN" }: AdminNavProps = {}) {
       document.removeEventListener("touchstart", handleClickOutside);
       document.removeEventListener("keydown", handleKeyDown);
     };
-  }, [notifMenuOpen, langMenuOpen]);
+  }, [notifMenuOpen]);
 
   async function handleQuickConfirm(e: React.MouseEvent, id: string, refCode: string) {
     e.stopPropagation();
@@ -228,8 +230,14 @@ export function AdminNav({ initialLanguage = "ONLY_EN" }: AdminNavProps = {}) {
     });
   }
 
-  const currentOption =
-    DESK_LANGUAGE_OPTIONS.find((o) => o.id === langMode) || DESK_LANGUAGE_OPTIONS[0];
+  function toggleSidebar() {
+    setIsCollapsed((prev) => {
+      const next = !prev;
+      document.cookie = `admin_sidebar_collapsed=${next ? "1" : "0"}; path=/; max-age=31536000; SameSite=Lax`;
+      return next;
+    });
+  }
+
   const isZh = langMode === "ONLY_ZH";
 
   const floatingNavItems: FloatingNavItem[] = [
@@ -303,17 +311,36 @@ export function AdminNav({ initialLanguage = "ONLY_EN" }: AdminNavProps = {}) {
       {/* ================================================================= */}
       {/* DESKTOP LEFT SIDEBAR RAIL (md:flex)                               */}
       {/* ================================================================= */}
-      <aside className="hidden md:flex md:w-56 md:shrink-0 md:flex-col md:sticky md:top-0 md:h-screen border-r border-border bg-sidebar select-none">
-        <div className="h-14 px-4 flex items-center justify-between border-b border-border/80">
-          <Link href="/admin" className="flex items-center gap-2.5 font-bold text-foreground">
-            <span className="w-7 h-7 rounded-lg bg-primary text-primary-foreground flex items-center justify-center">
+      <aside
+        className={cn(
+          "hidden md:flex md:shrink-0 md:flex-col md:sticky md:top-0 md:h-screen border-r border-border bg-sidebar select-none overflow-x-hidden transition-[width] duration-300 ease-out",
+          isCollapsed ? "md:w-[72px]" : "md:w-56"
+        )}
+      >
+        <div className="h-14 px-2 flex items-center justify-between border-b border-border/80">
+          <Link
+            href="/admin"
+            title="SideBox"
+            className="flex items-center font-bold text-foreground min-w-0 pl-1"
+          >
+            <span className="w-7 h-7 rounded-lg bg-primary text-primary-foreground flex items-center justify-center shrink-0">
               <Box className="h-4 w-4" />
             </span>
-            <span className="tracking-tight text-sm font-extrabold">SideBox</span>
+            <span
+              className={cn(
+                "tracking-tight text-sm font-extrabold whitespace-nowrap overflow-hidden transition-[max-width,opacity,transform,margin] duration-300 ease-out",
+                isCollapsed
+                  ? "max-w-0 opacity-0 -translate-x-1 ml-0 pointer-events-none"
+                  : "max-w-[110px] opacity-100 translate-x-0 ml-2.5"
+              )}
+            >
+              SideBox
+            </span>
           </Link>
 
-          {!isInternalAppMode() && (
-            <div className="relative" ref={notifRef}>
+          <div className="flex items-center gap-1 shrink-0">
+            {!isInternalAppMode() && !isCollapsed && (
+              <div className="relative" ref={notifRef}>
               <Button
                 type="button"
                 variant="ghost"
@@ -402,89 +429,157 @@ export function AdminNav({ initialLanguage = "ONLY_EN" }: AdminNavProps = {}) {
               )}
             </div>
           )}
+
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={toggleSidebar}
+              className="h-7 w-7 text-muted-foreground hover:text-foreground cursor-pointer"
+              title={isCollapsed ? (isZh ? "展开侧边栏" : "Expand sidebar") : (isZh ? "收起侧边栏" : "Collapse sidebar")}
+              aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+              aria-expanded={!isCollapsed}
+            >
+              <PanelLeftClose
+                className={cn(
+                  "h-4 w-4 transition-transform duration-300 ease-out",
+                  isCollapsed && "rotate-180"
+                )}
+              />
+            </Button>
+          </div>
         </div>
 
-        <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
+        <nav className="flex-1 p-2 space-y-1 overflow-y-auto overflow-x-hidden">
           {navItems.map((item) => {
             const active = isActive(item.href, item.exact);
+            const itemText = isZh ? item.label.zh : item.label.en;
             return (
               <Link
                 key={item.href}
                 href={item.href}
+                title={isCollapsed ? itemText : undefined}
+                aria-label={itemText}
                 className={cn(
-                  "flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                  "flex items-center rounded-lg px-5 py-2.5 text-sm font-medium transition-colors",
                   active
                     ? "bg-primary text-primary-foreground font-semibold"
                     : "text-muted-foreground hover:bg-muted hover:text-foreground"
                 )}
               >
                 <item.icon className="h-4 w-4 shrink-0" />
-                <span suppressHydrationWarning>
-                  {isZh ? item.label.zh : item.label.en}
+                <span
+                  suppressHydrationWarning
+                  className={cn(
+                    "whitespace-nowrap overflow-hidden transition-[max-width,opacity,transform,margin] duration-300 ease-out",
+                    isCollapsed
+                      ? "max-w-0 opacity-0 -translate-x-1 ml-0 pointer-events-none"
+                      : "max-w-[140px] opacity-100 translate-x-0 ml-2.5"
+                  )}
+                >
+                  {itemText}
                 </span>
               </Link>
             );
           })}
         </nav>
 
-        <div className="p-3 border-t border-border/80 space-y-2">
-          {!isInternalAppMode() && <RushModeControl langMode={langMode} compact />}
+        <div className="p-2 border-t border-border/80 space-y-2">
+          {!isInternalAppMode() && <RushModeControl langMode={langMode} iconOnly={isCollapsed} />}
 
-          <div className="relative" ref={langRef}>
-            <button
-              type="button"
-              suppressHydrationWarning
-              onClick={() => {
-                setLangMenuOpen(!langMenuOpen);
-                setNotifMenuOpen(false);
-              }}
-              className="w-full flex items-center justify-between rounded-lg px-3 py-2 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors cursor-pointer"
+          <Popover
+            open={langMenuOpen}
+            onOpenChange={(open) => {
+              setLangMenuOpen(open);
+              if (open) setNotifMenuOpen(false);
+            }}
+          >
+            <PopoverTrigger
+              render={
+                <button
+                  type="button"
+                  suppressHydrationWarning
+                  title={
+                    isCollapsed
+                      ? isZh
+                        ? "切换语言"
+                        : "Language"
+                      : undefined
+                  }
+                  aria-label={isZh ? "切换语言" : "Language"}
+                  className="w-full flex items-center rounded-lg px-5 py-2 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors cursor-pointer"
+                >
+                  <span className="w-4 h-4 flex items-center justify-center shrink-0">
+                    <FlagIcon country={isZh ? "CN" : "UK"} />
+                  </span>
+                  <span
+                    suppressHydrationWarning
+                    className={cn(
+                      "whitespace-nowrap overflow-hidden transition-[max-width,opacity,transform,margin] duration-300 ease-out",
+                      isCollapsed
+                        ? "max-w-0 opacity-0 -translate-x-1 ml-0 pointer-events-none"
+                        : "max-w-[140px] opacity-100 translate-x-0 ml-2.5"
+                    )}
+                  >
+                    {isZh ? "中文" : "English"}
+                  </span>
+                </button>
+              }
+            />
+
+            <PopoverContent
+              side={isCollapsed ? "right" : "top"}
+              align={isCollapsed ? "end" : "start"}
+              sideOffset={isCollapsed ? 12 : 8}
+              className="w-44 p-1 rounded-xl bg-card border border-border shadow-lg gap-0.5 ring-0"
             >
-              <span className="flex items-center gap-2">
-                <Languages className="h-4 w-4" />
-                <span suppressHydrationWarning>
-                  {isZh ? "中文" : langMode === "ONLY_EN" ? "English" : currentOption.label}
-                </span>
-              </span>
-            </button>
-
-            {langMenuOpen && (
-              <div className="absolute left-0 bottom-10 z-50 w-52 p-1 bg-card border shadow-lg rounded-xl space-y-0.5">
-                {DESK_LANGUAGE_OPTIONS.map((opt) => {
-                  const isSelected = opt.id === langMode;
-                  return (
-                    <button
-                      key={opt.id}
-                      type="button"
-                      onClick={() => handleLanguageSwitch(opt.id)}
-                      className={cn(
-                        "w-full flex items-center justify-between text-xs py-2 px-2.5 rounded-lg text-left cursor-pointer transition-colors",
-                        isSelected
-                          ? "bg-accent text-accent-foreground font-semibold"
-                          : "hover:bg-muted text-foreground"
-                      )}
-                    >
+              {DESK_LANGUAGE_OPTIONS.map((opt) => {
+                const isSelected = opt.id === langMode;
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => handleLanguageSwitch(opt.id)}
+                    className={cn(
+                      "w-full flex items-center justify-between text-xs py-2 px-2.5 rounded-lg text-left cursor-pointer transition-colors",
+                      isSelected
+                        ? "bg-accent text-accent-foreground font-semibold"
+                        : "hover:bg-muted text-foreground"
+                    )}
+                  >
+                    <span className="flex items-center gap-2">
+                      <FlagIcon country={opt.country} />
                       <span>{opt.label}</span>
-                      {isSelected && <Check className="h-3.5 w-3.5" />}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+                    </span>
+                    {isSelected && <Check className="h-3.5 w-3.5" />}
+                  </button>
+                );
+              })}
+            </PopoverContent>
+          </Popover>
 
           <button
             type="button"
             disabled={isLoggingOut}
             onClick={handleLogout}
-            className="w-full flex items-center gap-2.5 rounded-lg px-3 py-2 text-xs font-medium text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors cursor-pointer"
+            title={isCollapsed ? (isZh ? "退出登录" : "Logout") : undefined}
+            aria-label={isZh ? "退出登录" : "Logout"}
+            className="w-full flex items-center rounded-lg px-5 py-2 text-xs font-medium text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors cursor-pointer"
           >
             {isLoggingOut ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
+              <Loader2 className="h-4 w-4 animate-spin shrink-0" />
             ) : (
-              <LogOut className="h-4 w-4" />
+              <LogOut className="h-4 w-4 shrink-0" />
             )}
-            <span suppressHydrationWarning>
+            <span
+              suppressHydrationWarning
+              className={cn(
+                "whitespace-nowrap overflow-hidden transition-[max-width,opacity,transform,margin] duration-300 ease-out",
+                isCollapsed
+                  ? "max-w-0 opacity-0 -translate-x-1 ml-0 pointer-events-none"
+                  : "max-w-[140px] opacity-100 translate-x-0 ml-2.5"
+              )}
+            >
               {isZh ? "退出登录" : "Logout"}
             </span>
           </button>
@@ -553,19 +648,20 @@ export function AdminNav({ initialLanguage = "ONLY_EN" }: AdminNavProps = {}) {
 
           <div className="pt-2 border-t space-y-2">
             <div className="grid grid-cols-2 gap-2">
-              {DESK_LANGUAGE_OPTIONS.slice(0, 2).map((opt) => (
+              {DESK_LANGUAGE_OPTIONS.map((opt) => (
                 <button
                   key={opt.id}
                   type="button"
                   onClick={() => handleLanguageSwitch(opt.id)}
                   className={cn(
-                    "py-2 px-3 rounded-lg border text-xs font-semibold cursor-pointer",
+                    "py-2 px-3 rounded-lg border text-xs font-semibold cursor-pointer flex items-center justify-center gap-2",
                     langMode === opt.id
                       ? "border-primary bg-accent text-accent-foreground"
                       : "bg-card text-muted-foreground"
                   )}
                 >
-                  {opt.label}
+                  <FlagIcon country={opt.country} />
+                  <span>{opt.label}</span>
                 </button>
               ))}
             </div>

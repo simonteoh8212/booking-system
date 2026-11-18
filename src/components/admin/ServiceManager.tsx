@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import toast from "react-hot-toast";
 import { createService, updateService, deleteService } from "@/actions/services";
+import { useDeskLanguage } from "@/lib/use-desk-language";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,14 +16,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Badge } from "@/components/ui/badge";
 import { formatPrice } from "@/lib/utils";
-import { Loader2, Pencil, Trash2, Plus, Clock, Package, Scissors } from "lucide-react";
-import type { ServiceDto } from "@/types";
+import { Loader2, Pencil, Trash2, Plus, Clock, Package, Scissors, Search, X } from "lucide-react";
+import type { DeskLanguageMode, ServiceDto } from "@/types";
 
 interface ServiceManagerProps {
   initialServices: ServiceDto[];
   currencySymbol?: string;
+  initialLanguage?: DeskLanguageMode;
 }
 
 const EMPTY_FORM = {
@@ -38,8 +39,15 @@ const EMPTY_FORM = {
 export function ServiceManager({
   initialServices,
   currencySymbol = "RM",
+  initialLanguage = "ONLY_EN",
 }: ServiceManagerProps) {
+  const { langMode } = useDeskLanguage(initialLanguage);
+  const isZh = langMode === "ONLY_ZH";
+  const t = (en: string, zh: string) => (isZh ? zh : en);
+
   const [services, setServices] = useState<ServiceDto[]>(initialServices);
+  const [typeFilter, setTypeFilter] = useState<"ALL" | "SERVICE" | "PRODUCT">("ALL");
+  const [searchQuery, setSearchQuery] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<ServiceDto | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ServiceDto | null>(null);
@@ -48,9 +56,29 @@ export function ServiceManager({
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
-  function openCreate() {
+  const serviceCount = services.filter((s) => s.type !== "PRODUCT").length;
+  const productCount = services.filter((s) => s.type === "PRODUCT").length;
+
+  const filteredServices = services.filter((s) => {
+    const matchesType =
+      typeFilter === "ALL" ||
+      (typeFilter === "PRODUCT" ? s.type === "PRODUCT" : s.type !== "PRODUCT");
+    if (!matchesType) return false;
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return true;
+    return (
+      s.name.toLowerCase().includes(q) ||
+      (s.category ?? "").toLowerCase().includes(q)
+    );
+  });
+
+  function openCreate(defaultType: "SERVICE" | "PRODUCT" = "SERVICE") {
     setEditTarget(null);
-    setForm(EMPTY_FORM);
+    setForm(
+      defaultType === "PRODUCT"
+        ? { ...EMPTY_FORM, type: "PRODUCT", category: "Product", durationMinutes: 5 }
+        : EMPTY_FORM
+    );
     setPriceInput("0.00");
     setError(null);
     setDialogOpen(true);
@@ -62,7 +90,7 @@ export function ServiceManager({
       name: service.name,
       description: service.description ?? "",
       category: service.category ?? "",
-      type: (service.type === "PRODUCT" ? "PRODUCT" : "SERVICE") as "SERVICE" | "PRODUCT",
+      type: service.type === "PRODUCT" ? "PRODUCT" : "SERVICE",
       durationMinutes: service.durationMinutes,
       priceCents: service.priceCents,
       isActive: service.isActive,
@@ -79,13 +107,22 @@ export function ServiceManager({
   }
 
   function handleSave() {
-    if (!form.name.trim()) { setError("Name is required."); return; }
-    if (form.type === "SERVICE" && form.durationMinutes < 1) { setError("Duration must be at least 1 minute."); return; }
-    if (form.priceCents < 0) { setError("Price cannot be negative."); return; }
+    if (!form.name.trim()) {
+      setError(t("Name is required.", "请输入名称。"));
+      return;
+    }
+    if (form.type === "SERVICE" && form.durationMinutes < 1) {
+      setError(t("Duration must be at least 1 minute.", "时长至少为 1 分钟。"));
+      return;
+    }
+    if (form.priceCents < 0) {
+      setError(t("Price cannot be negative.", "价格不能为负数。"));
+      return;
+    }
 
     const payload = {
       ...form,
-      durationMinutes: form.type === "PRODUCT" ? (form.durationMinutes || 5) : form.durationMinutes,
+      durationMinutes: form.type === "PRODUCT" ? form.durationMinutes || 5 : form.durationMinutes,
     };
 
     startTransition(async () => {
@@ -94,7 +131,7 @@ export function ServiceManager({
         if (result.success) {
           setServices((prev) => prev.map((s) => (s.id === editTarget.id ? result.data : s)));
           setDialogOpen(false);
-          toast.success("Service updated successfully!");
+          toast.success(t("Item updated.", "已更新。"));
         } else {
           setError(result.error);
         }
@@ -103,7 +140,7 @@ export function ServiceManager({
         if (result.success) {
           setServices((prev) => [...prev, result.data]);
           setDialogOpen(false);
-          toast.success("Item created successfully!");
+          toast.success(t("Item created.", "已创建。"));
         } else {
           setError(result.error);
         }
@@ -118,106 +155,183 @@ export function ServiceManager({
       if (result.success) {
         setServices((prev) => prev.filter((s) => s.id !== deleteTarget.id));
         setDeleteTarget(null);
-        toast.success("Service deleted successfully.");
+        toast.success(t("Item deleted.", "已删除。"));
       } else {
-        toast.error(result.error || "Failed to delete service.");
+        toast.error(result.error || t("Failed to delete.", "删除失败。"));
       }
     });
   }
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-end gap-2">
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => {
-            setEditTarget(null);
-            setForm({ ...EMPTY_FORM, type: "PRODUCT", category: "Product", durationMinutes: 5 });
-            setPriceInput("0.00");
-            setError(null);
-            setDialogOpen(true);
-          }}
-          className="gap-1.5 rounded-lg cursor-pointer"
-        >
-          <Package className="h-3.5 w-3.5" />
-          Add Product
-        </Button>
-        <Button size="sm" onClick={openCreate} className="gap-1.5 rounded-lg cursor-pointer">
-          <Plus className="h-3.5 w-3.5" />
-          Add Service
-        </Button>
-      </div>
+      {/* Filter Tabs & Primary Actions */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="inline-flex rounded-lg border border-border bg-muted/60 p-1">
+          {[
+            { id: "ALL" as const, label: t("All", "全部"), count: services.length },
+            { id: "SERVICE" as const, label: t("Services", "服务"), count: serviceCount },
+            { id: "PRODUCT" as const, label: t("Products", "商品"), count: productCount },
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setTypeFilter(tab.id)}
+              className={`px-3 py-1.5 rounded-md text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-colors ${
+                typeFilter === tab.id
+                  ? "bg-card text-foreground shadow-2xs"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <span suppressHydrationWarning>{tab.label}</span>
+              <span className="text-[11px] text-muted-foreground tabular-nums">{tab.count}</span>
+            </button>
+          ))}
+        </div>
 
-      <div className="rounded-xl border border-border bg-card divide-y divide-border overflow-hidden">
-        {services.length === 0 && (
-          <p className="text-center text-muted-foreground text-sm py-12">
-            No catalog items yet
-          </p>
-        )}
-        {services.map((service) => (
-          <div
-            key={service.id}
-            className="flex items-center gap-4 px-4 py-3.5 hover:bg-muted/20 transition-colors"
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => openCreate("PRODUCT")}
+            className="gap-1.5 rounded-lg cursor-pointer"
           >
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <p className="font-semibold text-sm">{service.name}</p>
-                {service.type === "PRODUCT" ? (
-                  <Badge variant="secondary" className="text-[11px] font-medium">
-                    Product
-                  </Badge>
-                ) : (
-                  <Badge variant="outline" className="text-[11px] font-medium">
-                    Service
-                  </Badge>
-                )}
-                {service.category && (
-                  <span className="text-xs text-muted-foreground">{service.category}</span>
-                )}
-                {!service.isActive && (
-                  <Badge variant="outline" className="text-[11px] text-muted-foreground">
-                    Inactive
-                  </Badge>
-                )}
-              </div>
-              <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground tabular-nums">
-                {service.type !== "PRODUCT" && (
-                  <span className="flex items-center gap-1">
-                    <Clock className="h-3 w-3" /> {service.durationMinutes} min
-                  </span>
-                )}
-                <span className="font-mono font-semibold text-foreground">
-                  {formatPrice(service.priceCents, currencySymbol)}
-                </span>
-              </div>
-            </div>
-            <div className="flex gap-2">
-              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(service)}>
-                <Pencil className="h-4 w-4" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8 text-destructive hover:bg-destructive/10 cursor-pointer"
-                onClick={() => setDeleteTarget(service)}
-                title="Delete service"
-              >
-                <Trash2 className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-        ))}
+            <Package className="h-3.5 w-3.5" />
+            <span suppressHydrationWarning>{t("Add Product", "添加商品")}</span>
+          </Button>
+          <Button
+            size="sm"
+            onClick={() => openCreate("SERVICE")}
+            className="gap-1.5 rounded-lg cursor-pointer"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            <span suppressHydrationWarning>{t("Add Service", "添加服务")}</span>
+          </Button>
+        </div>
       </div>
 
-      {/* Dialog */}
+      {/* Search */}
+      {services.length > 0 && (
+        <div className="relative">
+          <Search className="h-4 w-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+          <Input
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder={t("Search name or category…", "搜索名称或分类…")}
+            className="pl-9 pr-9 h-9 rounded-lg text-base sm:text-sm bg-card"
+          />
+          {searchQuery && (
+            <button
+              type="button"
+              aria-label={t("Clear search", "清除搜索")}
+              onClick={() => setSearchQuery("")}
+              className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-md text-muted-foreground hover:text-foreground cursor-pointer"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Catalog List */}
+      <div className="rounded-xl border border-border bg-card divide-y divide-border overflow-hidden">
+        {filteredServices.length === 0 ? (
+          <div className="text-center text-muted-foreground text-sm py-12" suppressHydrationWarning>
+            {services.length === 0
+              ? t("No catalog items yet", "暂无服务或商品")
+              : t("No matching items", "没有匹配的项目")}
+          </div>
+        ) : (
+          filteredServices.map((service) => {
+            const isProduct = service.type === "PRODUCT";
+            return (
+              <div
+                key={service.id}
+                className={`flex items-center justify-between gap-3 px-4 py-3.5 hover:bg-muted/30 transition-colors ${
+                  !service.isActive ? "opacity-60" : ""
+                }`}
+              >
+                <div className="flex items-center gap-3 min-w-0 flex-1">
+                  <div className="w-8 h-8 rounded-lg bg-muted/60 text-muted-foreground flex items-center justify-center shrink-0">
+                    {isProduct ? (
+                      <Package className="h-4 w-4" />
+                    ) : (
+                      <Scissors className="h-4 w-4" />
+                    )}
+                  </div>
+
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="font-semibold text-sm text-foreground truncate">
+                        {service.name}
+                      </p>
+                      {service.category && (
+                        <span className="text-xs text-muted-foreground truncate">
+                          {service.category}
+                        </span>
+                      )}
+                      {!service.isActive && (
+                        <span className="text-[11px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground font-medium">
+                          {t("Hidden", "已下架")}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3 sm:gap-4 shrink-0">
+                  <div className="text-right tabular-nums">
+                    <div className="text-sm font-semibold text-foreground">
+                      {formatPrice(service.priceCents, currencySymbol)}
+                    </div>
+                    {!isProduct && (
+                      <div className="text-[11px] text-muted-foreground flex items-center justify-end gap-1">
+                        <Clock className="h-3 w-3" />
+                        <span>{service.durationMinutes} min</span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-1">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 cursor-pointer"
+                      onClick={() => openEdit(service)}
+                      aria-label={t("Edit item", "编辑")}
+                      title={t("Edit", "编辑")}
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-destructive hover:bg-destructive/10 cursor-pointer"
+                      onClick={() => setDeleteTarget(service)}
+                      aria-label={t("Delete item", "删除")}
+                      title={t("Delete", "删除")}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      {/* Create / Edit Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>
               {editTarget
-                ? `Edit ${form.type === "PRODUCT" ? "Product" : "Service"}`
-                : `New ${form.type === "PRODUCT" ? "Product / 零售商品" : "Service / 服务项目"}`}
+                ? form.type === "PRODUCT"
+                  ? t("Edit Product", "编辑商品")
+                  : t("Edit Service", "编辑服务")
+                : form.type === "PRODUCT"
+                  ? t("New Product", "添加商品")
+                  : t("New Service", "添加服务")}
             </DialogTitle>
           </DialogHeader>
 
@@ -225,73 +339,98 @@ export function ServiceManager({
             <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
-                onClick={() => setForm({ ...form, type: "SERVICE", durationMinutes: form.durationMinutes || 30 })}
-                className={`p-2.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition-all ${
+                onClick={() =>
+                  setForm({ ...form, type: "SERVICE", durationMinutes: form.durationMinutes || 30 })
+                }
+                className={`p-2.5 rounded-xl border text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer transition-colors ${
                   form.type === "SERVICE"
-                    ? "border-2 border-primary bg-primary/10 text-primary"
+                    ? "border-primary bg-primary/10 text-primary"
                     : "border-border bg-card text-muted-foreground hover:bg-muted"
                 }`}
               >
                 <Scissors className="h-3.5 w-3.5" />
-                <span>Service / 服务项目</span>
+                <span>{t("Service", "服务项目")}</span>
               </button>
               <button
                 type="button"
-                onClick={() => setForm({ ...form, type: "PRODUCT", category: form.category || "Product", durationMinutes: 5 })}
-                className={`p-2.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition-all ${
+                onClick={() =>
+                  setForm({
+                    ...form,
+                    type: "PRODUCT",
+                    category: form.category || "Product",
+                    durationMinutes: 5,
+                  })
+                }
+                className={`p-2.5 rounded-xl border text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer transition-colors ${
                   form.type === "PRODUCT"
-                    ? "border-2 border-amber-600 bg-amber-500/10 text-amber-700 dark:text-amber-300"
+                    ? "border-primary bg-primary/10 text-primary"
                     : "border-border bg-card text-muted-foreground hover:bg-muted"
                 }`}
               >
                 <Package className="h-3.5 w-3.5" />
-                <span>Product / 零售商品</span>
+                <span>{t("Product", "零售商品")}</span>
               </button>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="svc-name">Name *</Label>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="svc-name">{t("Name", "名称")} *</Label>
               <Input
                 id="svc-name"
                 value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
-                placeholder={form.type === "PRODUCT" ? "e.g. Argan Hair Oil / 洗发水" : "e.g. Hair Cut / 剪发"}
+                placeholder={
+                  form.type === "PRODUCT"
+                    ? t("e.g. Argan Hair Oil", "例如：摩洛哥护发精油")
+                    : t("e.g. Hair Cut", "例如：剪发")
+                }
+                className="text-base sm:text-sm"
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="svc-desc">Description</Label>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="svc-desc">{t("Description", "描述")}</Label>
               <Textarea
                 id="svc-desc"
                 value={form.description}
                 onChange={(e) => setForm({ ...form, description: e.target.value })}
                 rows={2}
-                placeholder="Brief description…"
+                placeholder={t("Optional", "选填")}
+                className="text-base sm:text-sm"
               />
             </div>
-            <div className={`grid ${form.type === "PRODUCT" ? "grid-cols-1" : "grid-cols-2"} gap-4`}>
-              <div className="space-y-2">
-                <Label htmlFor="svc-cat">Category</Label>
+
+            <div className={`grid ${form.type === "PRODUCT" ? "grid-cols-1" : "grid-cols-2"} gap-3`}>
+              <div className="space-y-1.5">
+                <Label htmlFor="svc-cat">{t("Category", "分类")}</Label>
                 <Input
                   id="svc-cat"
                   value={form.category}
                   onChange={(e) => setForm({ ...form, category: e.target.value })}
-                  placeholder={form.type === "PRODUCT" ? "e.g. Hair Care / Retail" : "e.g. Hair"}
+                  placeholder={form.type === "PRODUCT" ? t("e.g. Hair Care", "例如：护理品") : t("e.g. Hair", "例如：美发")}
+                  className="text-base sm:text-sm"
                 />
               </div>
               {form.type !== "PRODUCT" && (
-                <div className="space-y-2">
-                  <Label htmlFor="svc-dur">Duration (min) *</Label>
+                <div className="space-y-1.5">
+                  <Label htmlFor="svc-dur">{t("Duration (min)", "时长 (分钟)")} *</Label>
                   <Input
                     id="svc-dur"
                     type="number"
                     min={1}
                     value={form.durationMinutes}
-                    onChange={(e) => setForm({ ...form, durationMinutes: parseInt(e.target.value) || 0 })}
+                    onChange={(e) =>
+                      setForm({ ...form, durationMinutes: parseInt(e.target.value) || 0 })
+                    }
+                    className="text-base sm:text-sm tabular-nums"
                   />
                 </div>
               )}
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="svc-price">Price ({currencySymbol}) *</Label>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="svc-price">
+                {t("Price", "价格")} ({currencySymbol}) *
+              </Label>
               <Input
                 id="svc-price"
                 type="number"
@@ -300,63 +439,64 @@ export function ServiceManager({
                 value={priceInput}
                 onChange={(e) => handlePriceChange(e.target.value)}
                 placeholder="0.00"
+                className="text-base sm:text-sm tabular-nums"
               />
-            </div>
-            <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                id="svc-active"
-                checked={form.isActive}
-                onChange={(e) => setForm({ ...form, isActive: e.target.checked })}
-                className="h-4 w-4"
-              />
-              <Label htmlFor="svc-active">Active (visible to customers)</Label>
             </div>
 
-            {error && (
-              <p className="text-sm text-destructive">{error}</p>
-            )}
+            <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={form.isActive}
+                onChange={(e) => setForm({ ...form, isActive: e.target.checked })}
+                className="h-4 w-4 rounded"
+              />
+              <span>{t("Active", "上架显示")}</span>
+            </label>
+
+            {error && <p className="text-xs text-destructive font-medium">{error}</p>}
           </div>
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={isPending}>
-              Cancel
+              {t("Cancel", "取消")}
             </Button>
             <Button onClick={handleSave} disabled={isPending}>
               {isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              {editTarget ? "Save Changes" : "Create Service"}
+              {editTarget ? t("Save", "保存") : t("Create", "创建")}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Delete Confirmation Dialog (Replaces native browser alert) */}
+      {/* Delete Confirmation Dialog */}
       <Dialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
-        <DialogContent className="max-w-md rounded-3xl">
+        <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle className="text-destructive flex items-center gap-2">
-              <Trash2 className="h-5 w-5" />
-              <span>Delete Service</span>
+              <Trash2 className="h-4 w-4" />
+              <span>{t("Delete Item", "删除项目")}</span>
             </DialogTitle>
             <DialogDescription className="text-xs pt-1">
-              Are you sure you want to permanently delete this service? This action cannot be undone.
+              {t(
+                "This permanently removes the item from your catalog.",
+                "确认永久删除此项目？此操作无法撤销。"
+              )}
             </DialogDescription>
           </DialogHeader>
 
           {deleteTarget && (
-            <div className="p-3.5 rounded-2xl bg-destructive/5 border border-destructive/20 text-xs space-y-1.5">
-              <div className="flex items-center justify-between">
-                <p className="font-bold text-sm text-foreground">{deleteTarget.name}</p>
-                {deleteTarget.category && (
-                  <Badge variant="secondary" className="text-[10px]">{deleteTarget.category}</Badge>
+            <div className="p-3 rounded-xl bg-destructive/5 border border-destructive/20 text-xs space-y-1">
+              <p className="font-semibold text-sm text-foreground">{deleteTarget.name}</p>
+              <div className="flex items-center gap-3 text-muted-foreground tabular-nums">
+                {deleteTarget.type !== "PRODUCT" && (
+                  <span className="inline-flex items-center gap-1">
+                    <Clock className="h-3 w-3" />
+                    {deleteTarget.durationMinutes} min
+                  </span>
                 )}
-              </div>
-              {deleteTarget.description && (
-                <p className="text-muted-foreground line-clamp-2">{deleteTarget.description}</p>
-              )}
-              <div className="flex items-center gap-3 text-muted-foreground font-medium pt-1">
-                <span>⏱ {deleteTarget.durationMinutes} min</span>
-                <span>💰 {formatPrice(deleteTarget.priceCents, currencySymbol)}</span>
+                <span className="font-semibold text-foreground">
+                  {formatPrice(deleteTarget.priceCents, currencySymbol)}
+                </span>
               </div>
             </div>
           )}
@@ -367,19 +507,18 @@ export function ServiceManager({
               size="sm"
               onClick={() => setDeleteTarget(null)}
               disabled={isPending}
-              className="text-xs"
             >
-              Cancel
+              {t("Cancel", "取消")}
             </Button>
             <Button
               variant="destructive"
               size="sm"
               disabled={isPending}
               onClick={handleConfirmDelete}
-              className="text-xs gap-1.5 font-bold"
+              className="gap-1.5"
             >
               {isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-              <span>Delete Service</span>
+              <span>{t("Delete", "删除")}</span>
             </Button>
           </DialogFooter>
         </DialogContent>

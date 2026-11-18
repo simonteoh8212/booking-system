@@ -117,6 +117,17 @@ export function normalizePhoneNumber(raw: string): string {
 }
 
 /**
+ * Generate a per-action idempotency key safe across both secure (HTTPS/localhost)
+ * and local LAN HTTP environments.
+ */
+export function generateIdempotencyKey(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/**
  * Check if the application is running in "internal" mode (staff/desk only).
  * When internal mode is active, customer-facing root pages redirect to /admin/desk.
  * Controlled by NEXT_PUBLIC_APP_MODE="internal" or APP_MODE="internal".

@@ -233,11 +233,12 @@ export async function createBookingHold(
         data: { status: "CANCELLED" },
       });
 
-      // 3. Upsert customer by phone number
+      // 3. Upsert customer by canonical normalized phone number
+      const canonicalPhone = normalizedPhone || phoneNumber.trim();
       const customer = await tx.customer.upsert({
-        where: { phoneNumber },
+        where: { phoneNumber: canonicalPhone },
         update: { name: customerName },
-        create: { name: customerName, phoneNumber },
+        create: { name: customerName, phoneNumber: canonicalPhone },
       });
 
       // 4. Invalidate any previous unsubmitted holds for THIS customer (prevents 1 user locking multiple slots)
@@ -534,7 +535,7 @@ export async function lookupBookingStatus(
     const isRefCode = /^[a-zA-Z0-9]{2,10}-[a-zA-Z0-9]{4,8}$/i.test(trimmed);
 
     // Valid phone format: 9 to 14 digits (e.g. 0123456789, 60123456789)
-    const cleanPhone = trimmed.replace(/\D/g, "");
+    const cleanPhone = normalizePhoneNumber(trimmed) || trimmed.replace(/\D/g, "");
     const isPhone = cleanPhone.length >= 9 && cleanPhone.length <= 14;
 
     // Reject invalid formats immediately BEFORE touching the database!

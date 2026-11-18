@@ -17,15 +17,19 @@ import {
 import { Zap, Flame, Loader2, Play, Check, Clock } from "lucide-react";
 import { format } from "date-fns";
 import toast from "react-hot-toast";
+import { normalizeDeskLanguageMode } from "@/lib/desk-i18n";
+import type { DeskLanguageMode } from "@/types";
 
 interface RushModeControlProps {
-  langMode?: "ONLY_ZH" | "ONLY_EN" | "BILINGUAL_ZH_FIRST" | "BILINGUAL_EN_FIRST";
+  langMode?: DeskLanguageMode;
   compact?: boolean;
+  iconOnly?: boolean;
 }
 
 export function RushModeControl({
-  langMode = "BILINGUAL_ZH_FIRST",
+  langMode = "ONLY_EN",
   compact = false,
+  iconOnly = false,
 }: RushModeControlProps) {
   const [status, setStatus] = useState<RushModeStatus>({
     isActive: false,
@@ -36,7 +40,7 @@ export function RushModeControl({
   const [isOpen, setIsOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
 
-  const isZh = langMode === "ONLY_ZH" || langMode === "BILINGUAL_ZH_FIRST";
+  const isZh = normalizeDeskLanguageMode(langMode) === "ONLY_ZH";
 
   async function refreshStatus() {
     const res = await getRushModeStatus();
@@ -107,26 +111,38 @@ export function RushModeControl({
               type="button"
               size="sm"
               variant="outline"
-              className="h-9 px-3 rounded-xl border-amber-500/50 bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-400 font-bold text-xs flex items-center gap-1.5 shadow-xs cursor-pointer animate-pulse"
-              title="Rush Mode active — click to manage"
+              className={
+                iconOnly
+                  ? "h-9 w-full px-0 justify-center rounded-xl border-amber-500/50 bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-400 font-bold text-xs flex items-center shadow-xs cursor-pointer animate-pulse"
+                  : "h-9 px-3 rounded-xl border-amber-500/50 bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-400 font-bold text-xs flex items-center gap-1.5 shadow-xs cursor-pointer animate-pulse"
+              }
+              title={`Rush Mode active (${status.minutesRemaining}m) — click to manage`}
             >
-              <Flame className="h-3.5 w-3.5 text-amber-500 fill-amber-500" />
-              <span suppressHydrationWarning>
-                {isZh ? "客满暂停中" : "Rush Mode"} ({status.minutesRemaining}m)
-              </span>
+              <Flame className="h-3.5 w-3.5 text-amber-500 fill-amber-500 shrink-0" />
+              {!iconOnly && (
+                <span suppressHydrationWarning>
+                  {isZh ? "客满暂停中" : "Rush Mode"} ({status.minutesRemaining}m)
+                </span>
+              )}
             </Button>
           ) : (
             <Button
               type="button"
               size="sm"
               variant="outline"
-              className="h-9 px-2.5 sm:px-3 rounded-xl font-bold text-xs flex items-center gap-1.5 text-muted-foreground hover:text-foreground hover:bg-muted cursor-pointer"
+              className={
+                iconOnly
+                  ? "h-9 w-full px-0 justify-center rounded-xl font-bold text-xs flex items-center text-muted-foreground hover:text-foreground hover:bg-muted cursor-pointer"
+                  : "h-9 px-2.5 sm:px-3 rounded-xl font-bold text-xs flex items-center gap-1.5 text-muted-foreground hover:text-foreground hover:bg-muted cursor-pointer"
+              }
               title="Temporarily pause online bookings for walk-in rush"
             >
-              <Zap className="h-3.5 w-3.5 text-amber-500" />
-              <span className={compact ? "hidden md:inline" : "inline"} suppressHydrationWarning>
-                {isZh ? "高峰客满" : "Rush Mode"}
-              </span>
+              <Zap className="h-3.5 w-3.5 text-amber-500 shrink-0" />
+              {!iconOnly && (
+                <span className={compact ? "hidden md:inline" : "inline"} suppressHydrationWarning>
+                  {isZh ? "高峰客满" : "Rush Mode"}
+                </span>
+              )}
             </Button>
           )
         }

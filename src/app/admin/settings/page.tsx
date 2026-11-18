@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { cookies } from "next/headers";
+import { connection } from "next/server";
 import { getBusinessSchedules, getTimeBlockouts } from "@/actions/schedule";
 import { getDepositSetting } from "@/actions/deposit";
 import { getDepositExemptCustomers } from "@/actions/deposit-exempt";
@@ -12,12 +13,9 @@ import { DeskScoreboardSettingsForm } from "@/components/admin/DeskScoreboardSet
 import { DepositExemptManager } from "@/components/admin/DepositExemptManager";
 import { AdminPinSettingsForm } from "@/components/admin/AdminPinSettingsForm";
 import { DatabaseBackupCard } from "@/components/admin/DatabaseBackupCard";
-import { Separator } from "@/components/ui/separator";
-import { resolveLabel } from "@/lib/desk-i18n";
 import { isInternalAppMode } from "@/lib/utils";
 import type { DeskLanguageMode } from "@/types";
-
-import { connection } from "next/server";
+import { normalizeDeskLanguageMode } from "@/lib/desk-i18n";
 
 export const metadata: Metadata = { title: "Settings" };
 
@@ -36,7 +34,7 @@ export default async function SettingsPage() {
   const schedules = scheduleResult.success ? scheduleResult.data : [];
   const blockouts = blockoutsResult.success ? blockoutsResult.data : [];
   const exemptCustomers = exemptResult.success ? exemptResult.data : [];
-  const currentPin = pinResult.success ? pinResult.data : "1234";
+  const currentPin = pinResult.success ? pinResult.data : "";
   const backupStats = statsResult.success ? statsResult.data : undefined;
   const depositSetting = depositResult.success
     ? depositResult.data
@@ -62,82 +60,53 @@ export default async function SettingsPage() {
 
   const cookieStore = await cookies();
   const cookieLang = cookieStore.get("app_desk_language")?.value as DeskLanguageMode | undefined;
-  const activeLang: DeskLanguageMode =
-    cookieLang || depositSetting.deskLanguage || "ONLY_EN";
+  const activeLang: DeskLanguageMode = normalizeDeskLanguageMode(
+    cookieLang || depositSetting.deskLanguage
+  );
+  const isZh = activeLang === "ONLY_ZH";
+  const t = (en: string, zh: string) => (isZh ? zh : en);
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <h1 className="text-xl sm:text-2xl font-bold tracking-tight">
-        {resolveLabel({ zh: "系统设置", en: "Settings" }, activeLang)}
+        {t("Settings", "系统设置")}
       </h1>
 
-      {/* Salon Desk Scoreboard Display Controls */}
-      <section className="space-y-4">
+      <section>
         <DeskScoreboardSettingsForm initialSetting={depositSetting} />
       </section>
 
-      {/* 4-Digit Passcode & Security */}
-      <section className="space-y-4">
-        <AdminPinSettingsForm currentPin={currentPin} />
+      <section>
+        <AdminPinSettingsForm currentPin={currentPin} initialLanguage={activeLang} />
       </section>
 
-      {/* Database Backup & Data Export */}
-      <section className="space-y-4">
-        <DatabaseBackupCard initialStats={backupStats} />
+      <section>
+        <DatabaseBackupCard initialStats={backupStats} initialLanguage={activeLang} />
       </section>
 
-      {/* Deposit & Exemption settings (only needed when public self-booking is enabled) */}
       {!isInternalAppMode() && (
         <>
-          <section className="space-y-4">
+          <section>
             <DepositSettingsForm initialSetting={depositSetting} />
           </section>
 
-          <section className="space-y-4">
+          <section>
             <DepositExemptManager initialCustomers={exemptCustomers} />
           </section>
         </>
       )}
 
-      <Separator />
-
-      {/* Business hours */}
-      <section className="space-y-4">
-        <div>
-          <h2 className="text-lg font-semibold">
-            {resolveLabel({ zh: "营业时间", en: "Business Hours" }, activeLang)}
-          </h2>
-          <p className="text-sm text-muted-foreground">
-            {resolveLabel(
-              {
-                zh: "设置每周各天营业时间与休息日",
-                en: "Set your operating hours per day of week",
-              },
-              activeLang
-            )}
-          </p>
-        </div>
+      <section className="space-y-3">
+        <h2 className="text-base font-semibold tracking-tight">
+          {t("Business Hours", "营业时间")}
+        </h2>
         <BusinessHoursForm initialSchedules={schedules} />
       </section>
 
-      <Separator />
-
-      {/* Blockouts */}
-      <section className="space-y-4">
-        <div>
-          <h2 className="text-lg font-semibold">
-            {resolveLabel({ zh: "临时休息与不可预约时段", en: "Time Blockouts" }, activeLang)}
-          </h2>
-          <p className="text-sm text-muted-foreground">
-            {resolveLabel(
-              {
-                zh: "屏蔽特定日期或时间段（如假期、突发休息等）",
-                en: "Block off specific date/time ranges (holidays, breaks, etc.)",
-              },
-              activeLang
-            )}
-          </p>
-        </div>
+      <section className="space-y-3">
+        <h2 className="text-base font-semibold tracking-tight">
+          {t("Time Blockouts", "不可预约时段")}
+        </h2>
         <BlockoutManager initialBlockouts={blockouts} />
       </section>
     </div>

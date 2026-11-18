@@ -24,22 +24,39 @@ import { format } from "date-fns";
 import type { BookingDto, BookingStatus } from "@/types";
 import { Loader2, Trash2, Phone } from "lucide-react";
 
-const STATUS_OPTIONS: BookingStatus[] = [
-  "PENDING",
-  "CONFIRMED",
-  "COMPLETED",
-  "NO_SHOW",
+const STATUS_OPTIONS: { id: BookingStatus; en: string; zh: string }[] = [
+  { id: "PENDING", en: "Pending", zh: "待处理" },
+  { id: "CONFIRMED", en: "Confirmed", zh: "已确认" },
+  { id: "COMPLETED", en: "Completed", zh: "已完成" },
+  { id: "NO_SHOW", en: "No Show", zh: "爽约" },
 ];
 
 interface AgendaCardProps {
   booking: BookingDto;
   onUpdate: (updated: BookingDto) => void;
   currencySymbol?: string;
+  isZh?: boolean;
 }
 
-export function AgendaCard({ booking, onUpdate, currencySymbol }: AgendaCardProps) {
+export function AgendaCard({
+  booking,
+  onUpdate,
+  currencySymbol,
+  isZh = false,
+}: AgendaCardProps) {
   const [isPending, startTransition] = useTransition();
   const [cancelOpen, setCancelOpen] = useState(false);
+
+  const currentStatusOption = STATUS_OPTIONS.find((s) => s.id === booking.status);
+  const currentStatusLabel = currentStatusOption
+    ? isZh
+      ? currentStatusOption.zh
+      : currentStatusOption.en
+    : booking.status === "CANCELLED"
+    ? isZh
+      ? "已取消"
+      : "Cancelled"
+    : booking.status;
 
   function handleStatusChange(status: BookingStatus | null) {
     if (!status) return;
@@ -67,10 +84,10 @@ export function AgendaCard({ booking, onUpdate, currencySymbol }: AgendaCardProp
       {/* Time column */}
       <div className="sm:w-20 shrink-0">
         <p className="text-sm font-bold">
-          {format(new Date(booking.startDatetime), "h:mm a")}
+          {format(new Date(booking.startDatetime), isZh ? "HH:mm" : "h:mm a")}
         </p>
         <p className="text-xs text-muted-foreground">
-          {format(new Date(booking.endDatetime), "h:mm a")}
+          {format(new Date(booking.endDatetime), isZh ? "HH:mm" : "h:mm a")}
         </p>
       </div>
 
@@ -80,6 +97,7 @@ export function AgendaCard({ booking, onUpdate, currencySymbol }: AgendaCardProp
           <BookingStatusBadge
             status={booking.status}
             receiptSubmittedAt={booking.receiptSubmittedAt}
+            isZh={isZh}
           />
         </div>
         <p className="text-sm text-muted-foreground truncate">
@@ -97,7 +115,17 @@ export function AgendaCard({ booking, onUpdate, currencySymbol }: AgendaCardProp
           booking.depositDueCents > 0 &&
           booking.depositDueCents < booking.totalPriceCents && (
             <span className="text-[11px] text-muted-foreground">
-              (Dep: <span className="text-green-600 font-semibold">{formatPrice(booking.depositDueCents, currencySymbol)}</span> · Bal: {formatPrice(booking.balanceDueCents ?? booking.totalPriceCents - booking.depositDueCents, currencySymbol)})
+              ({isZh ? "定金" : "Dep"}:{" "}
+              <span className="text-green-600 font-semibold">
+                {formatPrice(booking.depositDueCents, currencySymbol)}
+              </span>{" "}
+              · {isZh ? "尾款" : "Bal"}:{" "}
+              {formatPrice(
+                booking.balanceDueCents ??
+                  booking.totalPriceCents - booking.depositDueCents,
+                currencySymbol
+              )}
+              )
             </span>
           )}
           <span className="text-xs text-muted-foreground font-mono">
@@ -106,7 +134,7 @@ export function AgendaCard({ booking, onUpdate, currencySymbol }: AgendaCardProp
         </div>
         {booking.notes && (
           <p className="text-xs text-muted-foreground mt-1 italic truncate">
-            Note: {booking.notes}
+            {isZh ? "备注" : "Note"}: {booking.notes}
           </p>
         )}
       </div>
@@ -125,12 +153,12 @@ export function AgendaCard({ booking, onUpdate, currencySymbol }: AgendaCardProp
               }
             >
               <SelectTrigger className="w-32 h-8 text-xs">
-                <SelectValue />
+                <SelectValue>{currentStatusLabel}</SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {STATUS_OPTIONS.map((s) => (
-                  <SelectItem key={s} value={s} className="text-xs">
-                    {s.charAt(0) + s.slice(1).toLowerCase().replace("_", " ")}
+                  <SelectItem key={s.id} value={s.id} className="text-xs">
+                    {isZh ? s.zh : s.en}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -149,20 +177,31 @@ export function AgendaCard({ booking, onUpdate, currencySymbol }: AgendaCardProp
                 <Dialog open={cancelOpen} onOpenChange={setCancelOpen}>
                   <DialogContent>
                   <DialogHeader>
-                    <DialogTitle>Cancel Booking?</DialogTitle>
+                    <DialogTitle>
+                      {isZh ? "取消此预约？" : "Cancel Booking?"}
+                    </DialogTitle>
                     <DialogDescription>
-                      This will cancel booking <strong>{booking.referenceCode}</strong> for{" "}
-                      <strong>{booking.customer.name}</strong> and immediately free up the slot.
-                      This action cannot be undone.
+                      {isZh ? (
+                        <>
+                          即将取消客户 <strong>{booking.customer.name}</strong> 的预约单{" "}
+                          <strong>{booking.referenceCode}</strong>，并立即释放该时段。此操作无法撤销。
+                        </>
+                      ) : (
+                        <>
+                          This will cancel booking <strong>{booking.referenceCode}</strong> for{" "}
+                          <strong>{booking.customer.name}</strong> and immediately free up the slot.
+                          This action cannot be undone.
+                        </>
+                      )}
                     </DialogDescription>
                   </DialogHeader>
                   <DialogFooter>
                     <Button variant="outline" onClick={() => setCancelOpen(false)} disabled={isPending}>
-                      Keep Booking
+                      {isZh ? "保留预约" : "Keep Booking"}
                     </Button>
                     <Button variant="destructive" onClick={handleCancel} disabled={isPending}>
                       {isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                      Cancel Booking
+                      {isZh ? "确认取消" : "Cancel Booking"}
                     </Button>
                   </DialogFooter>
                 </DialogContent>

@@ -136,6 +136,7 @@ model MemberTransaction {
   customerId        String
   memberPackageId   String?
   bookingId         String?
+  idempotencyKey    String?        @unique
   type              String         // "CREDIT_RELOAD" | "CREDIT_DEDUCT" | "PACKAGE_PURCHASE" | "PACKAGE_DEDUCT" | "MANUAL_ADJUST"
   creditChangeCents Int            @default(0)
   balanceAfterCents Int            @default(0)
@@ -166,9 +167,10 @@ enum BookingStatus {
 }
 
 model Booking {
-  id                 String        @id @default(cuid())
-  referenceCode      String        @unique
-  customerId         String
+  id                     String        @id @default(cuid())
+  referenceCode          String        @unique
+  checkoutIdempotencyKey String?       @unique
+  customerId             String
   serviceId          String
   startDatetime      DateTime
   endDatetime        DateTime

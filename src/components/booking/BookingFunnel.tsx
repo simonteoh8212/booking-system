@@ -8,7 +8,7 @@ import { StepDateTimePicker } from "./StepDateTimePicker";
 import { StepCustomerForm } from "./StepCustomerForm";
 import { StepPaymentInstructions } from "./StepPaymentInstructions";
 import { BookingConfirmation } from "./BookingConfirmation";
-import { Flame } from "lucide-react";
+import { Flame, Check } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import type { ServiceDto } from "@/types";
@@ -95,7 +95,7 @@ export function BookingFunnel({
                       : "bg-muted text-muted-foreground"
                   )}
                 >
-                  {isCompleted ? "✓" : stepNum}
+                  {isCompleted ? <Check className="h-3.5 w-3.5" /> : stepNum}
                 </div>
                 <span
                   className={cn(

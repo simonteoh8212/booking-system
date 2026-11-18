@@ -15,6 +15,7 @@ import {
   RotateCcw,
   Search,
   Sparkles,
+  Moon,
 } from "lucide-react";
 import { useState } from "react";
 import Link from "next/link";
@@ -145,8 +146,9 @@ export function BookingConfirmation() {
             {isDepositExempt ? (
               <>
                 <div className="flex justify-between">
-                  <span className="text-amber-700 dark:text-amber-400 font-medium">
-                    🌟 {t.confirmation.depositWaived[language]}
+                  <span className="text-amber-700 dark:text-amber-400 font-medium inline-flex items-center gap-1">
+                    <Sparkles className="h-3.5 w-3.5 shrink-0" />
+                    <span>{t.confirmation.depositWaived[language]}</span>
                   </span>
                   <span className="font-bold text-amber-700 dark:text-amber-400 text-right">
                     {t.confirmation.waivedAmount[language]}
@@ -190,7 +192,8 @@ export function BookingConfirmation() {
         <Card className="bg-indigo-50/80 border-indigo-200 text-left dark:bg-indigo-950/20 dark:border-indigo-800">
           <CardContent className="p-4 space-y-1.5">
             <h4 className="font-semibold text-indigo-900 dark:text-indigo-300 text-sm flex items-center gap-1.5">
-              🌙 {t.confirmation.afterHoursTitle[language]}
+              <Moon className="h-4 w-4 shrink-0" />
+              <span>{t.confirmation.afterHoursTitle[language]}</span>
             </h4>
             <p className="text-indigo-800 dark:text-indigo-200 text-sm leading-relaxed">
               {t.confirmation.afterHoursLine1(
@@ -214,13 +217,21 @@ export function BookingConfirmation() {
             <h4
               className={
                 isDepositExempt
-                  ? "font-semibold text-amber-900 dark:text-amber-300 text-sm"
-                  : "font-semibold text-green-900 dark:text-green-300 text-sm"
+                  ? "font-semibold text-amber-900 dark:text-amber-300 text-sm flex items-center gap-1.5"
+                  : "font-semibold text-green-900 dark:text-green-300 text-sm flex items-center gap-1.5"
               }
             >
-              {isDepositExempt
-                ? t.confirmation.vipSecuredTitle[language]
-                : t.confirmation.regularSecuredTitle[language]}
+              {isDepositExempt ? (
+                <>
+                  <Sparkles className="h-4 w-4 shrink-0" />
+                  <span>{t.confirmation.vipSecuredTitle[language]}</span>
+                </>
+              ) : (
+                <>
+                  <CheckCircle2 className="h-4 w-4 shrink-0" />
+                  <span>{t.confirmation.regularSecuredTitle[language]}</span>
+                </>
+              )}
             </h4>
             <p
               className={

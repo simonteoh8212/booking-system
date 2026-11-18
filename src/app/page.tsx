@@ -6,7 +6,7 @@ import { getRushModeStatus } from "@/actions/emergency";
 import { BookingFunnel } from "@/components/booking/BookingFunnel";
 import { CustomerLanguageProvider } from "@/components/booking/CustomerLanguageContext";
 import { CustomerHeader } from "@/components/booking/CustomerHeader";
-import { CalendarDays } from "lucide-react";
+import { CalendarDays, Play } from "lucide-react";
 
 import { connection } from "next/server";
 import { redirect } from "next/navigation";
@@ -68,7 +68,8 @@ export default async function BookingPage() {
             </Link>
             <span>•</span>
             <Link href="/demo" className="hover:underline text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1">
-              <span>▶ Watch Demo Video / 功能演示视频</span>
+              <Play className="h-3 w-3 fill-current shrink-0" />
+              <span>Watch Demo Video / 功能演示视频</span>
             </Link>
           </p>
           <p>Secure booking powered by BookEase</p>

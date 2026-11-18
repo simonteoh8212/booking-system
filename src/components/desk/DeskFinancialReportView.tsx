@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useTransition, useRef, useCallback } from "react";
+import { useState, useEffect, useTransition } from "react";
 import {
   getMonthlyFinancialReport,
   createBatchDeskExpenses,
@@ -13,28 +13,29 @@ import type {
 } from "@/types";
 import { formatPrice, toBusinessDateString } from "@/lib/utils";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogDescription,
 } from "@/components/ui/dialog";
 import Link from "next/link";
 import {
   ArrowLeft,
   ChevronLeft,
   ChevronRight,
-  TrendingUp,
   Receipt,
   Plus,
   Trash2,
-  Wallet,
   Package,
+  Building2,
+  Lightbulb,
+  User,
+  Megaphone,
   CalendarDays,
   Loader2,
   AlertCircle,
@@ -45,8 +46,7 @@ import {
   FileText,
 } from "lucide-react";
 import toast from "react-hot-toast";
-import { DESK_DICT, resolveDeskText, resolveServiceName } from "@/lib/desk-i18n";
-import { DeskText } from "./DeskText";
+import { resolveServiceName } from "@/lib/desk-i18n";
 
 interface DeskFinancialReportViewProps {
   currencySymbol?: string;
@@ -56,24 +56,20 @@ interface DeskFinancialReportViewProps {
 
 const CATEGORY_CONFIG: Record<
   ExpenseCategory,
-  { zh: string; en: string; icon: string }
+  { zh: string; en: string; icon: React.ComponentType<{ className?: string }> }
 > = {
-  STOCK: { ...DESK_DICT.financialReport.categoryStock, icon: "📦" },
-  RENT: { ...DESK_DICT.financialReport.categoryRent, icon: "🏢" },
-  UTILITIES: { ...DESK_DICT.financialReport.categoryUtilities, icon: "💡" },
-  SALARY: { ...DESK_DICT.financialReport.categorySalary, icon: "👤" },
-  MARKETING: { ...DESK_DICT.financialReport.categoryMarketing, icon: "📣" },
-  OTHER: { ...DESK_DICT.financialReport.categoryOther, icon: "🧾" },
+  STOCK: { en: "Stock / Supplies", zh: "进货库存", icon: Package },
+  RENT: { en: "Shop Rent", zh: "店面租金", icon: Building2 },
+  UTILITIES: { en: "Utilities", zh: "水电杂费", icon: Lightbulb },
+  SALARY: { en: "Salary / Commission", zh: "员工薪资", icon: User },
+  MARKETING: { en: "Marketing", zh: "推广广告", icon: Megaphone },
+  OTHER: { en: "Other", zh: "其他开支", icon: Receipt },
 };
 
-/**
- * Resolves expense titles: standard category titles are translated dynamically
- * based on current languageMode so English users see English, Chinese users see Chinese.
- */
 function resolveExpenseTitle(
   title: string,
   category: ExpenseCategory,
-  languageMode: DeskLanguageMode
+  isZh: boolean
 ): { title: string; isStandard: boolean } {
   const cfg = CATEGORY_CONFIG[category] || CATEGORY_CONFIG.OTHER;
   const trimmed = title?.trim() || "";
@@ -82,25 +78,12 @@ function resolveExpenseTitle(
     !trimmed ||
     trimmed === cfg.en ||
     trimmed === cfg.zh ||
-    trimmed === "Stock / Supplies" ||
-    trimmed === "Shop Rent" ||
-    trimmed === "Utilities" ||
-    trimmed === "Salary / Commission" ||
-    trimmed === "Marketing" ||
     trimmed === "Other Misc" ||
-    trimmed === "进货库存" ||
-    trimmed === "店面租金" ||
-    trimmed === "水电杂费" ||
-    trimmed === "员工薪资" ||
     trimmed === "员工薪资/提成" ||
-    trimmed === "推广广告" ||
     trimmed === "其他杂费";
 
   if (isStandard) {
-    return {
-      title: resolveDeskText(cfg, languageMode).primary,
-      isStandard: true,
-    };
+    return { title: isZh ? cfg.zh : cfg.en, isStandard: true };
   }
 
   return { title: trimmed, isStandard: false };
@@ -124,52 +107,24 @@ const INITIAL_CATEGORY_INPUTS: Record<ExpenseCategory, { amountStr: string; titl
 
 export function DeskFinancialReportView({
   currencySymbol = "RM",
-  languageMode = "BILINGUAL_ZH_FIRST",
+  languageMode = "ONLY_EN",
   onBack,
 }: DeskFinancialReportViewProps) {
-  const currentDate = new Date();
-  const currentYear = currentDate.getFullYear();
-  const currentMonth = currentDate.getMonth() + 1;
+  const isZh = languageMode === "ONLY_ZH";
+  const t = (en: string, zh: string) => (isZh ? zh : en);
+
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth() + 1;
 
   const [selectedYear, setSelectedYear] = useState<number>(currentYear);
   const [selectedMonth, setSelectedMonth] = useState<number>(currentMonth);
   const [reportData, setReportData] = useState<MonthlyFinancialReportDto | null>(null);
   const [activeTab, setActiveTab] = useState<"EXPENSES" | "SALES" | "DAILY">("EXPENSES");
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [refreshTick, setRefreshTick] = useState<number>(0);
   const [isPending, startTransition] = useTransition();
 
-  // Scrollable Tabs Overflow Detection
-  const tabsScrollRef = useRef<HTMLDivElement>(null);
-  const [canScrollLeft, setCanScrollLeft] = useState<boolean>(false);
-  const [canScrollRight, setCanScrollRight] = useState<boolean>(false);
-
-  const checkTabsScroll = useCallback(() => {
-    const el = tabsScrollRef.current;
-    if (!el) return;
-    const { scrollLeft, scrollWidth, clientWidth } = el;
-    setCanScrollLeft(scrollLeft > 6);
-    setCanScrollRight(scrollLeft + clientWidth < scrollWidth - 6);
-  }, []);
-
-  useEffect(() => {
-    checkTabsScroll();
-    const handleResize = () => checkTabsScroll();
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
-  }, [checkTabsScroll, reportData, activeTab]);
-
-  const scrollTabs = (direction: "left" | "right") => {
-    const el = tabsScrollRef.current;
-    if (!el) return;
-    const scrollAmount = 200;
-    el.scrollBy({
-      left: direction === "left" ? -scrollAmount : scrollAmount,
-      behavior: "smooth",
-    });
-    setTimeout(checkTabsScroll, 250);
-  };
-
-  // Multi-Category Sheet State
   const [isLogOpen, setIsLogOpen] = useState<boolean>(false);
   const [sheetDateStr, setSheetDateStr] = useState<string>(
     toBusinessDateString(new Date())
@@ -179,25 +134,24 @@ export function DeskFinancialReportView({
   >(INITIAL_CATEGORY_INPUTS);
   const [extraCustomRows, setExtraCustomRows] = useState<ExtraRowItem[]>([]);
   const [formError, setFormError] = useState<string | null>(null);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
 
-  // Fetch report data for selected year & month
-  function fetchReport(year: number, month: number) {
-    setIsLoading(true);
-    startTransition(async () => {
-      const res = await getMonthlyFinancialReport(year, month);
+  useEffect(() => {
+    let ignore = false;
+    getMonthlyFinancialReport(selectedYear, selectedMonth).then((res) => {
+      if (ignore) return;
       if (res.success) {
         setReportData(res.data);
       }
       setIsLoading(false);
     });
-  }
-
-  useEffect(() => {
-    fetchReport(selectedYear, selectedMonth);
-  }, [selectedYear, selectedMonth]);
+    return () => {
+      ignore = true;
+    };
+  }, [selectedYear, selectedMonth, refreshTick]);
 
   function handlePrevMonth() {
+    setIsLoading(true);
     if (selectedMonth === 1) {
       setSelectedYear((prev) => prev - 1);
       setSelectedMonth(12);
@@ -207,6 +161,7 @@ export function DeskFinancialReportView({
   }
 
   function handleNextMonth() {
+    setIsLoading(true);
     if (selectedMonth === 12) {
       setSelectedYear((prev) => prev + 1);
       setSelectedMonth(1);
@@ -216,11 +171,12 @@ export function DeskFinancialReportView({
   }
 
   function handleCurrentMonth() {
+    if (selectedYear === currentYear && selectedMonth === currentMonth) return;
+    setIsLoading(true);
     setSelectedYear(currentYear);
     setSelectedMonth(currentMonth);
   }
 
-  // Open modal handler: smartly defaults date to 1st of selected month (or today if current month)
   function handleOpenModal() {
     setFormError(null);
     const isCurrentMonthView =
@@ -235,7 +191,6 @@ export function DeskFinancialReportView({
     setIsLogOpen(true);
   }
 
-  // Update a standard category input
   function handleCategoryChange(
     cat: ExpenseCategory,
     field: "amountStr" | "title",
@@ -247,7 +202,6 @@ export function DeskFinancialReportView({
     }));
   }
 
-  // Clear single category
   function handleClearCategory(cat: ExpenseCategory) {
     setCategoryInputs((prev) => ({
       ...prev,
@@ -255,7 +209,6 @@ export function DeskFinancialReportView({
     }));
   }
 
-  // Add extra custom row
   function handleAddExtraRow() {
     setExtraCustomRows((prev) => [
       ...prev,
@@ -268,7 +221,6 @@ export function DeskFinancialReportView({
     ]);
   }
 
-  // Update extra row
   function handleUpdateExtraRow(
     id: string,
     field: keyof ExtraRowItem,
@@ -279,15 +231,11 @@ export function DeskFinancialReportView({
     );
   }
 
-  // Remove extra row
   function handleRemoveExtraRow(id: string) {
     setExtraCustomRows((prev) => prev.filter((r) => r.id !== id));
   }
 
-  // Calculate live filled items
-  const filledStandardItems = (
-    Object.keys(CATEGORY_CONFIG) as ExpenseCategory[]
-  )
+  const filledStandardItems = (Object.keys(CATEGORY_CONFIG) as ExpenseCategory[])
     .filter((cat) => {
       const parsed = parseFloat(categoryInputs[cat].amountStr);
       return !isNaN(parsed) && parsed > 0;
@@ -313,30 +261,18 @@ export function DeskFinancialReportView({
   const totalEnteredCents = allFilledItems.reduce((sum, item) => sum + item.amountCents, 0);
   const totalItemCount = allFilledItems.length;
 
-  // Save all entered expenses at once
   function handleSaveAllExpenses() {
     setFormError(null);
 
-    // Validate: if OTHER is filled, description is required
     for (const item of allFilledItems) {
       if (item.category === "OTHER" && !item.title) {
-        setFormError(
-          resolveDeskText(
-            DESK_DICT.financialReport.otherRequiresDesc,
-            languageMode
-          ).primary
-        );
+        setFormError(t("Please enter a description for Other expenses.", "请为其他开支填写说明。"));
         return;
       }
     }
 
     if (allFilledItems.length === 0) {
-      setFormError(
-        resolveDeskText(
-          DESK_DICT.financialReport.enterAtLeastOne,
-          languageMode
-        ).primary
-      );
+      setFormError(t("Enter at least one amount.", "请至少填写一项金额。"));
       return;
     }
 
@@ -351,33 +287,27 @@ export function DeskFinancialReportView({
       const res = await createBatchDeskExpenses(itemsToSave);
       if (res.success) {
         setIsLogOpen(false);
-        fetchReport(selectedYear, selectedMonth);
+        setIsLoading(true);
+        setRefreshTick((n) => n + 1);
+        toast.success(t("Expenses saved.", "开支已保存。"));
       } else {
         setFormError(res.error);
       }
     });
   }
 
-  // Delete Expense from main report
-  function handleDeleteExpense(id: string) {
-    if (
-      !confirm(
-        resolveDeskText(
-          DESK_DICT.financialReport.confirmDelete,
-          languageMode
-        ).primary
-      )
-    ) {
-      return;
-    }
-
-    setDeletingId(id);
+  function handleConfirmDeleteExpense() {
+    if (!deleteTargetId) return;
     startTransition(async () => {
-      const res = await deleteDeskExpense(id);
+      const res = await deleteDeskExpense(deleteTargetId);
       if (res.success) {
-        fetchReport(selectedYear, selectedMonth);
+        setDeleteTargetId(null);
+        setIsLoading(true);
+        setRefreshTick((n) => n + 1);
+        toast.success(t("Expense deleted.", "已删除开支。"));
+      } else {
+        toast.error(res.error || t("Failed to delete expense.", "删除失败。"));
       }
-      setDeletingId(null);
     });
   }
 
@@ -389,9 +319,9 @@ export function DeskFinancialReportView({
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      toast.success(resolveDeskText(DESK_DICT.backup.exportingCsv, languageMode).primary);
+      toast.success(t("Exporting sales CSV…", "正在导出销售 CSV…"));
     } catch {
-      toast.error("Export failed. Please try again.");
+      toast.error(t("Export failed.", "导出失败。"));
     }
   }
 
@@ -399,682 +329,359 @@ export function DeskFinancialReportView({
   const isNetPositive = (reportData?.netProfitCents || 0) >= 0;
 
   return (
-    <div className="space-y-6 pb-20 max-w-4xl mx-auto select-none">
-      {/* Top Header Navigation */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 border-b pb-4">
+    <div className="space-y-5 select-none">
+      {/* Compact Top Action Bar */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <Button
           type="button"
           onClick={onBack}
-          size="lg"
+          size="sm"
           variant="outline"
-          className="h-14 sm:h-16 px-6 text-base sm:text-lg font-bold border border-border/80 bg-card hover:bg-muted text-foreground gap-2.5 rounded-2xl shadow-xs cursor-pointer"
+          className="h-9 px-3 rounded-lg font-semibold gap-1.5 cursor-pointer"
         >
-          <ArrowLeft className="h-6 w-6 text-foreground shrink-0" />
-          <DeskText
-            text={DESK_DICT.financialReport.backToDesk}
-            mode={languageMode}
-            layout="inline"
-            primaryClass="font-black text-base sm:text-lg"
-          />
+          <ArrowLeft className="h-4 w-4 shrink-0" />
+          <span>{t("Back", "返回")}</span>
         </Button>
 
-        <div className="flex items-center gap-2 self-end sm:self-auto flex-wrap">
+        <div className="flex items-center gap-2 flex-wrap">
           <Button
             type="button"
             onClick={handleExportMonthCsv}
-            size="lg"
+            size="sm"
             variant="outline"
-            className="h-14 sm:h-16 px-4 sm:px-5 text-sm sm:text-base font-bold border border-border/80 bg-card hover:bg-muted text-foreground gap-2 rounded-2xl shadow-xs cursor-pointer"
-            title="Download CSV for Excel"
+            className="h-9 px-3 rounded-lg font-semibold gap-1.5 cursor-pointer text-xs sm:text-sm"
           >
-            <Download className="h-5 w-5 text-emerald-600 dark:text-emerald-400 shrink-0" />
-            <DeskText
-              text={DESK_DICT.backup.exportSalesShort}
-              mode={languageMode}
-              layout="inline"
-              primaryClass="font-bold text-sm sm:text-base"
-            />
+            <Download className="h-3.5 w-3.5 text-primary shrink-0" />
+            <span>{t("Export CSV", "导出 CSV")}</span>
           </Button>
 
           <Link
             href={`/admin/reports?year=${selectedYear}&month=${selectedMonth}&from=desk`}
             className={buttonVariants({
               variant: "outline",
-              size: "lg",
-              className:
-                "h-14 sm:h-16 px-4 sm:px-5 text-sm sm:text-base font-bold border border-border/80 bg-card hover:bg-muted text-foreground gap-2 rounded-2xl shadow-xs cursor-pointer inline-flex items-center",
+              size: "sm",
+              className: "h-9 px-3 rounded-lg font-semibold gap-1.5 cursor-pointer text-xs sm:text-sm",
             })}
-            title="Open printable bank statement"
           >
-            <FileText className="h-5 w-5 text-foreground shrink-0" />
-            <DeskText
-              text={DESK_DICT.statement.statementActionBtn}
-              mode={languageMode}
-              layout="inline"
-              primaryClass="font-bold text-sm sm:text-base"
-            />
+            <FileText className="h-3.5 w-3.5 shrink-0" />
+            <span>{t("Statement", "月度对账单")}</span>
           </Link>
 
           <Button
             type="button"
             onClick={handleOpenModal}
-            size="lg"
-            className="h-14 sm:h-16 px-6 text-base sm:text-lg font-bold bg-emerald-600 hover:bg-emerald-700 text-white gap-2 rounded-2xl shadow-xs cursor-pointer transition-colors"
+            size="sm"
+            className="h-9 px-3.5 rounded-lg font-semibold gap-1.5 cursor-pointer text-xs sm:text-sm"
           >
-            <Plus className="h-5 w-5" />
-            <DeskText
-              text={DESK_DICT.financialReport.logExpenseBtn}
-              mode={languageMode}
-              layout="inline"
-              primaryClass="font-extrabold text-base sm:text-lg"
-            />
+            <Plus className="h-3.5 w-3.5 shrink-0" />
+            <span>{t("Log Expense", "记录开支")}</span>
           </Button>
         </div>
       </div>
 
-      {/* Title & Month Selector Toolbar */}
-      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        <div>
-          <DeskText
-            text={DESK_DICT.financialReport.title}
-            mode={languageMode}
-            layout="stack"
-            primaryClass="text-2xl sm:text-3xl font-black tracking-tight text-foreground"
-            secondaryClass="text-sm font-semibold text-muted-foreground"
-          />
-          {/* <p className="text-xs text-muted-foreground font-normal mt-0.5">
-            {resolveDeskText(DESK_DICT.financialReport.subtitle, languageMode).primary}
-          </p> */}
-        </div>
+      {/* Title & Month Switcher */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground">
+          {t("Monthly Financials", "月度收支")}
+        </h1>
 
-        {/* Month Selector Bar */}
-        <div className="flex items-center gap-1.5 bg-card border border-border/80 p-1.5 rounded-2xl shadow-xs">
+        <div className="inline-flex items-center gap-1 bg-card border border-border p-1 rounded-xl">
           <Button
             type="button"
             variant="ghost"
-            size="sm"
+            size="icon"
             onClick={handlePrevMonth}
-            className="h-10 w-10 p-0 rounded-xl hover:bg-muted cursor-pointer"
-            title="Previous Month"
+            className="h-8 w-8 rounded-lg cursor-pointer"
+            title={t("Previous month", "上个月")}
+            aria-label={t("Previous month", "上个月")}
           >
-            <ChevronLeft className="h-5 w-5" />
+            <ChevronLeft className="h-4 w-4" />
           </Button>
 
-          <span className="font-extrabold text-base px-3 text-foreground font-mono">
+          <span className="font-semibold text-sm px-2.5 text-foreground tabular-nums whitespace-nowrap">
             {selectedYear} / {String(selectedMonth).padStart(2, "0")}
           </span>
 
           <Button
             type="button"
             variant="ghost"
-            size="sm"
+            size="icon"
             onClick={handleNextMonth}
-            className="h-10 w-10 p-0 rounded-xl hover:bg-muted cursor-pointer"
-            title="Next Month"
+            className="h-8 w-8 rounded-lg cursor-pointer"
+            title={t("Next month", "下个月")}
+            aria-label={t("Next month", "下个月")}
           >
-            <ChevronRight className="h-5 w-5" />
+            <ChevronRight className="h-4 w-4" />
           </Button>
 
           <Button
             type="button"
-            variant="outline"
+            variant="secondary"
             size="sm"
             onClick={handleCurrentMonth}
-            className="h-9 px-3 rounded-xl text-xs font-bold border border-border/80 hover:bg-muted ml-1 cursor-pointer"
+            className="h-8 px-2.5 rounded-lg text-xs font-semibold cursor-pointer whitespace-nowrap"
           >
-            <DeskText
-              text={DESK_DICT.financialReport.thisMonthBtn}
-              mode={languageMode}
-              layout="badge"
-            />
+            {t("This Month", "本月")}
           </Button>
         </div>
       </div>
 
-      {/* TOP 3 KPI CARDS - Direction 2 Retail POS Tactile Clean */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
-        {/* Card 1: Gross Sales */}
-        <Card className="relative overflow-hidden border border-border/80 bg-card rounded-2xl shadow-xs hover:shadow-sm transition-all duration-150 p-4 sm:p-5 flex flex-col justify-between">
-          <div className="absolute top-0 left-0 right-0 h-1 bg-emerald-500" />
-          <div className="space-y-1">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <div className="w-7 h-7 rounded-lg bg-emerald-500/10 text-emerald-600 flex items-center justify-center shrink-0">
-                  <TrendingUp className="h-4 w-4" />
-                </div>
-                <DeskText
-                  text={DESK_DICT.financialReport.kpiGrossSales}
-                  mode={languageMode}
-                  layout="inline"
-                  primaryClass="font-bold text-xs text-foreground tracking-tight"
-                />
-              </div>
-              <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-500/10 px-2.5 py-0.5 rounded-full tabular-nums">
-                {reportData?.completedOrdersCount || 0}{" "}
-                {resolveDeskText(DESK_DICT.financialReport.kpiOrdersCount, languageMode).primary}
-              </span>
-            </div>
-
-            <div className="pt-2">
-              <div className="text-3xl sm:text-4xl font-black font-mono tracking-tight text-foreground tabular-nums">
-                {isLoading ? (
-                  <Loader2 className="h-8 w-8 animate-spin text-muted-foreground/50" />
-                ) : (
-                  formatPrice(reportData?.grossSalesCents || 0, currSym)
-                )}
-              </div>
-            </div>
+      {/* Unified 1px-Divided KPI Strip */}
+      <div className="rounded-xl border border-border bg-card grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-border">
+        <div className="p-4">
+          <span className="text-xs font-medium text-muted-foreground block">
+            {t("Gross Revenue", "营业总额")}
+          </span>
+          <div className="text-2xl font-bold text-foreground mt-1 tabular-nums whitespace-nowrap">
+            {isLoading ? (
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground/50 my-1" />
+            ) : (
+              formatPrice(reportData?.grossSalesCents || 0, currSym)
+            )}
           </div>
+          <span className="text-xs text-muted-foreground block mt-0.5 tabular-nums">
+            {reportData?.completedOrdersCount || 0} {t("orders", "笔")}
+          </span>
+        </div>
 
-          <div className="flex items-center justify-between pt-3 mt-3 border-t border-border/60 text-xs">
-            <span className="text-muted-foreground font-medium flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-              <span>{reportData?.monthLabel || ""}</span>
-            </span>
-            <span className="text-muted-foreground font-semibold">
-              + 100% {resolveDeskText(DESK_DICT.financialReport.incomePercent, languageMode).primary}
-            </span>
+        <div className="p-4">
+          <span className="text-xs font-medium text-muted-foreground block">
+            {t("Expenses", "店铺开支")}
+          </span>
+          <div className="text-2xl font-bold text-foreground mt-1 tabular-nums whitespace-nowrap">
+            {isLoading ? (
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground/50 my-1" />
+            ) : (
+              formatPrice(reportData?.totalExpensesCents || 0, currSym)
+            )}
           </div>
-        </Card>
+          <span className="text-xs text-muted-foreground block mt-0.5 tabular-nums">
+            {reportData?.expenseCount || 0} {t("entries", "笔")}
+          </span>
+        </div>
 
-        {/* Card 2: Total Expenses */}
-        <Card className="relative overflow-hidden border border-border/80 bg-card rounded-2xl shadow-xs hover:shadow-sm transition-all duration-150 p-4 sm:p-5 flex flex-col justify-between">
-          <div className="absolute top-0 left-0 right-0 h-1 bg-amber-500" />
-          <div className="space-y-1">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <div className="w-7 h-7 rounded-lg bg-amber-500/10 text-amber-600 flex items-center justify-center shrink-0">
-                  <Receipt className="h-4 w-4" />
-                </div>
-                <DeskText
-                  text={DESK_DICT.financialReport.kpiTotalExpenses}
-                  mode={languageMode}
-                  layout="inline"
-                  primaryClass="font-bold text-xs text-foreground tracking-tight"
-                />
-              </div>
-              <span className="text-[11px] font-semibold text-amber-700 bg-amber-500/10 px-2.5 py-0.5 rounded-full tabular-nums">
-                {reportData?.expenseCount || 0}{" "}
-                {resolveDeskText(DESK_DICT.financialReport.kpiExpenseCount, languageMode).primary}
-              </span>
-            </div>
-
-            <div className="pt-2">
-              <div className="text-3xl sm:text-4xl font-black font-mono tracking-tight text-foreground tabular-nums">
-                {isLoading ? (
-                  <Loader2 className="h-8 w-8 animate-spin text-muted-foreground/50" />
-                ) : (
-                  formatPrice(reportData?.totalExpensesCents || 0, currSym)
-                )}
-              </div>
-            </div>
-          </div>
-
-          <div className="flex items-center justify-between pt-3 mt-3 border-t border-border/60 text-xs">
-            <span className="text-muted-foreground font-medium flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-              <span>
-                {reportData?.expenseCategories.length || 0}{" "}
-                {resolveDeskText(DESK_DICT.financialReport.categoriesCountUnit, languageMode).primary}
-              </span>
-            </span>
-            <span className="text-amber-700 font-semibold">
-              − {resolveDeskText(DESK_DICT.financialReport.costOutflow, languageMode).primary}
-            </span>
-          </div>
-        </Card>
-
-        {/* Card 3: Net Profit */}
-        <Card className="relative overflow-hidden border border-border/80 bg-card rounded-2xl shadow-xs hover:shadow-sm transition-all duration-150 p-4 sm:p-5 flex flex-col justify-between">
+        <div className="p-4">
+          <span className="text-xs font-medium text-muted-foreground block">
+            {t("Net Profit", "净利润")}
+          </span>
           <div
-            className={`absolute top-0 left-0 right-0 h-1 ${
-              isNetPositive ? "bg-emerald-600" : "bg-destructive"
+            className={`text-2xl font-bold mt-1 tabular-nums whitespace-nowrap ${
+              isNetPositive ? "text-primary" : "text-destructive"
             }`}
-          />
-          <div className="space-y-1">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <div
-                  className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
-                    isNetPositive
-                      ? "bg-emerald-500/10 text-emerald-600"
-                      : "bg-destructive/10 text-destructive"
-                  }`}
-                >
-                  <Wallet className="h-4 w-4" />
-                </div>
-                <DeskText
-                  text={DESK_DICT.financialReport.kpiNetProfit}
-                  mode={languageMode}
-                  layout="inline"
-                  primaryClass="font-bold text-xs text-foreground tracking-tight"
-                />
-              </div>
-              <span
-                className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full tabular-nums ${
-                  isNetPositive
-                    ? "bg-emerald-500/10 text-emerald-700"
-                    : "bg-destructive/10 text-destructive"
-                }`}
-              >
-                {reportData?.profitMarginPercent || 0}%{" "}
-                {resolveDeskText(DESK_DICT.financialReport.kpiMargin, languageMode).primary}
-              </span>
-            </div>
-
-            <div className="pt-2">
-              <div
-                className={`text-3xl sm:text-4xl font-black font-mono tracking-tight tabular-nums ${
-                  isNetPositive ? "text-emerald-600" : "text-destructive"
-                }`}
-              >
-                {isLoading ? (
-                  <Loader2 className="h-8 w-8 animate-spin text-muted-foreground/50" />
-                ) : (
-                  <>
-                    {isNetPositive ? "+" : "−"}
-                    {formatPrice(Math.abs(reportData?.netProfitCents || 0), currSym)}
-                  </>
-                )}
-              </div>
-            </div>
+          >
+            {isLoading ? (
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground/50 my-1" />
+            ) : (
+              <>
+                {isNetPositive ? "+" : "−"}
+                {formatPrice(Math.abs(reportData?.netProfitCents || 0), currSym)}
+              </>
+            )}
           </div>
+          <span className="text-xs text-muted-foreground block mt-0.5 tabular-nums">
+            {reportData?.profitMarginPercent || 0}% {t("margin", "利润率")}
+          </span>
+        </div>
+      </div>
 
-          <div className="flex items-center justify-between pt-3 mt-3 border-t border-border/60 text-xs">
-            <span className="text-muted-foreground font-medium flex items-center gap-1.5">
-              <span
-                className={`w-1.5 h-1.5 rounded-full ${
-                  isNetPositive ? "bg-emerald-500" : "bg-destructive"
-                }`}
-              />
-              <span>
-                {resolveDeskText(DESK_DICT.financialReport.revenueMinusExpenses, languageMode).primary}
-              </span>
-            </span>
-            <span
-              className={`font-mono font-bold ${
-                isNetPositive ? "text-emerald-600" : "text-destructive"
+      {/* Segmented View Tabs (Fits cleanly without clipping) */}
+      <div className="inline-flex rounded-lg border border-border bg-muted/60 p-1">
+        {[
+          {
+            id: "EXPENSES" as const,
+            label: t("Expenses", "开支记录"),
+            count: reportData?.expenses.length || 0,
+            icon: Receipt,
+          },
+          {
+            id: "SALES" as const,
+            label: t("Services", "服务销量"),
+            count: reportData?.servicesBreakdown.length || 0,
+            icon: Scissors,
+          },
+          {
+            id: "DAILY" as const,
+            label: t("Daily", "每日明细"),
+            count: null,
+            icon: CalendarDays,
+          },
+        ].map((tab) => {
+          const Icon = tab.icon;
+          const active = activeTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveTab(tab.id)}
+              className={`px-3 py-1.5 rounded-md text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-colors whitespace-nowrap ${
+                active
+                  ? "bg-card text-foreground shadow-2xs"
+                  : "text-muted-foreground hover:text-foreground"
               }`}
             >
-              {
-                resolveDeskText(
-                  isNetPositive
-                    ? DESK_DICT.financialReport.profitTag
-                    : DESK_DICT.financialReport.lossTag,
-                  languageMode
-                ).primary
-              }
-            </span>
-          </div>
-        </Card>
+              <Icon className="h-3.5 w-3.5 shrink-0" />
+              <span>{tab.label}</span>
+              {tab.count !== null && (
+                <span className="text-[11px] text-muted-foreground tabular-nums">{tab.count}</span>
+              )}
+            </button>
+          );
+        })}
       </div>
 
-      {/* Expense Category Breakdown Pills */}
-      {/* {reportData && reportData.expenseCategories.length > 0 && (
-        <div className="p-4 rounded-2xl border border-border/80 bg-card space-y-2.5 shadow-xs">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-              {resolveDeskText(DESK_DICT.financialReport.expenseAllocation, languageMode).primary}
-            </span>
-            <span className="text-xs font-mono font-semibold text-muted-foreground">
-              {formatPrice(reportData.totalExpensesCents, currSym)}
-            </span>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {reportData.expenseCategories.map((cat) => (
-              <div
-                key={cat.category}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-border/80 bg-muted/30 text-xs"
-              >
-                <span className="text-sm">{cat.icon}</span>
-                <span className="font-bold text-foreground">
-                  {languageMode === "ONLY_ZH"
-                    ? cat.labelZh
-                    : languageMode === "ONLY_EN"
-                    ? cat.labelEn
-                    : `${cat.labelZh} (${cat.labelEn})`}
-                </span>
-                <span className="font-mono text-muted-foreground font-semibold">
-                  {formatPrice(cat.totalCents, currSym)}
-                </span>
-                <span className="text-[11px] font-mono font-bold text-foreground bg-muted px-1.5 py-0.5 rounded">
-                  {cat.percentage}%
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )} */}
-
-      {/* Navigation Tabs (Smooth Scrollable + Dynamic Overflow Cue) */}
-      <div className="relative w-full max-w-full">
-        {/* Left Scroll Cue & Gradient */}
-        {canScrollLeft && (
-          <div className="absolute left-0 top-0 bottom-0 z-10 flex items-center pr-4 pointer-events-none bg-gradient-to-r from-background via-background/90 to-transparent">
-            <button
-              type="button"
-              onClick={() => scrollTabs("left")}
-              className="pointer-events-auto h-7 w-7 rounded-full bg-card border border-border/80 shadow-md flex items-center justify-center text-foreground hover:bg-muted transition-all cursor-pointer -ml-0.5 active:scale-95"
-              aria-label="Scroll tabs left"
-              title="Scroll left"
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </button>
-          </div>
-        )}
-
-        {/* Scrollable Track */}
-        <div
-          ref={tabsScrollRef}
-          onScroll={checkTabsScroll}
-          className="flex items-center gap-1 sm:gap-2 border-b border-border/80 overflow-x-auto scroll-smooth select-none [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden px-0.5"
-        >
-          <button
-            type="button"
-            onClick={(e) => {
-              setActiveTab("EXPENSES");
-              e.currentTarget.scrollIntoView({ behavior: "smooth", inline: "nearest", block: "nearest" });
-            }}
-            className={`pb-3 px-3.5 sm:px-4 text-sm sm:text-base font-bold transition-all border-b-2 cursor-pointer flex items-center gap-2 shrink-0 whitespace-nowrap ${
-              activeTab === "EXPENSES"
-                ? "border-foreground text-foreground"
-                : "border-transparent text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            <Receipt className="h-4 w-4 shrink-0" />
-            <DeskText
-              text={DESK_DICT.financialReport.tabExpenses}
-              mode={languageMode}
-              layout="inline"
-              primaryClass="font-bold"
-            />
-            <Badge variant="outline" className="text-xs font-mono py-0 px-1.5 ml-0.5 shrink-0">
-              {reportData?.expenses.length || 0}
-            </Badge>
-          </button>
-
-          <button
-            type="button"
-            onClick={(e) => {
-              setActiveTab("SALES");
-              e.currentTarget.scrollIntoView({ behavior: "smooth", inline: "nearest", block: "nearest" });
-            }}
-            className={`pb-3 px-3.5 sm:px-4 text-sm sm:text-base font-bold transition-all border-b-2 cursor-pointer flex items-center gap-2 shrink-0 whitespace-nowrap ${
-              activeTab === "SALES"
-                ? "border-foreground text-foreground"
-                : "border-transparent text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            <Scissors className="h-4 w-4 shrink-0" />
-            <DeskText
-              text={DESK_DICT.financialReport.tabSales}
-              mode={languageMode}
-              layout="inline"
-              primaryClass="font-bold"
-            />
-            <Badge variant="outline" className="text-xs font-mono py-0 px-1.5 ml-0.5 shrink-0">
-              {reportData?.servicesBreakdown.length || 0}
-            </Badge>
-          </button>
-
-          <button
-            type="button"
-            onClick={(e) => {
-              setActiveTab("DAILY");
-              e.currentTarget.scrollIntoView({ behavior: "smooth", inline: "nearest", block: "nearest" });
-            }}
-            className={`pb-3 px-3.5 sm:px-4 text-sm sm:text-base font-bold transition-all border-b-2 cursor-pointer flex items-center gap-2 shrink-0 whitespace-nowrap ${
-              activeTab === "DAILY"
-                ? "border-foreground text-foreground"
-                : "border-transparent text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            <CalendarDays className="h-4 w-4 shrink-0" />
-            <DeskText
-              text={DESK_DICT.financialReport.tabDaily}
-              mode={languageMode}
-              layout="inline"
-              primaryClass="font-bold"
-            />
-          </button>
-        </div>
-
-        {/* Right Scroll Cue & Gradient */}
-        {canScrollRight && (
-          <div className="absolute right-0 top-0 bottom-0 z-10 flex items-center pl-4 pointer-events-none bg-gradient-to-l from-background via-background/90 to-transparent">
-            <button
-              type="button"
-              onClick={() => scrollTabs("right")}
-              className="pointer-events-auto h-7 w-7 rounded-full bg-card border border-border/80 shadow-md flex items-center justify-center text-foreground hover:bg-muted transition-all cursor-pointer -mr-0.5 active:scale-95 animate-pulse"
-              aria-label="Scroll tabs right"
-              title="More tabs"
-            >
-              <ChevronRight className="h-4 w-4" />
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* TAB CONTENT 1: EXPENSE LIST */}
+      {/* TAB 1: EXPENSES */}
       {activeTab === "EXPENSES" && (
-        <div className="space-y-3">
-          {reportData?.expenses.length === 0 ? (
-            <Card className="p-10 text-center border-dashed">
-              <Package className="h-12 w-12 text-muted-foreground/40 mx-auto mb-2" />
-              <h3 className="text-lg font-bold text-foreground">
-                <DeskText
-                  text={DESK_DICT.financialReport.noExpensesYet}
-                  mode={languageMode}
-                  layout="inline"
-                />
-              </h3>
-              <p className="text-xs text-muted-foreground mt-1 mb-4">
-                {resolveDeskText(
-                  DESK_DICT.financialReport.multiExpenseSub,
-                  languageMode
-                ).primary}
+        <div className="rounded-xl border border-border bg-card divide-y divide-border overflow-hidden">
+          {!reportData || reportData.expenses.length === 0 ? (
+            <div className="py-12 px-4 text-center space-y-3">
+              <p className="text-sm font-medium text-muted-foreground">
+                {t("No expenses logged this month", "本月暂无开支记录")}
               </p>
               <Button
                 type="button"
+                size="sm"
                 onClick={handleOpenModal}
-                className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl gap-2 cursor-pointer"
+                className="font-semibold rounded-lg gap-1.5 cursor-pointer"
               >
-                <Plus className="h-4 w-4" />
-                <DeskText
-                  text={DESK_DICT.financialReport.logExpenseBtn}
-                  mode={languageMode}
-                  layout="inline"
-                />
+                <Plus className="h-3.5 w-3.5" />
+                <span>{t("Log Expense", "记录开支")}</span>
               </Button>
-            </Card>
+            </div>
           ) : (
-            <div className="space-y-2.5">
-              {reportData?.expenses.map((expense) => {
-                const config = CATEGORY_CONFIG[expense.category] || CATEGORY_CONFIG.OTHER;
-                const isDeleting = deletingId === expense.id;
-                return (
-                  <div
-                    key={expense.id}
-                    className="p-4 rounded-2xl border border-border/80 bg-card hover:bg-muted/20 transition-all flex items-center justify-between gap-4 shadow-xs"
-                  >
-                    <div className="flex items-center gap-3.5 min-w-0">
-                      <div className="w-11 h-11 rounded-xl bg-muted/80 text-foreground flex items-center justify-center text-xl shrink-0 border border-border/50">
-                        {config.icon}
-                      </div>
-                      <div className="space-y-0.5 min-w-0">
-                      {(() => {
-                        const resolved = resolveExpenseTitle(
-                          expense.title,
-                          expense.category,
-                          languageMode
-                        );
-                        const catLabel = resolveDeskText(
-                          config,
-                          languageMode
-                        ).primary;
+            reportData.expenses.map((expense) => {
+              const config = CATEGORY_CONFIG[expense.category] || CATEGORY_CONFIG.OTHER;
+              const CatIcon = config.icon;
+              const resolved = resolveExpenseTitle(expense.title, expense.category, isZh);
+              const catLabel = isZh ? config.zh : config.en;
 
-                        return (
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-extrabold text-base text-foreground leading-tight truncate">
-                              {resolved.title}
-                            </span>
-                            {!resolved.isStandard && (
-                              <span className="text-[11px] font-semibold bg-muted px-2 py-0.5 rounded-md text-muted-foreground">
-                                {catLabel}
-                              </span>
-                            )}
-                          </div>
-                        );
-                      })()}
-                        <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                          <span className="font-mono">{expense.dateStr}</span>
-                          {expense.notes && (
-                            <span className="truncate italic max-w-xs">
-                              • {expense.notes}
-                            </span>
-                          )}
-                        </div>
-                      </div>
+              return (
+                <div
+                  key={expense.id}
+                  className="px-4 py-3 hover:bg-muted/30 transition-colors flex items-center justify-between gap-3"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-8 h-8 rounded-lg bg-muted/60 text-muted-foreground flex items-center justify-center shrink-0">
+                      <CatIcon className="h-4 w-4" />
                     </div>
-
-                    <div className="flex items-center gap-3 shrink-0">
-                      <span className="font-mono font-black text-lg text-foreground tabular-nums">
-                        {formatPrice(expense.amountCents, currSym)}
-                      </span>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        disabled={isDeleting || isPending}
-                        onClick={() => handleDeleteExpense(expense.id)}
-                        className="h-9 w-9 p-0 rounded-xl text-muted-foreground hover:text-destructive hover:bg-destructive/10 cursor-pointer"
-                        title={
-                          resolveDeskText(
-                            DESK_DICT.financialReport.deleteRecord,
-                            languageMode
-                          ).primary
-                        }
-                      >
-                        {isDeleting ? (
-                          <Loader2 className="h-4 w-4 animate-spin text-destructive" />
-                        ) : (
-                          <Trash2 className="h-4 w-4" />
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-semibold text-sm text-foreground truncate">
+                          {resolved.title}
+                        </span>
+                        {!resolved.isStandard && (
+                          <span className="text-[11px] bg-muted px-1.5 py-0.5 rounded text-muted-foreground">
+                            {catLabel}
+                          </span>
                         )}
-                      </Button>
+                      </div>
+                      <div className="text-xs text-muted-foreground tabular-nums flex items-center gap-2">
+                        <span>{expense.dateStr}</span>
+                        {expense.notes && <span className="truncate">· {expense.notes}</span>}
+                      </div>
                     </div>
                   </div>
-                );
-              })}
-            </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="font-semibold text-sm text-foreground tabular-nums">
+                      {formatPrice(expense.amountCents, currSym)}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      disabled={isPending}
+                      onClick={() => setDeleteTargetId(expense.id)}
+                      className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10 cursor-pointer"
+                      aria-label={t("Delete expense", "删除记录")}
+                      title={t("Delete", "删除")}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              );
+            })
           )}
         </div>
       )}
 
-      {/* TAB CONTENT 2: SERVICE REVENUE BREAKDOWN */}
+      {/* TAB 2: SERVICE SALES */}
       {activeTab === "SALES" && (
-        <div className="space-y-3">
-          {reportData?.servicesBreakdown.length === 0 ? (
-            <Card className="p-10 text-center border-dashed">
-              <Scissors className="h-12 w-12 text-muted-foreground/40 mx-auto mb-2" />
-              <h3 className="text-lg font-bold text-foreground">
-                <DeskText
-                  text={DESK_DICT.financialReport.noSalesYet}
-                  mode={languageMode}
-                  layout="inline"
-                />
-              </h3>
-            </Card>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-              {reportData?.servicesBreakdown.map((svc) => {
-                const svcResolved = resolveServiceName(svc.serviceName, languageMode);
-                const pctOfTotal =
-                  reportData.grossSalesCents > 0
-                    ? Math.round((svc.totalCents / reportData.grossSalesCents) * 1000) / 10
-                    : 0;
-                return (
-                  <div
-                    key={svc.serviceId}
-                    className="p-4 rounded-2xl border border-border/80 bg-card flex items-center justify-between gap-3 shadow-xs"
-                  >
-                    <div className="space-y-0.5 min-w-0">
-                      <DeskText
-                        zh={svcResolved.primary}
-                        en={svcResolved.secondary}
-                        mode={languageMode}
-                        primaryClass="font-bold text-base text-foreground leading-tight truncate"
-                        secondaryClass="text-xs text-muted-foreground"
-                      />
-                      <p className="text-xs text-muted-foreground font-medium">
-                        {svc.category || "General"} • {svc.count}{" "}
-                        {resolveDeskText(DESK_DICT.breakdown.clientsUnit, languageMode).primary}
-                      </p>
-                    </div>
-
-                    <div className="text-right shrink-0">
-                      <span className="font-mono font-extrabold text-base sm:text-lg text-foreground block tabular-nums">
-                        {formatPrice(svc.totalCents, currSym)}
-                      </span>
-                      <span className="text-[11px] font-mono font-bold text-muted-foreground bg-muted px-2 py-0.5 rounded-md inline-block mt-0.5">
-                        {pctOfTotal}%
-                      </span>
-                    </div>
-                  </div>
-                );
-              })}
+        <div className="rounded-xl border border-border bg-card divide-y divide-border overflow-hidden">
+          {!reportData || reportData.servicesBreakdown.length === 0 ? (
+            <div className="py-12 text-center text-sm text-muted-foreground">
+              {t("No sales recorded this month", "本月暂无服务销售")}
             </div>
+          ) : (
+            reportData.servicesBreakdown.map((svc) => {
+              const svcResolved = resolveServiceName(svc.serviceName, languageMode);
+              const pctOfTotal =
+                reportData.grossSalesCents > 0
+                  ? Math.round((svc.totalCents / reportData.grossSalesCents) * 1000) / 10
+                  : 0;
+              return (
+                <div
+                  key={svc.serviceId}
+                  className="px-4 py-3 flex items-center justify-between gap-3"
+                >
+                  <div className="min-w-0">
+                    <p className="font-semibold text-sm text-foreground truncate">
+                      {svcResolved.primary}
+                    </p>
+                    <p className="text-xs text-muted-foreground tabular-nums">
+                      {svc.category || t("General", "常规")} · {svc.count} {t("orders", "次")}
+                    </p>
+                  </div>
+
+                  <div className="text-right shrink-0 tabular-nums">
+                    <span className="font-semibold text-sm text-foreground block">
+                      {formatPrice(svc.totalCents, currSym)}
+                    </span>
+                    <span className="text-[11px] text-muted-foreground">{pctOfTotal}%</span>
+                  </div>
+                </div>
+              );
+            })
           )}
         </div>
       )}
 
-      {/* TAB CONTENT 3: DAILY P&L BREAKDOWN */}
+      {/* TAB 3: DAILY BREAKDOWN */}
       {activeTab === "DAILY" && (
-        <Card className="border border-border/80 overflow-hidden rounded-2xl shadow-xs">
+        <div className="rounded-xl border border-border bg-card overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-muted/50 border-b border-border/80 text-xs font-bold text-muted-foreground uppercase">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-muted/50 border-b border-border text-[11px] font-semibold text-muted-foreground">
                 <tr>
-                  <th className="py-3 px-4">
-                    {resolveDeskText(DESK_DICT.financialReport.dateHeader, languageMode).primary}
-                  </th>
-                  <th className="py-3 px-4 text-center">
-                    {resolveDeskText(DESK_DICT.financialReport.ordersHeader, languageMode).primary}
-                  </th>
-                  <th className="py-3 px-4 text-right">
-                    {resolveDeskText(DESK_DICT.financialReport.salesHeader, languageMode).primary}
-                  </th>
-                  <th className="py-3 px-4 text-right">
-                    {resolveDeskText(DESK_DICT.financialReport.expensesHeader, languageMode).primary}
-                  </th>
-                  <th className="py-3 px-4 text-right">
-                    {resolveDeskText(DESK_DICT.financialReport.netProfitHeader, languageMode).primary}
-                  </th>
+                  <th className="py-2.5 px-4">{t("Date", "日期")}</th>
+                  <th className="py-2.5 px-4 text-center">{t("Orders", "订单")}</th>
+                  <th className="py-2.5 px-4 text-right">{t("Revenue", "营收")}</th>
+                  <th className="py-2.5 px-4 text-right">{t("Expenses", "开支")}</th>
+                  <th className="py-2.5 px-4 text-right">{t("Net", "净利")}</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-border/60">
+              <tbody className="divide-y divide-border tabular-nums">
                 {reportData?.dailyBreakdown
                   .filter((d) => d.salesCents > 0 || d.expenseCents > 0)
                   .map((day) => {
                     const isPositive = day.netProfitCents >= 0;
                     return (
-                      <tr key={day.dateStr} className="hover:bg-muted/20">
-                        <td className="py-3 px-4 font-mono font-semibold text-foreground">
+                      <tr key={day.dateStr} className="hover:bg-muted/30">
+                        <td className="py-2.5 px-4 font-medium text-foreground whitespace-nowrap">
                           {day.dateStr}
                         </td>
-                        <td className="py-3 px-4 font-mono text-center text-muted-foreground font-semibold">
+                        <td className="py-2.5 px-4 text-center text-muted-foreground">
                           {day.ordersCount}
                         </td>
-                        <td className="py-3 px-4 font-mono font-bold text-right text-foreground">
+                        <td className="py-2.5 px-4 font-medium text-right text-foreground whitespace-nowrap">
                           {formatPrice(day.salesCents, currSym)}
                         </td>
-                        <td className="py-3 px-4 font-mono text-right text-amber-700 font-semibold">
-                          {day.expenseCents > 0
-                            ? formatPrice(day.expenseCents, currSym)
-                            : "—"}
+                        <td className="py-2.5 px-4 text-right text-muted-foreground whitespace-nowrap">
+                          {day.expenseCents > 0 ? formatPrice(day.expenseCents, currSym) : "—"}
                         </td>
                         <td
-                          className={`py-3 px-4 font-mono font-black text-right ${
-                            isPositive ? "text-emerald-600" : "text-destructive"
+                          className={`py-2.5 px-4 font-semibold text-right whitespace-nowrap ${
+                            isPositive ? "text-primary" : "text-destructive"
                           }`}
                         >
                           {isPositive ? "+" : "−"}
@@ -1083,77 +690,50 @@ export function DeskFinancialReportView({
                       </tr>
                     );
                   })}
-                {reportData?.dailyBreakdown.every(
-                  (d) => d.salesCents === 0 && d.expenseCents === 0
-                ) && (
+                {(!reportData ||
+                  reportData.dailyBreakdown.every(
+                    (d) => d.salesCents === 0 && d.expenseCents === 0
+                  )) && (
                   <tr>
-                    <td
-                      colSpan={5}
-                      className="py-8 text-center text-muted-foreground italic text-xs"
-                    >
-                      {resolveDeskText(
-                        DESK_DICT.financialReport.noDailyRecords,
-                        languageMode
-                      ).primary}
+                    <td colSpan={5} className="py-10 text-center text-muted-foreground">
+                      {t("No activity this month", "本月暂无记录")}
                     </td>
                   </tr>
                 )}
               </tbody>
             </table>
           </div>
-        </Card>
+        </div>
       )}
 
-      {/* ALL-IN-ONE MULTI-CATEGORY EXPENSE ENTRY MODAL */}
+      {/* Multi-Category Expense Modal */}
       <Dialog open={isLogOpen} onOpenChange={setIsLogOpen}>
-        <DialogContent className="max-w-xl sm:max-w-2xl p-5 sm:p-6 select-none max-h-[92vh] overflow-y-auto">
+        <DialogContent className="max-w-xl p-5 sm:p-6 select-none max-h-[90vh] overflow-y-auto rounded-2xl">
           <DialogHeader>
-            <div className="flex items-center justify-between pb-3 border-b border-border/60">
-              <div className="flex items-center gap-2.5">
-                <div className="w-10 h-10 rounded-xl bg-muted text-foreground flex items-center justify-center border border-border/80">
-                  <Receipt className="h-5 w-5 text-foreground" />
-                </div>
-                <div>
-                  <DialogTitle className="text-lg sm:text-xl font-black">
-                    <DeskText
-                      text={DESK_DICT.financialReport.modalLogExpenseTitle}
-                      mode={languageMode}
-                      layout="inline"
-                    />
-                  </DialogTitle>
-                  {/* <DialogDescription className="text-xs text-muted-foreground">
-                    {resolveDeskText(DESK_DICT.financialReport.modalLogExpenseSub, languageMode).primary}
-                  </DialogDescription> */}
-                </div>
-              </div>
-
-              {/* Date Input */}
-              <div className="flex items-center gap-1.5 shrink-0">
-                <Label className="text-xs font-bold text-muted-foreground hidden sm:inline">
-                  {resolveDeskText(DESK_DICT.financialReport.expenseDateLabel, languageMode).primary}:
-                </Label>
-                <Input
-                  type="date"
-                  value={sheetDateStr}
-                  onChange={(e) => setSheetDateStr(e.target.value)}
-                  className="h-9 w-36 text-xs font-mono font-bold rounded-xl"
-                />
-              </div>
+            <div className="flex items-center justify-between gap-2 pb-3 border-b border-border">
+              <DialogTitle className="text-base sm:text-lg font-bold">
+                {t("Log Expenses", "记录开支")}
+              </DialogTitle>
+              <Input
+                type="date"
+                value={sheetDateStr}
+                onChange={(e) => setSheetDateStr(e.target.value)}
+                className="h-9 w-36 text-xs font-medium rounded-lg"
+              />
             </div>
           </DialogHeader>
 
-          {/* Form Error Banner */}
           {formError && (
-            <div className="p-3 rounded-xl bg-destructive/10 text-destructive text-xs font-semibold flex items-center gap-2 border border-destructive/20 animate-in fade-in">
+            <div className="p-3 rounded-lg bg-destructive/10 text-destructive text-xs font-medium flex items-center gap-2 border border-destructive/20">
               <AlertCircle className="h-4 w-4 shrink-0" />
               <span>{formError}</span>
             </div>
           )}
 
-          {/* ALL CATEGORIES MULTI-INPUT GRID */}
-          <div className="space-y-3 pt-1">
+          <div className="space-y-2.5">
             {(Object.keys(CATEGORY_CONFIG) as ExpenseCategory[]).map((catKey) => {
               const cfg = CATEGORY_CONFIG[catKey];
+              const CatIcon = cfg.icon;
               const isOther = catKey === "OTHER";
               const currentInput = categoryInputs[catKey];
               const hasAmount = Boolean(
@@ -1163,41 +743,23 @@ export function DeskFinancialReportView({
               return (
                 <div
                   key={catKey}
-                  className={`p-3.5 rounded-2xl border transition-all ${
+                  className={`p-3 rounded-xl border transition-colors ${
                     hasAmount
-                      ? "border-2 border-emerald-600/70 bg-card shadow-xs"
-                      : "border-border/80 bg-muted/20 hover:bg-muted/30"
+                      ? "border-primary bg-primary/[0.03]"
+                      : "border-border bg-muted/20"
                   }`}
                 >
-                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
-                    {/* Left: Category Label & Icon */}
-                    <div className="flex items-center gap-2.5 sm:w-44 shrink-0">
-                      <span className="text-xl shrink-0">{cfg.icon}</span>
-                      <div>
-                        <span className="font-extrabold text-sm sm:text-base text-foreground block leading-tight">
-                          {resolveDeskText(cfg, languageMode).primary}
-                        </span>
-                        {isOther ? (
-                          <span className="text-[10px] text-destructive font-bold">
-                            {resolveDeskText(
-                              DESK_DICT.financialReport.descRequiredNotice,
-                              languageMode
-                            ).primary}
-                          </span>
-                        ) : (
-                          <span className="text-[10px] text-muted-foreground font-normal">
-                            {resolveDeskText(
-                              DESK_DICT.financialReport.descOptionalNotice,
-                              languageMode
-                            ).primary}
-                          </span>
-                        )}
-                      </div>
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+                    <div className="flex items-center gap-2 sm:w-40 shrink-0">
+                      <CatIcon className="h-4 w-4 text-muted-foreground shrink-0" />
+                      <Label className="text-xs font-semibold text-foreground">
+                        {isZh ? cfg.zh : cfg.en}
+                        {isOther ? " *" : ""}
+                      </Label>
                     </div>
 
-                    {/* Middle: Amount Field */}
-                    <div className="relative flex-1 sm:max-w-[190px]">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 font-mono font-bold text-muted-foreground text-sm">
+                    <div className="relative flex-1 sm:max-w-[160px]">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 font-medium text-muted-foreground text-xs">
                         {currSym}
                       </span>
                       <Input
@@ -1209,65 +771,45 @@ export function DeskFinancialReportView({
                         onChange={(e) =>
                           handleCategoryChange(catKey, "amountStr", e.target.value)
                         }
-                        className={`h-11 pl-9 pr-8 text-base font-mono font-black rounded-xl ${
-                          hasAmount
-                            ? "bg-card border-emerald-600 text-foreground"
-                            : "bg-background"
-                        }`}
+                        className="h-9 pl-9 pr-7 text-base sm:text-sm font-semibold rounded-lg tabular-nums bg-background"
                       />
                       {currentInput.amountStr && (
                         <button
                           type="button"
                           onClick={() => handleClearCategory(catKey)}
-                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer p-0.5 rounded-md"
-                          title="Clear amount"
+                          className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer p-0.5"
+                          aria-label={t("Clear amount", "清空")}
                         >
-                          <X className="h-4 w-4" />
+                          <X className="h-3.5 w-3.5" />
                         </button>
                       )}
                     </div>
 
-                    {/* Right: Optional description / note */}
-                    <div className="flex-1">
-                      <Input
-                        placeholder={
-                          isOther
-                            ? resolveDeskText(
-                                DESK_DICT.financialReport.otherDescPlaceholder,
-                                languageMode
-                              ).primary
-                            : `${resolveDeskText(DESK_DICT.financialReport.notesDefaultPrefix, languageMode).primary}${resolveDeskText(cfg, languageMode).primary}${resolveDeskText(DESK_DICT.financialReport.notesDefaultSuffix, languageMode).primary}`
-                        }
-                        value={currentInput.title}
-                        onChange={(e) =>
-                          handleCategoryChange(catKey, "title", e.target.value)
-                        }
-                        className="h-11 text-xs rounded-xl"
-                      />
-                    </div>
+                    <Input
+                      placeholder={isOther ? t("Required note", "必填说明") : t("Note (optional)", "备注 (选填)")}
+                      value={currentInput.title}
+                      onChange={(e) =>
+                        handleCategoryChange(catKey, "title", e.target.value)
+                      }
+                      className="h-9 flex-1 text-base sm:text-sm rounded-lg bg-background"
+                    />
                   </div>
                 </div>
               );
             })}
 
-            {/* Extra Custom Lines */}
             {extraCustomRows.map((row, idx) => (
               <div
                 key={row.id}
-                className="p-3.5 rounded-2xl border border-dashed border-border bg-card space-y-2 text-xs"
+                className="p-3 rounded-xl border border-dashed border-border bg-card space-y-2 text-xs"
               >
-                <div className="flex items-center justify-between font-bold text-muted-foreground">
-                  <span>
-                    {`${resolveDeskText(DESK_DICT.financialReport.customRowLabel, languageMode).primary} #${idx + 1}`}
-                  </span>
+                <div className="flex items-center justify-between font-semibold text-muted-foreground">
+                  <span>{t(`Extra Item #${idx + 1}`, `额外开支 #${idx + 1}`)}</span>
                   <button
                     type="button"
                     onClick={() => handleRemoveExtraRow(row.id)}
                     className="text-muted-foreground hover:text-destructive cursor-pointer p-1"
-                    title={resolveDeskText(
-                      DESK_DICT.financialReport.removeRow,
-                      languageMode
-                    ).primary}
+                    aria-label={t("Remove row", "删除行")}
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
@@ -1282,144 +824,142 @@ export function DeskFinancialReportView({
                         e.target.value as ExpenseCategory
                       )
                     }
-                    className="h-10 rounded-xl border px-2 text-xs font-semibold bg-background"
+                    className="h-9 rounded-lg border border-input px-2 text-xs font-medium bg-background"
                   >
-                    {(Object.keys(CATEGORY_CONFIG) as ExpenseCategory[]).map(
-                      (cKey) => (
-                        <option key={cKey} value={cKey}>
-                          {CATEGORY_CONFIG[cKey].icon}{" "}
-                          {resolveDeskText(
-                            CATEGORY_CONFIG[cKey],
-                            languageMode
-                          ).primary}
-                        </option>
-                      )
-                    )}
+                    {(Object.keys(CATEGORY_CONFIG) as ExpenseCategory[]).map((cKey) => (
+                      <option key={cKey} value={cKey}>
+                        {isZh ? CATEGORY_CONFIG[cKey].zh : CATEGORY_CONFIG[cKey].en}
+                      </option>
+                    ))}
                   </select>
 
                   <div className="relative">
-                    <span className="absolute left-2.5 top-1/2 -translate-y-1/2 font-mono font-bold text-muted-foreground text-xs">
+                    <span className="absolute left-2.5 top-1/2 -translate-y-1/2 font-medium text-muted-foreground text-xs">
                       {currSym}
                     </span>
                     <Input
                       type="number"
                       step="0.01"
                       min="0"
-                      placeholder={resolveDeskText(
-                        DESK_DICT.financialReport.amountPlaceholder,
-                        languageMode
-                      ).primary}
+                      placeholder="0.00"
                       value={row.amountStr}
                       onChange={(e) =>
                         handleUpdateExtraRow(row.id, "amountStr", e.target.value)
                       }
-                      className="h-10 pl-8 text-xs font-mono font-bold rounded-xl"
+                      className="h-9 pl-8 text-base sm:text-sm font-semibold rounded-lg tabular-nums"
                     />
                   </div>
 
                   <Input
-                    placeholder={resolveDeskText(
-                      DESK_DICT.financialReport.descPlaceholder,
-                      languageMode
-                    ).primary}
+                    placeholder={t("Note", "说明")}
                     value={row.title}
                     onChange={(e) =>
                       handleUpdateExtraRow(row.id, "title", e.target.value)
                     }
-                    className="h-10 text-xs rounded-xl"
+                    className="h-9 text-base sm:text-sm rounded-lg"
                   />
                 </div>
               </div>
             ))}
 
-            {/* Add Extra Custom Row Button */}
             <Button
               type="button"
               variant="outline"
               size="sm"
               onClick={handleAddExtraRow}
-              className="w-full h-11 rounded-xl font-bold text-xs gap-1.5 border-dashed hover:bg-muted cursor-pointer"
+              className="w-full h-9 rounded-lg font-semibold text-xs gap-1.5 border-dashed cursor-pointer"
             >
-              <Plus className="h-4 w-4" />
-              <span>
-                {resolveDeskText(
-                  DESK_DICT.financialReport.addCustomRowBtn,
-                  languageMode
-                ).primary}
-              </span>
+              <Plus className="h-3.5 w-3.5" />
+              <span>{t("Add Another Line", "添加一行")}</span>
             </Button>
           </div>
 
-          {/* STICKY FOOTER: LIVE TOTAL & SAVE ALL */}
-          <div className="pt-3 mt-2 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 border-t">
-            <div className="space-y-0.5">
-              <span className="text-xs text-muted-foreground font-semibold">
-                {totalItemCount > 0 ? (
-                  <span className="text-foreground font-bold flex items-center gap-1.5">
-                    <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                    {languageMode === "ONLY_EN" ? (
-                      <>
-                        <span className="font-mono text-emerald-600 text-sm">{totalItemCount}</span> {resolveDeskText(DESK_DICT.financialReport.itemsFilledUnit, languageMode).primary}
-                      </>
-                    ) : languageMode === "ONLY_ZH" ? (
-                      <>
-                        {resolveDeskText(DESK_DICT.financialReport.itemsFilledPrefix, languageMode).primary} <span className="font-mono text-emerald-600 text-sm">{totalItemCount}</span> {resolveDeskText(DESK_DICT.financialReport.itemsFilledUnit, languageMode).primary}
-                      </>
-                    ) : (
-                      <>
-                        {resolveDeskText(DESK_DICT.financialReport.itemsFilledPrefix, languageMode).primary} <span className="font-mono text-emerald-600 text-sm">{totalItemCount}</span> {resolveDeskText(DESK_DICT.financialReport.itemsFilledUnit, languageMode).primary} ({totalItemCount} filled)
-                      </>
-                    )}
-                  </span>
-                ) : (
-                  resolveDeskText(
-                    DESK_DICT.financialReport.enterAmountsHint,
-                    languageMode
-                  ).primary
-                )}
+          <div className="pt-3 mt-2 flex flex-wrap items-center justify-between gap-3 border-t border-border">
+            <div>
+              <span className="text-xs text-muted-foreground block">
+                {totalItemCount > 0
+                  ? t(`${totalItemCount} item(s)`, `共 ${totalItemCount} 项`)
+                  : t("Total", "合计")}
               </span>
-              <div className="text-2xl font-black font-mono text-foreground tabular-nums">
+              <span className="text-xl font-bold text-foreground tabular-nums">
                 {formatPrice(totalEnteredCents, currSym)}
-              </div>
+              </span>
             </div>
 
             <div className="flex items-center gap-2">
               <Button
                 type="button"
                 variant="outline"
+                size="sm"
                 disabled={isPending}
                 onClick={() => setIsLogOpen(false)}
-                className="h-12 px-4 text-xs sm:text-sm font-bold rounded-xl cursor-pointer"
+                className="h-9 px-3 text-xs font-semibold rounded-lg cursor-pointer"
               >
-                <DeskText
-                  text={DESK_DICT.appointmentView.cancel}
-                  mode={languageMode}
-                  layout="inline"
-                />
+                {t("Cancel", "取消")}
               </Button>
 
               <Button
                 type="button"
+                size="sm"
                 disabled={isPending || totalItemCount === 0}
                 onClick={handleSaveAllExpenses}
-                className="h-12 px-6 text-sm font-extrabold bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl gap-2 cursor-pointer shadow-xs transition-colors"
+                className="h-9 px-4 text-xs font-semibold rounded-lg gap-1.5 cursor-pointer"
               >
                 {isPending ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 ) : (
-                  <CheckCircle2 className="h-5 w-5" />
+                  <CheckCircle2 className="h-3.5 w-3.5" />
                 )}
                 <span>
                   {totalItemCount > 0
-                    ? `${resolveDeskText(DESK_DICT.financialReport.saveAllWithCountPrefix, languageMode).primary}${totalItemCount}${resolveDeskText(DESK_DICT.financialReport.saveAllWithCountSuffix, languageMode).primary}`
-                    : resolveDeskText(
-                        DESK_DICT.financialReport.enterAmountFirst,
-                        languageMode
-                      ).primary}
+                    ? t(`Save (${totalItemCount})`, `保存 (${totalItemCount})`)
+                    : t("Save", "保存")}
                 </span>
               </Button>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Expense Confirmation Dialog */}
+      <Dialog
+        open={!!deleteTargetId}
+        onOpenChange={(open) => !open && setDeleteTargetId(null)}
+      >
+        <DialogContent className="max-w-sm rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-destructive flex items-center gap-2">
+              <Trash2 className="h-4 w-4" />
+              <span>{t("Delete Expense?", "删除开支记录？")}</span>
+            </DialogTitle>
+            <DialogDescription className="text-xs pt-1">
+              {t(
+                "This permanently removes the expense entry.",
+                "确认永久删除此开支记录？此操作无法撤销。"
+              )}
+            </DialogDescription>
+          </DialogHeader>
+
+          <DialogFooter className="gap-2 sm:gap-0 pt-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setDeleteTargetId(null)}
+              disabled={isPending}
+            >
+              {t("Cancel", "取消")}
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              disabled={isPending}
+              onClick={handleConfirmDeleteExpense}
+              className="gap-1.5"
+            >
+              {isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              <span>{t("Delete", "删除")}</span>
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

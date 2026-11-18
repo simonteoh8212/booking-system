@@ -1,7 +1,9 @@
 "use server";
 
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "./auth";
+import { normalizePhoneNumber } from "@/lib/utils";
 import { revalidatePath } from "next/cache";
 import type {
   ActionResult,
@@ -94,9 +96,13 @@ export async function getMembers(
     }
 
     if (q) {
+      const normalizedQ = normalizePhoneNumber(q);
       where.OR = [
         { name: { contains: q, mode: "insensitive" } },
         { phoneNumber: { contains: q } },
+        ...(normalizedQ && normalizedQ !== q && normalizedQ.length >= 3
+          ? [{ phoneNumber: { contains: normalizedQ } }]
+          : []),
       ];
     }
 
@@ -168,12 +174,16 @@ export async function lookupMembersForCheckout(
   try {
     const q = query.trim();
     if (!q) return { success: true, data: [] };
+    const normalizedQ = normalizePhoneNumber(q);
 
     const customers = await prisma.customer.findMany({
       where: {
         NOT: { phoneNumber: { startsWith: "WALKIN-" } },
         OR: [
           { phoneNumber: { contains: q } },
+          ...(normalizedQ && normalizedQ !== q && normalizedQ.length >= 3
+            ? [{ phoneNumber: { contains: normalizedQ } }]
+            : []),
           { name: { contains: q, mode: "insensitive" } },
         ],
       },
@@ -349,7 +359,7 @@ export async function quickCreateMember(input: {
   await requireAdmin();
   try {
     const cleanName = input.name.trim();
-    const cleanPhone = input.phoneNumber.replace(/\s+/g, "").trim();
+    const cleanPhone = normalizePhoneNumber(input.phoneNumber);
 
     if (!cleanName) {
       return { success: false, error: "Member name is required." };
@@ -431,9 +441,9 @@ export async function updateMember(
   await requireAdmin();
   try {
     const cleanName = input.name.trim();
-    const cleanPhone = input.phoneNumber.replace(/\s+/g, "").trim();
-    if (!cleanName || !cleanPhone) {
-      return { success: false, error: "Name and phone number are required." };
+    const cleanPhone = normalizePhoneNumber(input.phoneNumber);
+    if (!cleanName || !cleanPhone || cleanPhone.length < 6) {
+      return { success: false, error: "Valid name and phone number are required." };
     }
 
     const duplicate = await prisma.customer.findFirst({
@@ -465,31 +475,51 @@ export async function updateMember(
 }
 
 // ----------------------------------------------------------------
-// 6. Delete / Remove Member
+// 6. Archive / Remove Member (Append-only ledger preserved)
 // ----------------------------------------------------------------
 export async function deleteMember(id: string): Promise<ActionResult<void>> {
   await requireAdmin();
   try {
-    const bookingCount = await prisma.booking.count({ where: { customerId: id } });
-    if (bookingCount > 0) {
-      // Preserve historical booking records while removing member status & packages
-      await prisma.$transaction([
-        prisma.memberTransaction.deleteMany({ where: { customerId: id } }),
-        prisma.memberPackage.deleteMany({ where: { customerId: id } }),
-        prisma.customer.update({
+    await prisma.$transaction(
+      async (tx) => {
+        const customer = await tx.customer.findUnique({
           where: { id },
-          data: { isMember: false, creditBalanceCents: 0, memberSince: null },
-        }),
-      ]);
-    } else {
-      await prisma.customer.delete({ where: { id } });
-    }
+          include: {
+            memberPackages: {
+              where: { status: "ACTIVE", remainingSessions: { gt: 0 } },
+              select: { id: true, name: true, remainingSessions: true },
+            },
+          },
+        });
+        if (!customer) throw new Error("Member not found.");
+
+        if (customer.creditBalanceCents > 0) {
+          throw new Error(
+            "Cannot remove member while credit balance is greater than 0. Please settle or clear the balance first."
+          );
+        }
+
+        if (customer.memberPackages.length > 0) {
+          throw new Error(
+            "Cannot remove member with remaining promo package sessions. Please settle or exhaust sessions first."
+          );
+        }
+
+        // Preserve all MemberTransaction, MemberPackage, and Booking records for audit integrity
+        await tx.customer.update({
+          where: { id },
+          data: { isMember: false, memberSince: null },
+        });
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+    );
 
     revalidateMemberPaths();
     return { success: true, data: undefined };
   } catch (error) {
     console.error("[deleteMember]", error);
-    return { success: false, error: "Failed to delete member." };
+    const msg = error instanceof Error ? error.message : "Failed to remove member.";
+    return { success: false, error: msg };
   }
 }
 
@@ -506,8 +536,11 @@ export async function reloadMemberCredit(input: {
   redeemFreeBonusNow?: boolean; // true = deduct the free haircut immediately today!
   paymentMethod: "CASH" | "DUITNOW_QR" | "CARD";
   notes?: string;
+  idempotencyKey?: string;
 }): Promise<ActionResult<{ newBalanceCents: number }>> {
   await requireAdmin();
+  const idempotencyKey = input.idempotencyKey?.trim() || null;
+
   try {
     const {
       customerId,
@@ -526,85 +559,109 @@ export async function reloadMemberCredit(input: {
 
     const totalCreditAdded = reloadAmountCents + Math.max(0, bonusCreditCents);
 
-    const result = await prisma.$transaction(async (tx) => {
-      const customer = await tx.customer.findUnique({ where: { id: customerId } });
-      if (!customer) throw new Error("Member not found.");
+    const result = await prisma.$transaction(
+      async (tx) => {
+        if (idempotencyKey) {
+          const existingTx = await tx.memberTransaction.findUnique({
+            where: { idempotencyKey },
+          });
+          if (existingTx) {
+            return { newBalanceCents: existingTx.balanceAfterCents };
+          }
+        }
 
-      const newBalanceCents = customer.creditBalanceCents + totalCreditAdded;
+        const existing = await tx.customer.findUnique({ where: { id: customerId } });
+        if (!existing) throw new Error("Member not found.");
 
-      await tx.customer.update({
-        where: { id: customerId },
-        data: {
-          isMember: true,
-          memberSince: customer.memberSince || new Date(),
-          creditBalanceCents: newBalanceCents,
-        },
-      });
-
-      let bonusDesc = "";
-      let createdPkgId: string | null = null;
-
-      if (freeBonusServiceIds.length > 0 && freeBonusSessions > 0) {
-        const services = await tx.service.findMany({
-          where: { id: { in: freeBonusServiceIds } },
-        });
-        const svcNames = services.map((s) => s.name).join(" / ") || "Free Service";
-        const initialRemaining = redeemFreeBonusNow
-          ? Math.max(0, freeBonusSessions - 1)
-          : freeBonusSessions;
-
-        const bonusPkg = await tx.memberPackage.create({
+        const updatedCustomer = await tx.customer.update({
+          where: { id: customerId },
           data: {
-            customerId,
-            name: `Free Bonus: ${svcNames}`,
-            serviceIds: freeBonusServiceIds,
-            totalSessions: freeBonusSessions,
-            remainingSessions: initialRemaining,
-            pricePaidCents: 0,
-            paymentMethod: "BONUS",
-            status: initialRemaining === 0 ? "COMPLETED" : "ACTIVE",
-            notes: redeemFreeBonusNow
-              ? "Granted on Credit Reload & redeemed immediately"
-              : "Granted on Credit Reload",
+            isMember: true,
+            memberSince: existing.memberSince || new Date(),
+            creditBalanceCents: { increment: totalCreditAdded },
           },
         });
-        createdPkgId = bonusPkg.id;
-        bonusDesc = redeemFreeBonusNow
-          ? ` + Free ${svcNames} (Redeemed Today)`
-          : ` + Free ${freeBonusSessions}x ${svcNames}`;
-      }
+        const newBalanceCents = updatedCustomer.creditBalanceCents;
 
-      const rmReload = (reloadAmountCents / 100).toFixed(2);
-      const rmBonus =
-        bonusCreditCents > 0 ? ` (+RM ${(bonusCreditCents / 100).toFixed(2)} bonus)` : "";
+        let bonusDesc = "";
+        let createdPkgId: string | null = null;
 
-      await tx.memberTransaction.create({
-        data: {
-          customerId,
-          memberPackageId: createdPkgId,
-          type: "CREDIT_RELOAD",
-          creditChangeCents: totalCreditAdded,
-          balanceAfterCents: newBalanceCents,
-          sessionsChange:
-            freeBonusServiceIds.length > 0
-              ? redeemFreeBonusNow
-                ? Math.max(0, freeBonusSessions - 1)
-                : freeBonusSessions
-              : 0,
-          cashPaidCents: reloadAmountCents, // Counted in Today's Sales today!
-          paymentMethod,
-          description: `Reloaded RM ${rmReload}${rmBonus}${bonusDesc}${
-            notes ? ` — ${notes}` : ""
-          }`,
-        },
-      });
+        if (freeBonusServiceIds.length > 0 && freeBonusSessions > 0) {
+          const services = await tx.service.findMany({
+            where: { id: { in: freeBonusServiceIds } },
+          });
+          const svcNames = services.map((s) => s.name).join(" / ") || "Free Service";
+          const initialRemaining = redeemFreeBonusNow
+            ? Math.max(0, freeBonusSessions - 1)
+            : freeBonusSessions;
 
-      return { newBalanceCents };
-    });
+          const bonusPkg = await tx.memberPackage.create({
+            data: {
+              customerId,
+              name: `Free Bonus: ${svcNames}`,
+              serviceIds: freeBonusServiceIds,
+              totalSessions: freeBonusSessions,
+              remainingSessions: initialRemaining,
+              pricePaidCents: 0,
+              paymentMethod: "BONUS",
+              status: initialRemaining === 0 ? "COMPLETED" : "ACTIVE",
+              notes: redeemFreeBonusNow
+                ? "Granted on Credit Reload & redeemed immediately"
+                : "Granted on Credit Reload",
+            },
+          });
+          createdPkgId = bonusPkg.id;
+          bonusDesc = redeemFreeBonusNow
+            ? ` + Free ${svcNames} (Redeemed Today)`
+            : ` + Free ${freeBonusSessions}x ${svcNames}`;
+        }
+
+        const rmReload = (reloadAmountCents / 100).toFixed(2);
+        const rmBonus =
+          bonusCreditCents > 0 ? ` (+RM ${(bonusCreditCents / 100).toFixed(2)} bonus)` : "";
+
+        await tx.memberTransaction.create({
+          data: {
+            customerId,
+            memberPackageId: createdPkgId,
+            idempotencyKey,
+            type: "CREDIT_RELOAD",
+            creditChangeCents: totalCreditAdded,
+            balanceAfterCents: newBalanceCents,
+            sessionsChange:
+              freeBonusServiceIds.length > 0
+                ? redeemFreeBonusNow
+                  ? Math.max(0, freeBonusSessions - 1)
+                  : freeBonusSessions
+                : 0,
+            cashPaidCents: reloadAmountCents, // Counted in Today's Sales today!
+            paymentMethod,
+            description: `Reloaded RM ${rmReload}${rmBonus}${bonusDesc}${
+              notes ? ` — ${notes}` : ""
+            }`,
+          },
+        });
+
+        return { newBalanceCents };
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+    );
 
     revalidateMemberPaths();
     return { success: true, data: result };
   } catch (error) {
+    if (
+      idempotencyKey &&
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002"
+    ) {
+      const existingTx = await prisma.memberTransaction.findUnique({
+        where: { idempotencyKey },
+      });
+      if (existingTx) {
+        return { success: true, data: { newBalanceCents: existingTx.balanceAfterCents } };
+      }
+    }
     console.error("[reloadMemberCredit]", error);
     const msg = error instanceof Error ? error.message : "Failed to reload credit.";
     return { success: false, error: msg };
@@ -741,8 +798,11 @@ export async function assignPromoToMember(input: {
   paymentMethod: "CASH" | "DUITNOW_QR" | "CARD" | "CREDIT";
   deductFirstSessionNow?: boolean; // Optional: deduct 1st session immediately on purchase
   notes?: string;
+  idempotencyKey?: string;
 }): Promise<ActionResult<MemberPackageDto>> {
   await requireAdmin();
+  const idempotencyKey = input.idempotencyKey?.trim() || null;
+
   try {
     const {
       customerId,
@@ -752,86 +812,126 @@ export async function assignPromoToMember(input: {
       notes,
     } = input;
 
-    const pkg = await prisma.$transaction(async (tx) => {
-      const [customer, promo] = await Promise.all([
-        tx.customer.findUnique({ where: { id: customerId } }),
-        tx.promoPackage.findUnique({ where: { id: promoPackageId } }),
-      ]);
-
-      if (!customer) throw new Error("Member not found.");
-      if (!promo) throw new Error("Promo package not found.");
-
-      let newCreditBalance = customer.creditBalanceCents;
-      if (paymentMethod === "CREDIT") {
-        if (customer.creditBalanceCents < promo.priceCents) {
-          throw new Error("Insufficient member credit balance to buy this promo.");
+    const pkg = await prisma.$transaction(
+      async (tx) => {
+        if (idempotencyKey) {
+          const existingTx = await tx.memberTransaction.findUnique({
+            where: { idempotencyKey },
+            include: { memberPackage: true },
+          });
+          if (existingTx?.memberPackage) {
+            return existingTx.memberPackage;
+          }
         }
-        newCreditBalance -= promo.priceCents;
-      }
 
-      await tx.customer.update({
-        where: { id: customerId },
-        data: {
-          isMember: true,
-          memberSince: customer.memberSince || new Date(),
-          creditBalanceCents: newCreditBalance,
-        },
-      });
+        const [customer, promo] = await Promise.all([
+          tx.customer.findUnique({ where: { id: customerId } }),
+          tx.promoPackage.findUnique({ where: { id: promoPackageId } }),
+        ]);
 
-      let expiresAt: Date | null = null;
-      if (promo.validityMonths && promo.validityMonths > 0) {
-        expiresAt = new Date();
-        expiresAt.setMonth(expiresAt.getMonth() + promo.validityMonths);
-      }
+        if (!customer) throw new Error("Member not found.");
+        if (!promo) throw new Error("Promo package not found.");
 
-      const initialRemaining = deductFirstSessionNow
-        ? Math.max(0, promo.totalSessions - 1)
-        : promo.totalSessions;
+        let newCreditBalance = customer.creditBalanceCents;
+        if (paymentMethod === "CREDIT" && promo.priceCents > 0) {
+          const updatedCount = await tx.customer.updateMany({
+            where: {
+              id: customerId,
+              creditBalanceCents: { gte: promo.priceCents },
+            },
+            data: {
+              isMember: true,
+              memberSince: customer.memberSince || new Date(),
+              creditBalanceCents: { decrement: promo.priceCents },
+            },
+          });
+          if (updatedCount.count === 0) {
+            throw new Error("Insufficient member credit balance to buy this promo.");
+          }
+          const refreshed = await tx.customer.findUnique({ where: { id: customerId } });
+          newCreditBalance =
+            refreshed?.creditBalanceCents ??
+            Math.max(0, customer.creditBalanceCents - promo.priceCents);
+        } else {
+          await tx.customer.update({
+            where: { id: customerId },
+            data: {
+              isMember: true,
+              memberSince: customer.memberSince || new Date(),
+            },
+          });
+        }
 
-      const createdPkg = await tx.memberPackage.create({
-        data: {
-          customerId,
-          promoPackageId: promo.id,
-          name: promo.name,
-          serviceIds: promo.serviceIds,
-          totalSessions: promo.totalSessions,
-          remainingSessions: initialRemaining,
-          pricePaidCents: promo.priceCents,
-          paymentMethod,
-          expiresAt,
-          status: initialRemaining === 0 ? "COMPLETED" : "ACTIVE",
-          notes: notes?.trim() || null,
-        },
-      });
+        let expiresAt: Date | null = null;
+        if (promo.validityMonths && promo.validityMonths > 0) {
+          expiresAt = new Date();
+          expiresAt.setMonth(expiresAt.getMonth() + promo.validityMonths);
+        }
 
-      // Cash paid today (0 if bought using pre-existing credit to prevent double-counting)
-      const cashPaidCents = paymentMethod === "CREDIT" ? 0 : promo.priceCents;
+        const initialRemaining = deductFirstSessionNow
+          ? Math.max(0, promo.totalSessions - 1)
+          : promo.totalSessions;
 
-      await tx.memberTransaction.create({
-        data: {
-          customerId,
-          memberPackageId: createdPkg.id,
-          type: "PACKAGE_PURCHASE",
-          creditChangeCents: paymentMethod === "CREDIT" ? -promo.priceCents : 0,
-          balanceAfterCents: newCreditBalance,
-          sessionsChange: initialRemaining,
-          sessionsAfter: initialRemaining,
-          cashPaidCents,
-          paymentMethod,
-          description: `Purchased Promo: ${promo.name} (${
-            deductFirstSessionNow
-              ? `1 used today, ${initialRemaining}/${promo.totalSessions} left`
-              : `${promo.totalSessions} sessions`
-          })${notes ? ` — ${notes}` : ""}`,
-        },
-      });
+        const createdPkg = await tx.memberPackage.create({
+          data: {
+            customerId,
+            promoPackageId: promo.id,
+            name: promo.name,
+            serviceIds: promo.serviceIds,
+            totalSessions: promo.totalSessions,
+            remainingSessions: initialRemaining,
+            pricePaidCents: promo.priceCents,
+            paymentMethod,
+            expiresAt,
+            status: initialRemaining === 0 ? "COMPLETED" : "ACTIVE",
+            notes: notes?.trim() || null,
+          },
+        });
 
-      return createdPkg;
-    });
+        // Cash paid today (0 if bought using pre-existing credit to prevent double-counting)
+        const cashPaidCents = paymentMethod === "CREDIT" ? 0 : promo.priceCents;
+
+        await tx.memberTransaction.create({
+          data: {
+            customerId,
+            memberPackageId: createdPkg.id,
+            idempotencyKey,
+            type: "PACKAGE_PURCHASE",
+            creditChangeCents: paymentMethod === "CREDIT" ? -promo.priceCents : 0,
+            balanceAfterCents: newCreditBalance,
+            sessionsChange: initialRemaining,
+            sessionsAfter: initialRemaining,
+            cashPaidCents,
+            paymentMethod,
+            description: `Purchased Promo: ${promo.name} (${
+              deductFirstSessionNow
+                ? `1 used today, ${initialRemaining}/${promo.totalSessions} left`
+                : `${promo.totalSessions} sessions`
+            })${notes ? ` — ${notes}` : ""}`,
+          },
+        });
+
+        return createdPkg;
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+    );
 
     revalidateMemberPaths();
     return { success: true, data: toMemberPackageDto(pkg) };
   } catch (error) {
+    if (
+      idempotencyKey &&
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002"
+    ) {
+      const existingTx = await prisma.memberTransaction.findUnique({
+        where: { idempotencyKey },
+        include: { memberPackage: true },
+      });
+      if (existingTx?.memberPackage) {
+        return { success: true, data: toMemberPackageDto(existingTx.memberPackage) };
+      }
+    }
     console.error("[assignPromoToMember]", error);
     const msg = error instanceof Error ? error.message : "Failed to assign promo.";
     return { success: false, error: msg };
@@ -848,55 +948,69 @@ export async function adjustMemberPackageSession(input: {
 }): Promise<ActionResult<MemberPackageDto>> {
   await requireAdmin();
   try {
-    const updated = await prisma.$transaction(async (tx) => {
-      const pkg = await tx.memberPackage.findUnique({
-        where: { id: input.memberPackageId },
-        include: { customer: true },
-      });
-      if (!pkg) throw new Error("Member package not found.");
+    const updated = await prisma.$transaction(
+      async (tx) => {
+        const pkg = await tx.memberPackage.findUnique({
+          where: { id: input.memberPackageId },
+          include: { customer: true },
+        });
+        if (!pkg) throw new Error("Member package not found.");
 
-      const nextRemaining = pkg.remainingSessions + input.delta;
-      if (nextRemaining < 0) {
-        throw new Error("No remaining sessions left on this package.");
-      }
-      if (nextRemaining > pkg.totalSessions) {
-        throw new Error("Cannot exceed total sessions of this package.");
-      }
+        const guardWhere =
+          input.delta < 0
+            ? { id: pkg.id, remainingSessions: { gte: 1 } }
+            : { id: pkg.id, remainingSessions: { lt: pkg.totalSessions } };
 
-      const nextStatus = nextRemaining === 0 ? "COMPLETED" : "ACTIVE";
-
-      const updatedPkg = await tx.memberPackage.update({
-        where: { id: pkg.id },
-        data: {
-          remainingSessions: nextRemaining,
-          status: nextStatus,
-        },
-      });
-
-      await tx.memberTransaction.create({
-        data: {
-          customerId: pkg.customerId,
-          memberPackageId: pkg.id,
-          type: input.delta < 0 ? "PACKAGE_DEDUCT" : "MANUAL_ADJUST",
-          creditChangeCents: 0,
-          balanceAfterCents: pkg.customer.creditBalanceCents,
-          sessionsChange: input.delta,
-          sessionsAfter: nextRemaining,
-          cashPaidCents: 0,
-          paymentMethod: "PROMO",
-          description:
+        const changed = await tx.memberPackage.updateMany({
+          where: guardWhere,
+          data: {
+            remainingSessions: { increment: input.delta },
+          },
+        });
+        if (changed.count === 0) {
+          throw new Error(
             input.delta < 0
-              ? `Redeemed 1 session from ${pkg.name} (${nextRemaining}/${pkg.totalSessions} left)${
-                  input.reason ? ` — ${input.reason}` : ""
-                }`
-              : `Restored +1 session to ${pkg.name} (${nextRemaining}/${pkg.totalSessions} left)${
-                  input.reason ? ` — ${input.reason}` : ""
-                }`,
-        },
-      });
+              ? "No remaining sessions left on this package."
+              : "Cannot exceed total sessions of this package."
+          );
+        }
 
-      return updatedPkg;
-    });
+        const freshPkg = await tx.memberPackage.findUnique({ where: { id: pkg.id } });
+        const nextRemaining =
+          freshPkg?.remainingSessions ?? Math.max(0, pkg.remainingSessions + input.delta);
+        const nextStatus = nextRemaining === 0 ? "COMPLETED" : "ACTIVE";
+
+        const updatedPkg = await tx.memberPackage.update({
+          where: { id: pkg.id },
+          data: { status: nextStatus },
+        });
+
+        await tx.memberTransaction.create({
+          data: {
+            customerId: pkg.customerId,
+            memberPackageId: pkg.id,
+            type: input.delta < 0 ? "PACKAGE_DEDUCT" : "MANUAL_ADJUST",
+            creditChangeCents: 0,
+            balanceAfterCents: pkg.customer.creditBalanceCents,
+            sessionsChange: input.delta,
+            sessionsAfter: nextRemaining,
+            cashPaidCents: 0,
+            paymentMethod: "PROMO",
+            description:
+              input.delta < 0
+                ? `Redeemed 1 session from ${pkg.name} (${nextRemaining}/${pkg.totalSessions} left)${
+                    input.reason ? ` — ${input.reason}` : ""
+                  }`
+                : `Restored +1 session to ${pkg.name} (${nextRemaining}/${pkg.totalSessions} left)${
+                    input.reason ? ` — ${input.reason}` : ""
+                  }`,
+          },
+        });
+
+        return updatedPkg;
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+    );
 
     revalidateMemberPaths();
     return { success: true, data: toMemberPackageDto(updated) };

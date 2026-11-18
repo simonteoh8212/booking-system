@@ -25,6 +25,7 @@ import {
   addDays,
   subDays,
 } from "date-fns";
+import { zhCN, enUS } from "date-fns/locale";
 import {
   CalendarIcon,
   ChevronLeft,
@@ -32,20 +33,26 @@ import {
   CalendarDays,
   ArrowUp,
 } from "lucide-react";
-import type { BookingDto } from "@/types";
+import type { BookingDto, DeskLanguageMode } from "@/types";
 import { cn, toBusinessDateString } from "@/lib/utils";
+import { useDeskLanguage } from "@/lib/use-desk-language";
 
 interface AgendaViewProps {
   initialDate: string; // ISO
   initialBookings: BookingDto[];
   currencySymbol?: string;
+  initialLanguage?: DeskLanguageMode;
 }
 
 export function AgendaView({
   initialDate,
   initialBookings,
   currencySymbol = "RM",
+  initialLanguage = "ONLY_EN",
 }: AgendaViewProps) {
+  const { langMode } = useDeskLanguage(initialLanguage);
+  const isZh = langMode === "ONLY_ZH";
+  const locale = isZh ? zhCN : enUS;
   const [selectedDate, setSelectedDate] = useState<Date>(new Date(initialDate));
   const [currentMonth, setCurrentMonth] = useState<Date>(
     startOfMonth(new Date(initialDate))
@@ -155,8 +162,32 @@ export function AgendaView({
     (b) => b.status === "CANCELLED" || b.status === "NO_SHOW"
   );
 
+  const weekdays = isZh
+    ? [
+        { full: "周日", short: "日" },
+        { full: "周一", short: "一" },
+        { full: "周二", short: "二" },
+        { full: "周三", short: "三" },
+        { full: "周四", short: "四" },
+        { full: "周五", short: "五" },
+        { full: "周六", short: "六" },
+      ]
+    : [
+        { full: "Sunday", short: "Sun" },
+        { full: "Monday", short: "Mon" },
+        { full: "Tuesday", short: "Tue" },
+        { full: "Wednesday", short: "Wed" },
+        { full: "Thursday", short: "Thu" },
+        { full: "Friday", short: "Fri" },
+        { full: "Saturday", short: "Sat" },
+      ];
+
   return (
-    <div className="space-y-5">
+    <div className="space-y-3 pt-2">
+      <h2 className="text-base font-semibold text-foreground">
+        {isZh ? "日程安排" : "Agenda"}
+      </h2>
+      <div className="space-y-5">
       {/* Top Toolbar: Date navigation & View mode switch */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         {/* Left: Navigation Buttons & Date Picker */}
@@ -166,8 +197,8 @@ export function AgendaView({
             size="icon"
             onClick={handlePrev}
             className="h-9 w-9 shrink-0"
-            title="Previous Day"
-            aria-label="Previous Day"
+            title={isZh ? "前一天" : "Previous Day"}
+            aria-label={isZh ? "前一天" : "Previous Day"}
           >
             <ChevronLeft className="h-4 w-4" />
           </Button>
@@ -180,13 +211,18 @@ export function AgendaView({
                   className="h-9 min-w-[210px] sm:min-w-[240px] justify-start gap-2 text-xs font-semibold"
                 >
                   <CalendarIcon className="h-4 w-4 text-muted-foreground shrink-0" />
-                  <span>{format(selectedDate, "EEEE, d MMMM yyyy")}</span>
+                  <span>
+                    {isZh
+                      ? format(selectedDate, "yyyy年M月d日 EEEE", { locale: zhCN })
+                      : format(selectedDate, "EEEE, d MMMM yyyy")}
+                  </span>
                 </Button>
               }
             />
             <PopoverContent className="w-auto p-0" align="start">
               <Calendar
                 mode="single"
+                locale={locale}
                 selected={selectedDate}
                 onSelect={(d) => {
                   if (d) {
@@ -207,8 +243,8 @@ export function AgendaView({
             size="icon"
             onClick={handleNext}
             className="h-9 w-9 shrink-0"
-            title="Next Day"
-            aria-label="Next Day"
+            title={isZh ? "后一天" : "Next Day"}
+            aria-label={isZh ? "后一天" : "Next Day"}
           >
             <ChevronRight className="h-4 w-4" />
           </Button>
@@ -219,7 +255,7 @@ export function AgendaView({
             onClick={handleToday}
             className="h-9 text-xs font-semibold px-3"
           >
-            Today
+            {isZh ? "今天" : "Today"}
           </Button>
         </div>
 
@@ -235,7 +271,7 @@ export function AgendaView({
                 : "text-muted-foreground hover:text-foreground"
             )}
           >
-            Agenda View
+            {isZh ? "日程视图" : "Agenda View"}
           </button>
           <button
             type="button"
@@ -247,7 +283,7 @@ export function AgendaView({
                 : "text-muted-foreground hover:text-foreground"
             )}
           >
-            Calendar
+            {isZh ? "月历视图" : "Calendar"}
           </button>
         </div>
       </div>
@@ -264,7 +300,9 @@ export function AgendaView({
             {/* Calendar Header */}
             <div className="p-4 sm:p-5 border-b flex items-center justify-between bg-card">
               <h2 className="text-xl font-bold tracking-tight">
-                {format(currentMonth, "MMMM yyyy")}
+                {isZh
+                  ? format(currentMonth, "yyyy年 M月", { locale: zhCN })
+                  : format(currentMonth, "MMMM yyyy")}
               </h2>
               <div className="flex items-center gap-1.5">
                 <Button
@@ -272,8 +310,8 @@ export function AgendaView({
                   size="icon"
                   onClick={handlePrevMonth}
                   className="h-8 w-8 shrink-0"
-                  title="Previous Month"
-                  aria-label="Previous Month"
+                  title={isZh ? "上个月" : "Previous Month"}
+                  aria-label={isZh ? "上个月" : "Previous Month"}
                 >
                   <ChevronLeft className="h-4 w-4" />
                 </Button>
@@ -282,8 +320,8 @@ export function AgendaView({
                   size="icon"
                   onClick={handleNextMonth}
                   className="h-8 w-8 shrink-0"
-                  title="Next Month"
-                  aria-label="Next Month"
+                  title={isZh ? "下个月" : "Next Month"}
+                  aria-label={isZh ? "下个月" : "Next Month"}
                 >
                   <ChevronRight className="h-4 w-4" />
                 </Button>
@@ -292,14 +330,12 @@ export function AgendaView({
 
             {/* Days of Week Header */}
             <div className="grid grid-cols-7 border-b bg-muted/40 text-center text-xs font-semibold text-muted-foreground py-2.5">
-              {["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"].map(
-                (dayName, i) => (
-                  <div key={dayName} className="truncate px-1">
-                    <span className="hidden sm:inline">{dayName}</span>
-                    <span className="sm:hidden">{dayName.slice(0, 3)}</span>
-                  </div>
-                )
-              )}
+              {weekdays.map((dayName) => (
+                <div key={dayName.full} className="truncate px-1">
+                  <span className="hidden sm:inline">{dayName.full}</span>
+                  <span className="sm:hidden">{dayName.short}</span>
+                </div>
+              ))}
             </div>
 
             {/* Calendar Days Grid */}
@@ -318,9 +354,13 @@ export function AgendaView({
                 );
                 const count = dayBookings.length;
 
-                // Day Label: "Oct 1" on the 1st of month, otherwise "2", "3", etc.
+                // Day Label: "Oct 1" / "10月1日" on the 1st of month, otherwise "2", "3", etc.
                 const dayLabel =
-                  day.getDate() === 1 ? format(day, "MMM d") : format(day, "d");
+                  day.getDate() === 1
+                    ? isZh
+                      ? format(day, "M月d日")
+                      : format(day, "MMM d")
+                    : format(day, "d");
 
                 return (
                   <div
@@ -328,7 +368,11 @@ export function AgendaView({
                     onClick={() => handleCalendarDayClick(day)}
                     title={
                       count > 0
-                        ? `${count} appointment${count > 1 ? "s" : ""} · Click to view details below`
+                        ? isZh
+                          ? `${count} 个预约 · 点击下方查看详情`
+                          : `${count} appointment${count > 1 ? "s" : ""} · Click to view details below`
+                        : isZh
+                        ? format(day, "yyyy年M月d日")
                         : format(day, "d MMMM yyyy")
                     }
                     className={cn(
@@ -363,7 +407,11 @@ export function AgendaView({
                               ? "bg-blue-600 text-white shadow-xs"
                               : "bg-muted text-muted-foreground font-semibold"
                           )}
-                          title={`${count} appointment${count > 1 ? "s" : ""}`}
+                          title={
+                            isZh
+                              ? `${count} 个预约`
+                              : `${count} appointment${count > 1 ? "s" : ""}`
+                          }
                         >
                           {count}
                         </span>
@@ -388,13 +436,18 @@ export function AgendaView({
               <div className="flex items-center gap-2">
                 <CalendarDays className="h-4 w-4 text-primary" />
                 <h3 className="font-bold text-sm">
-                  Appointments for {format(selectedDate, "EEEE, d MMMM yyyy")}
+                  {isZh
+                    ? `${format(selectedDate, "yyyy年M月d日 EEEE", { locale: zhCN })} 预约`
+                    : `Appointments for ${format(selectedDate, "EEEE, d MMMM yyyy")}`}
                 </h3>
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-xs text-muted-foreground bg-muted px-2.5 py-1 rounded-full font-medium">
-                  {selectedDayBookings.length}{" "}
-                  {selectedDayBookings.length === 1 ? "booking" : "bookings"}
+                  {isZh
+                    ? `${selectedDayBookings.length} 个预约`
+                    : `${selectedDayBookings.length} ${
+                        selectedDayBookings.length === 1 ? "booking" : "bookings"
+                      }`}
                 </span>
                 <Button
                   variant="ghost"
@@ -403,10 +456,10 @@ export function AgendaView({
                     window.scrollTo({ top: 0, behavior: "smooth" });
                   }}
                   className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground gap-1"
-                  title="Scroll back up to calendar"
+                  title={isZh ? "回到日历顶部" : "Scroll back up to calendar"}
                 >
                   <ArrowUp className="h-3.5 w-3.5" />
-                  <span className="hidden sm:inline">Top</span>
+                  <span className="hidden sm:inline">{isZh ? "顶部" : "Top"}</span>
                 </Button>
               </div>
             </div>
@@ -414,9 +467,13 @@ export function AgendaView({
             {selectedDayBookings.length === 0 ? (
               <div className="p-8 text-center text-muted-foreground border rounded-xl bg-card">
                 <CalendarIcon className="h-8 w-8 mx-auto mb-2 opacity-25" />
-                <p className="text-sm font-medium">No appointments on this date.</p>
+                <p className="text-sm font-medium">
+                  {isZh ? "当天暂无预约。" : "No appointments on this date."}
+                </p>
                 <p className="text-xs opacity-80">
-                  Select another day on the calendar above to view bookings.
+                  {isZh
+                    ? "点击上方月历中的其他日期查看预约。"
+                    : "Select another day on the calendar above to view bookings."}
                 </p>
               </div>
             ) : (
@@ -426,13 +483,14 @@ export function AgendaView({
                     key={booking.id}
                     booking={booking}
                     currencySymbol={currencySymbol}
+                    isZh={isZh}
                     onUpdate={handleUpdate}
                   />
                 ))}
                 {inactiveSelected.length > 0 && (
                   <>
                     <p className="text-xs text-muted-foreground font-medium pt-2 px-1">
-                      Cancelled / No-show
+                      {isZh ? "已取消 / 爽约" : "Cancelled / No-show"}
                     </p>
                     {inactiveSelected.map((booking) => (
                       <div key={booking.id} className="opacity-50">
@@ -440,6 +498,7 @@ export function AgendaView({
                           key={booking.id}
                           booking={booking}
                           currencySymbol={currencySymbol}
+                          isZh={isZh}
                           onUpdate={handleUpdate}
                         />
                       </div>
@@ -461,17 +520,17 @@ export function AgendaView({
           <div className="grid grid-cols-3 gap-3">
             {[
               {
-                label: "Total",
+                label: isZh ? "总计" : "Total",
                 value: selectedDayBookings.length,
                 color: "text-foreground",
               },
               {
-                label: "Active",
+                label: isZh ? "有效" : "Active",
                 value: activeSelected.length,
                 color: "text-primary",
               },
               {
-                label: "Cancelled",
+                label: isZh ? "已取消" : "Cancelled",
                 value: inactiveSelected.length,
                 color: "text-destructive",
               },
@@ -492,9 +551,13 @@ export function AgendaView({
           {selectedDayBookings.length === 0 ? (
             <div className="text-center py-16 text-muted-foreground border rounded-xl bg-card">
               <CalendarIcon className="h-10 w-10 mx-auto mb-3 opacity-20" />
-              <p className="font-medium">No appointments this day</p>
+              <p className="font-medium">
+                {isZh ? "当天暂无预约" : "No appointments this day"}
+              </p>
               <p className="text-sm">
-                Navigate to a different date or switch to Calendar view.
+                {isZh
+                  ? "请切换其他日期或改用月历视图。"
+                  : "Navigate to a different date or switch to Calendar view."}
               </p>
             </div>
           ) : (
@@ -504,13 +567,14 @@ export function AgendaView({
                   key={booking.id}
                   booking={booking}
                   currencySymbol={currencySymbol}
+                  isZh={isZh}
                   onUpdate={handleUpdate}
                 />
               ))}
               {inactiveSelected.length > 0 && (
                 <>
                   <p className="text-xs text-muted-foreground font-medium pt-2 px-1">
-                    Cancelled / No-show
+                    {isZh ? "已取消 / 爽约" : "Cancelled / No-show"}
                   </p>
                   {inactiveSelected.map((booking) => (
                     <div key={booking.id} className="opacity-50">
@@ -518,6 +582,7 @@ export function AgendaView({
                         key={booking.id}
                         booking={booking}
                         currencySymbol={currencySymbol}
+                        isZh={isZh}
                         onUpdate={handleUpdate}
                       />
                     </div>
@@ -528,6 +593,7 @@ export function AgendaView({
           )}
         </div>
       )}
+      </div>
       </div>
     </div>
   );

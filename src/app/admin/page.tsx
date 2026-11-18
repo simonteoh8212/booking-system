@@ -1,8 +1,11 @@
 import type { Metadata } from "next";
+import { cookies } from "next/headers";
 import { getBookings } from "@/actions/admin-bookings";
 import { getDeskDailySummary } from "@/actions/desk";
 import { AgendaView } from "@/components/admin/AgendaView";
 import { SalesOverviewCards } from "@/components/admin/SalesOverviewCards";
+import { normalizeDeskLanguageMode } from "@/lib/desk-i18n";
+import type { DeskLanguageMode } from "@/types";
 import { startOfMonth, endOfMonth, startOfWeek, endOfWeek } from "date-fns";
 
 import { connection } from "next/server";
@@ -15,10 +18,16 @@ export default async function AdminDashboardPage() {
   const rangeStart = startOfWeek(startOfMonth(today), { weekStartsOn: 0 });
   const rangeEnd = endOfWeek(endOfMonth(today), { weekStartsOn: 0 });
 
-  const [bookingsRes, summaryRes] = await Promise.all([
+  const [bookingsRes, summaryRes, cookieStore] = await Promise.all([
     getBookings(rangeStart.toISOString(), rangeEnd.toISOString()),
     getDeskDailySummary(),
+    cookies(),
   ]);
+
+  const cookieLang = cookieStore.get("app_desk_language")?.value as
+    | DeskLanguageMode
+    | undefined;
+  const initialLanguage: DeskLanguageMode = normalizeDeskLanguageMode(cookieLang);
 
   const bookings = bookingsRes.success ? bookingsRes.data : [];
   const summary = summaryRes.success
@@ -49,18 +58,15 @@ export default async function AdminDashboardPage() {
   return (
     <div className="space-y-8">
       {/* Top Sales KPI Cards: Today, Yesterday, Monthly */}
-      <SalesOverviewCards summary={summary} />
+      <SalesOverviewCards summary={summary} initialLanguage={initialLanguage} />
 
       {/* Appointment Agenda */}
-      <div className="space-y-3 pt-2">
-        <h2 className="text-base font-semibold text-foreground">Agenda</h2>
-
-        <AgendaView
-          initialDate={today.toISOString()}
-          initialBookings={bookings}
-          currencySymbol={summary.currencySymbol || "RM"}
-        />
-      </div>
+      <AgendaView
+        initialDate={today.toISOString()}
+        initialBookings={bookings}
+        currencySymbol={summary.currencySymbol || "RM"}
+        initialLanguage={initialLanguage}
+      />
     </div>
   );
 }

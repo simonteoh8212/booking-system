@@ -21,9 +21,12 @@ export async function getDatabaseBackupStats(): Promise<ActionResult<DatabaseBac
       servicesCount,
       schedulesCount,
       blockoutsCount,
+      promoPackagesCount,
       customersCount,
+      memberPackagesCount,
       bookingsCount,
       bookingItemsCount,
+      memberTransactionsCount,
       adminUsersCount,
       depositSettingsCount,
       exemptCustomersCount,
@@ -32,9 +35,12 @@ export async function getDatabaseBackupStats(): Promise<ActionResult<DatabaseBac
       prisma.service.count(),
       prisma.businessSchedule.count(),
       prisma.timeBlockout.count(),
+      prisma.promoPackage.count(),
       prisma.customer.count(),
+      prisma.memberPackage.count(),
       prisma.booking.count(),
       prisma.bookingItem.count(),
+      prisma.memberTransaction.count(),
       prisma.adminUser.count(),
       prisma.depositSetting.count(),
       prisma.depositExemptCustomer.count(),
@@ -45,9 +51,12 @@ export async function getDatabaseBackupStats(): Promise<ActionResult<DatabaseBac
       servicesCount +
       schedulesCount +
       blockoutsCount +
+      promoPackagesCount +
       customersCount +
+      memberPackagesCount +
       bookingsCount +
       bookingItemsCount +
+      memberTransactionsCount +
       adminUsersCount +
       depositSettingsCount +
       exemptCustomersCount +
