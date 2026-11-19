@@ -31,6 +31,7 @@ import { DeskText } from "./DeskText";
 import { FlagIcon } from "@/components/FlagIcon";
 import { RushModeControl } from "@/components/admin/RushModeControl";
 import { EmergencyClosureModal } from "@/components/admin/EmergencyClosureModal";
+import { buildMemberCreditWhatsAppUrl } from "@/lib/whatsapp";
 import {
   DESK_DICT,
   DESK_LANGUAGE_OPTIONS,
@@ -60,6 +61,8 @@ import {
   Users,
   LayoutDashboard,
   Coins,
+  MessageCircle,
+  X,
 } from "lucide-react";
 import {
   Sheet,
@@ -93,6 +96,13 @@ export function DeskHub({
     initialSummary.deskLanguage || "ONLY_EN"
   );
   const [showFirstTimeLangModal, setShowFirstTimeLangModal] = useState(false);
+  const [lastCreditReceipt, setLastCreditReceipt] = useState<{
+    customerName: string;
+    customerPhone: string;
+    creditUsedCents: number;
+    remainingCreditCents: number;
+    referenceCode?: string;
+  } | null>(null);
   const [isEmergencyModalOpen, setIsEmergencyModalOpen] = useState(false);
   // Backend visibility flags controlled in Admin Settings
   const isTodayCardVisible = summary.showTodaySales !== false;
@@ -403,13 +413,25 @@ export function DeskHub({
       toast.success(
         languageMode === "ONLY_ZH"
           ? `开单结账成功！${serviceNamesStr ? `(${serviceNamesStr})` : ""} +${formattedTotal}`
-          : languageMode === "ONLY_EN"
-          ? `Sale recorded! ${serviceNamesStr ? `(${serviceNamesStr})` : ""} +${formattedTotal}`
-          : `开单结账成功！Sale recorded! ${serviceNamesStr ? `(${serviceNamesStr})` : ""} +${formattedTotal}`,
+          : `Sale recorded! ${serviceNamesStr ? `(${serviceNamesStr})` : ""} +${formattedTotal}`,
         {
           duration: 4500,
         }
       );
+
+      if (
+        (saleData.creditUsedCents ?? 0) > 0 &&
+        saleData.customerPhone &&
+        !saleData.customerPhone.startsWith("WALKIN-")
+      ) {
+        setLastCreditReceipt({
+          customerName: saleData.customerName || "Member",
+          customerPhone: saleData.customerPhone,
+          creditUsedCents: saleData.creditUsedCents ?? 0,
+          remainingCreditCents: saleData.remainingCreditCents ?? 0,
+          referenceCode: saleData.referenceCode,
+        });
+      }
     }
 
     // Delay background data refresh to 1200ms so the badge peak and number reel glide
@@ -657,6 +679,47 @@ export function DeskHub({
           </form>
         </div>
       </div>
+
+      {lastCreditReceipt && (
+        <div className="p-3.5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 flex flex-wrap items-center justify-between gap-3">
+          <div className="text-xs font-semibold text-foreground tabular-nums">
+            {languageMode === "ONLY_ZH"
+              ? `${lastCreditReceipt.customerName} 储值已扣款 ${formatPrice(lastCreditReceipt.creditUsedCents, currencySymbol)} · 剩余 ${formatPrice(lastCreditReceipt.remainingCreditCents, currencySymbol)}`
+              : `${lastCreditReceipt.customerName} used ${formatPrice(lastCreditReceipt.creditUsedCents, currencySymbol)} credit · Remaining ${formatPrice(lastCreditReceipt.remainingCreditCents, currencySymbol)}`}
+          </div>
+          <div className="flex items-center gap-2">
+            <a
+              href={buildMemberCreditWhatsAppUrl({
+                customerName: lastCreditReceipt.customerName,
+                customerPhone: lastCreditReceipt.customerPhone,
+                action: "DEDUCT",
+                amountCents: lastCreditReceipt.creditUsedCents,
+                newBalanceCents: lastCreditReceipt.remainingCreditCents,
+                currencySymbol,
+                referenceCode: lastCreditReceipt.referenceCode,
+                businessName,
+                language: languageMode === "ONLY_ZH" ? "zh" : "en",
+              })}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold transition-colors"
+            >
+              <MessageCircle className="h-3.5 w-3.5" />
+              <span>
+                {languageMode === "ONLY_ZH" ? "发送 WhatsApp 凭证" : "Send WhatsApp Receipt"}
+              </span>
+            </a>
+            <button
+              type="button"
+              onClick={() => setLastCreditReceipt(null)}
+              className="p-1 rounded-md text-muted-foreground hover:text-foreground cursor-pointer"
+              aria-label="Dismiss"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Desktop Scoreboard (Hidden on mobile or when all sales cards are hidden) */}
       {totalVisibleScoreboardCards > 0 && (

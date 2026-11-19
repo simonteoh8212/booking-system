@@ -61,6 +61,9 @@ export function AgendaView({
   const [viewMode, setViewMode] = useState<"calendar" | "agenda">("calendar");
   const [isPending, startTransition] = useTransition();
   const detailsRef = useRef<HTMLDivElement>(null);
+  const swipeStartRef = useRef<{ x: number; y: number } | null>(null);
+  const suppressClickRef = useRef(false);
+  const [dragOffsetX, setDragOffsetX] = useState(0);
 
   // Load bookings for a given month window
   function loadMonthBookings(month: Date) {
@@ -125,6 +128,7 @@ export function AgendaView({
   }
 
   function handleCalendarDayClick(day: Date) {
+    if (suppressClickRef.current) return;
     setSelectedDate(day);
     if (!isSameMonth(day, currentMonth)) {
       const newMonth = startOfMonth(day);
@@ -135,6 +139,46 @@ export function AgendaView({
     setTimeout(() => {
       detailsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     }, 50);
+  }
+
+  function handleCalendarPointerDown(e: React.PointerEvent<HTMLDivElement>) {
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    swipeStartRef.current = { x: e.clientX, y: e.clientY };
+  }
+
+  function handleCalendarPointerMove(e: React.PointerEvent<HTMLDivElement>) {
+    if (!swipeStartRef.current) return;
+    const dx = e.clientX - swipeStartRef.current.x;
+    const dy = e.clientY - swipeStartRef.current.y;
+    if (Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy) * 1.2) {
+      // Subtle clamped horizontal feedback during swipe
+      setDragOffsetX(Math.max(-44, Math.min(44, dx * 0.35)));
+    }
+  }
+
+  function handleCalendarPointerEnd(e: React.PointerEvent<HTMLDivElement>) {
+    if (!swipeStartRef.current) return;
+    const dx = e.clientX - swipeStartRef.current.x;
+    const dy = e.clientY - swipeStartRef.current.y;
+    swipeStartRef.current = null;
+    setDragOffsetX(0);
+
+    if (Math.abs(dx) >= 48 && Math.abs(dx) > Math.abs(dy) * 1.2) {
+      suppressClickRef.current = true;
+      setTimeout(() => {
+        suppressClickRef.current = false;
+      }, 60);
+      if (dx < 0) {
+        handleNextMonth();
+      } else {
+        handlePrevMonth();
+      }
+    }
+  }
+
+  function handleCalendarPointerCancel() {
+    swipeStartRef.current = null;
+    setDragOffsetX(0);
   }
 
   function handleUpdate(updated: BookingDto) {
@@ -338,8 +382,18 @@ export function AgendaView({
               ))}
             </div>
 
-            {/* Calendar Days Grid */}
-            <div className="grid grid-cols-7 divide-x divide-y border-b">
+            {/* Calendar Days Grid (supports horizontal swipe left/right to switch month) */}
+            <div
+              onPointerDown={handleCalendarPointerDown}
+              onPointerMove={handleCalendarPointerMove}
+              onPointerUp={handleCalendarPointerEnd}
+              onPointerCancel={handleCalendarPointerCancel}
+              style={{
+                transform: dragOffsetX ? `translateX(${dragOffsetX}px)` : undefined,
+                transition: dragOffsetX === 0 ? "transform 180ms ease-out" : "none",
+              }}
+              className="grid grid-cols-7 divide-x divide-y border-b touch-pan-y select-none"
+            >
               {calendarDays.map((day) => {
                 const dayKey = toBusinessDateString(day);
                 const isCurrentMonth = isSameMonth(day, currentMonth);

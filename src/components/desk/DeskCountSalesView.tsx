@@ -38,6 +38,11 @@ export interface DeskSaleSuccessData {
   serviceIds: string[];
   serviceNames: string[];
   totalCents: number;
+  referenceCode?: string;
+  creditUsedCents?: number;
+  remainingCreditCents?: number;
+  customerName?: string;
+  customerPhone?: string;
 }
 
 interface DeskCountSalesViewProps {
@@ -323,6 +328,11 @@ export function DeskCountSalesView({
             serviceIds: selectedServiceIds,
             serviceNames: chosenServices.map((s) => s.name),
             totalCents: res.data?.totalCents ?? netPayableCents,
+            referenceCode: res.data?.referenceCode,
+            creditUsedCents: res.data?.creditUsedCents,
+            remainingCreditCents: res.data?.remainingCreditCents,
+            customerName: res.data?.customerName,
+            customerPhone: res.data?.customerPhone,
           });
         } else {
           setErrorMessage(res.error);

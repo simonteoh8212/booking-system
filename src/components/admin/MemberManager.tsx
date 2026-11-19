@@ -15,7 +15,11 @@ import {
   deletePromoPackage,
   assignPromoToMember,
   adjustMemberPackageSession,
+  adjustMemberCredit,
+  verifyMemberCreditTally,
+  type CreditTallyReport,
 } from "@/actions/members";
+import { buildMemberCreditWhatsAppUrl } from "@/lib/whatsapp";
 import { formatPrice, generateIdempotencyKey } from "@/lib/utils";
 import { useDeskLanguage } from "@/lib/use-desk-language";
 import { format } from "date-fns";
@@ -55,6 +59,9 @@ import {
   Scissors,
   ChevronRight,
   X,
+  ShieldCheck,
+  MessageCircle,
+  SlidersHorizontal,
 } from "lucide-react";
 import type {
   DeskLanguageMode,
@@ -192,6 +199,24 @@ export function MemberManager({
   const assignIdempotencyKeyRef = useRef<string | null>(null);
   const isSubmittingAssignRef = useRef(false);
 
+  // Manual Credit Adjustment
+  const [adjustTarget, setAdjustTarget] = useState<MemberDto | null>(null);
+  const [adjustDirection, setAdjustDirection] = useState<"ADD" | "DEDUCT">("ADD");
+  const [adjustAmountStr, setAdjustAmountStr] = useState("");
+  const [adjustReason, setAdjustReason] = useState("");
+  const adjustIdempotencyKeyRef = useRef<string | null>(null);
+  const isSubmittingAdjustRef = useRef(false);
+
+  // Post-Reload WhatsApp Receipt & Tally Check
+  const [lastReloadReceipt, setLastReloadReceipt] = useState<{
+    name: string;
+    phone: string;
+    addedCents: number;
+    newBalanceCents: number;
+  } | null>(null);
+  const [tallyReport, setTallyReport] = useState<CreditTallyReport | null>(null);
+  const [isCheckingTally, setIsCheckingTally] = useState(false);
+
   // Slide-over Member Detail Drawer
   const [detailTarget, setDetailTarget] = useState<MemberDetailDto | null>(null);
   const [detailTab, setDetailTab] = useState<"PACKAGES" | "HISTORY" | "LEDGER">(
@@ -305,6 +330,13 @@ export function MemberManager({
               : `Reloaded ${formatPrice(reloadCents, currencySymbol)}`
           );
           const targetId = reloadTarget.id;
+          const totalAdded = reloadCents + Math.max(0, bonusCents);
+          setLastReloadReceipt({
+            name: reloadTarget.name,
+            phone: reloadTarget.phoneNumber,
+            addedCents: totalAdded,
+            newBalanceCents: res.data.newBalanceCents,
+          });
           setReloadTarget(null);
           reloadIdempotencyKeyRef.current = null;
           refreshMembers();
@@ -382,6 +414,87 @@ export function MemberManager({
         toast.error(res.error);
       }
     });
+  }
+
+  function openAdjustCreditModal(member: MemberDto) {
+    adjustIdempotencyKeyRef.current = generateIdempotencyKey();
+    isSubmittingAdjustRef.current = false;
+    setAdjustTarget(member);
+    setAdjustDirection("ADD");
+    setAdjustAmountStr("");
+    setAdjustReason("");
+  }
+
+  function handleConfirmAdjustCredit() {
+    if (!adjustTarget || isSubmittingAdjustRef.current) return;
+    const rawCents = Math.round((parseFloat(adjustAmountStr) || 0) * 100);
+    if (rawCents <= 0) {
+      toast.error(isZh ? "调整金额必须大于 0" : "Adjustment amount must be greater than 0");
+      return;
+    }
+    if (adjustReason.trim().length < 2) {
+      toast.error(isZh ? "请填写调整原因" : "Please enter a reason");
+      return;
+    }
+
+    const deltaCents = adjustDirection === "DEDUCT" ? -rawCents : rawCents;
+    isSubmittingAdjustRef.current = true;
+    const key = adjustIdempotencyKeyRef.current || generateIdempotencyKey();
+    adjustIdempotencyKeyRef.current = key;
+
+    startTransition(async () => {
+      try {
+        const res = await adjustMemberCredit({
+          customerId: adjustTarget.id,
+          deltaCents,
+          reason: adjustReason,
+          idempotencyKey: key,
+        });
+        if (res.success) {
+          toast.success(
+            isZh
+              ? `余额已调整，最新余额 ${formatPrice(res.data.newBalanceCents, currencySymbol)}`
+              : `Credit adjusted · Balance ${formatPrice(res.data.newBalanceCents, currencySymbol)}`
+          );
+          const targetId = adjustTarget.id;
+          setAdjustTarget(null);
+          adjustIdempotencyKeyRef.current = null;
+          refreshMembers();
+          if (detailTarget?.id === targetId) await refreshOpenDetail(targetId);
+        } else {
+          toast.error(res.error);
+        }
+      } finally {
+        isSubmittingAdjustRef.current = false;
+      }
+    });
+  }
+
+  async function handleRunTallyCheck() {
+    setIsCheckingTally(true);
+    try {
+      const res = await verifyMemberCreditTally();
+      if (res.success) {
+        setTallyReport(res.data);
+        if (res.data.mismatchedCount === 0) {
+          toast.success(
+            isZh
+              ? `已核对 ${res.data.checkedCount} 位会员，账目 100% 吻合`
+              : `Checked ${res.data.checkedCount} members — all credits tally`
+          );
+        } else {
+          toast.error(
+            isZh
+              ? `发现 ${res.data.mismatchedCount} 位会员余额与账本不一致`
+              : `Found ${res.data.mismatchedCount} mismatch(es)`
+          );
+        }
+      } else {
+        toast.error(res.error);
+      }
+    } finally {
+      setIsCheckingTally(false);
+    }
   }
 
   async function openMemberDetail(memberId: string) {
@@ -706,7 +819,120 @@ export function MemberManager({
               />
               <span>{isZh ? "包含散客" : "Include walk-ins"}</span>
             </label>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleRunTallyCheck}
+              disabled={isCheckingTally}
+              className="h-9 px-3 rounded-lg text-xs font-semibold gap-1.5 cursor-pointer bg-card"
+            >
+              {isCheckingTally ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+              ) : (
+                <ShieldCheck className="h-3.5 w-3.5 text-primary" />
+              )}
+              <span>{isZh ? "核对账目" : "Tally Check"}</span>
+            </Button>
           </div>
+
+          {lastReloadReceipt && !lastReloadReceipt.phone.startsWith("WALKIN-") && (
+            <div className="sm:order-2 p-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 flex flex-wrap items-center justify-between gap-3">
+              <div className="text-xs font-semibold text-foreground tabular-nums">
+                {isZh
+                  ? `${lastReloadReceipt.name} 充值成功 +${formatPrice(lastReloadReceipt.addedCents, currencySymbol)} · 最新余额 ${formatPrice(lastReloadReceipt.newBalanceCents, currencySymbol)}`
+                  : `${lastReloadReceipt.name} reloaded +${formatPrice(lastReloadReceipt.addedCents, currencySymbol)} · Balance ${formatPrice(lastReloadReceipt.newBalanceCents, currencySymbol)}`}
+              </div>
+              <div className="flex items-center gap-2">
+                <a
+                  href={buildMemberCreditWhatsAppUrl({
+                    customerName: lastReloadReceipt.name,
+                    customerPhone: lastReloadReceipt.phone,
+                    action: "RELOAD",
+                    amountCents: lastReloadReceipt.addedCents,
+                    newBalanceCents: lastReloadReceipt.newBalanceCents,
+                    currencySymbol,
+                    language: isZh ? "zh" : "en",
+                  })}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold transition-colors"
+                >
+                  <MessageCircle className="h-3.5 w-3.5" />
+                  <span>{isZh ? "发送 WhatsApp 凭证" : "Send WhatsApp Receipt"}</span>
+                </a>
+                <button
+                  type="button"
+                  onClick={() => setLastReloadReceipt(null)}
+                  className="p-1 rounded-md text-muted-foreground hover:text-foreground cursor-pointer"
+                  aria-label="Dismiss"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {tallyReport && (
+            <div
+              className={`sm:order-2 p-3 rounded-xl border text-xs space-y-2 ${
+                tallyReport.mismatchedCount === 0
+                  ? "border-emerald-500/30 bg-emerald-500/10 text-foreground"
+                  : "border-destructive/40 bg-destructive/10 text-foreground"
+              }`}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <div className="font-semibold flex items-center gap-1.5">
+                  <ShieldCheck
+                    className={`h-4 w-4 shrink-0 ${
+                      tallyReport.mismatchedCount === 0
+                        ? "text-emerald-600 dark:text-emerald-400"
+                        : "text-destructive"
+                    }`}
+                  />
+                  <span>
+                    {tallyReport.mismatchedCount === 0
+                      ? isZh
+                        ? `账目核对完成：全部 ${tallyReport.checkedCount} 位会员储值与明细账单 100% 一致`
+                        : `Tally Passed: All ${tallyReport.checkedCount} member balances match the ledger (0 mismatches)`
+                      : isZh
+                      ? `发现 ${tallyReport.mismatchedCount} 笔余额差异（共核对 ${tallyReport.checkedCount} 位）`
+                      : `Found ${tallyReport.mismatchedCount} mismatch(es) out of ${tallyReport.checkedCount} accounts`}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setTallyReport(null)}
+                  className="p-1 rounded-md text-muted-foreground hover:text-foreground cursor-pointer"
+                  aria-label="Close tally report"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+              {tallyReport.mismatches.length > 0 && (
+                <div className="space-y-1 pt-1">
+                  {tallyReport.mismatches.map((m) => (
+                    <button
+                      key={m.customerId}
+                      type="button"
+                      onClick={() => openMemberDetail(m.customerId)}
+                      className="w-full text-left p-2 rounded-lg bg-card border border-border flex items-center justify-between gap-2 hover:bg-muted/40 cursor-pointer tabular-nums"
+                    >
+                      <span className="font-semibold">
+                        {m.name} ({m.phoneNumber})
+                      </span>
+                      <span className="font-mono text-destructive">
+                        {isZh ? "余额" : "Stored"}:{" "}
+                        {formatPrice(m.storedBalanceCents, currencySymbol)} vs{" "}
+                        {isZh ? "账本" : "Ledger"}:{" "}
+                        {formatPrice(m.ledgerSumCents, currencySymbol)}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Members Table / List */}
           {members.length === 0 ? (
@@ -979,7 +1205,7 @@ export function MemberManager({
                       {formatPrice(detailTarget.creditBalanceCents, currencySymbol)}
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-1.5">
                     <Button
                       size="sm"
                       onClick={() => openReloadModal(detailTarget)}
@@ -995,6 +1221,35 @@ export function MemberManager({
                     >
                       {isZh ? "绑定配套" : "Bind Promo"}
                     </Button>
+                    <Button
+                      size="icon"
+                      variant="outline"
+                      onClick={() => openAdjustCreditModal(detailTarget)}
+                      className="h-8 w-8 rounded-lg cursor-pointer"
+                      title={isZh ? "手动调账" : "Adjust Credit"}
+                      aria-label={isZh ? "手动调账" : "Adjust Credit"}
+                    >
+                      <SlidersHorizontal className="h-3.5 w-3.5" />
+                    </Button>
+                    {!detailTarget.phoneNumber.startsWith("WALKIN-") && (
+                      <a
+                        href={buildMemberCreditWhatsAppUrl({
+                          customerName: detailTarget.name,
+                          customerPhone: detailTarget.phoneNumber,
+                          action: "BALANCE",
+                          newBalanceCents: detailTarget.creditBalanceCents,
+                          currencySymbol,
+                          language: isZh ? "zh" : "en",
+                        })}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-card text-emerald-600 hover:bg-emerald-500/10 transition-colors"
+                        title={isZh ? "WhatsApp 发送余额" : "Send Balance on WhatsApp"}
+                        aria-label={isZh ? "WhatsApp 发送余额" : "Send Balance on WhatsApp"}
+                      >
+                        <MessageCircle className="h-3.5 w-3.5" />
+                      </a>
+                    )}
                   </div>
                 </div>
 
@@ -1676,6 +1931,82 @@ export function MemberManager({
             </Button>
             <Button onClick={handleSaveEditMember} disabled={isPending}>
               {isZh ? "保存" : "Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={!!adjustTarget}
+        onOpenChange={(o) => !o && setAdjustTarget(null)}
+      >
+        <DialogContent className="max-w-sm rounded-xl">
+          <DialogHeader>
+            <DialogTitle>
+              {isZh ? "储值手动调账" : "Adjust Credit"} — {adjustTarget?.name}
+            </DialogTitle>
+            <DialogDescription className="text-xs tabular-nums">
+              {isZh ? "当前余额：" : "Current balance: "}
+              {formatPrice(adjustTarget?.creditBalanceCents || 0, currencySymbol)}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setAdjustDirection("ADD")}
+                className={`py-2 rounded-lg text-xs font-semibold border cursor-pointer ${
+                  adjustDirection === "ADD"
+                    ? "border-primary bg-accent text-accent-foreground"
+                    : "bg-card text-muted-foreground"
+                }`}
+              >
+                {isZh ? "+ 增加 / 退还" : "+ Add / Refund"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setAdjustDirection("DEDUCT")}
+                className={`py-2 rounded-lg text-xs font-semibold border cursor-pointer ${
+                  adjustDirection === "DEDUCT"
+                    ? "border-destructive bg-destructive/10 text-destructive"
+                    : "bg-card text-muted-foreground"
+                }`}
+              >
+                {isZh ? "- 扣减 / 冲正" : "- Deduct / Reverse"}
+              </button>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs font-semibold">
+                {isZh ? `金额 (${currencySymbol}) *` : `Amount (${currencySymbol}) *`}
+              </Label>
+              <Input
+                type="number"
+                min={0.01}
+                step="0.01"
+                value={adjustAmountStr}
+                onChange={(e) => setAdjustAmountStr(e.target.value)}
+                placeholder="0.00"
+                className="font-mono"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs font-semibold">
+                {isZh ? "调账原因 *" : "Reason *"}
+              </Label>
+              <Input
+                value={adjustReason}
+                onChange={(e) => setAdjustReason(e.target.value)}
+                placeholder={isZh ? "例如：充值输入错误冲正" : "e.g. Correct reload typo"}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAdjustTarget(null)}>
+              {isZh ? "取消" : "Cancel"}
+            </Button>
+            <Button onClick={handleConfirmAdjustCredit} disabled={isPending}>
+              {isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              {isZh ? "确认调账" : "Confirm"}
             </Button>
           </DialogFooter>
         </DialogContent>

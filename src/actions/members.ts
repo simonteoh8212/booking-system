@@ -1020,3 +1020,192 @@ export async function adjustMemberPackageSession(input: {
     return { success: false, error: msg };
   }
 }
+
+// ----------------------------------------------------------------
+// 11. Manual Credit Adjustment / Refund (Append-only MANUAL_ADJUST)
+// ----------------------------------------------------------------
+export async function adjustMemberCredit(input: {
+  customerId: string;
+  deltaCents: number; // positive = add/refund, negative = deduct/reverse
+  reason: string;
+  idempotencyKey?: string;
+}): Promise<ActionResult<{ newBalanceCents: number }>> {
+  await requireAdmin();
+  const idempotencyKey = input.idempotencyKey?.trim() || null;
+
+  try {
+    const cleanReason = input.reason.trim();
+    if (cleanReason.length < 2) {
+      return { success: false, error: "Please enter a brief reason for this adjustment." };
+    }
+    if (!Number.isInteger(input.deltaCents) || input.deltaCents === 0) {
+      return { success: false, error: "Adjustment amount must be non-zero." };
+    }
+
+    const result = await prisma.$transaction(
+      async (tx) => {
+        if (idempotencyKey) {
+          const existingTx = await tx.memberTransaction.findUnique({
+            where: { idempotencyKey },
+          });
+          if (existingTx) {
+            return { newBalanceCents: existingTx.balanceAfterCents };
+          }
+        }
+
+        const existing = await tx.customer.findUnique({ where: { id: input.customerId } });
+        if (!existing) throw new Error("Member not found.");
+
+        let newBalanceCents = existing.creditBalanceCents;
+        if (input.deltaCents < 0) {
+          const absDelta = Math.abs(input.deltaCents);
+          const updated = await tx.customer.updateMany({
+            where: {
+              id: input.customerId,
+              creditBalanceCents: { gte: absDelta },
+            },
+            data: {
+              creditBalanceCents: { decrement: absDelta },
+            },
+          });
+          if (updated.count === 0) {
+            throw new Error("Insufficient credit balance for this deduction.");
+          }
+          const refreshed = await tx.customer.findUnique({
+            where: { id: input.customerId },
+            select: { creditBalanceCents: true },
+          });
+          newBalanceCents =
+            refreshed?.creditBalanceCents ?? Math.max(0, existing.creditBalanceCents - absDelta);
+        } else {
+          const updated = await tx.customer.update({
+            where: { id: input.customerId },
+            data: {
+              isMember: true,
+              memberSince: existing.memberSince || new Date(),
+              creditBalanceCents: { increment: input.deltaCents },
+            },
+          });
+          newBalanceCents = updated.creditBalanceCents;
+        }
+
+        const signPrefix = input.deltaCents > 0 ? "+" : "-";
+        const rmAmt = (Math.abs(input.deltaCents) / 100).toFixed(2);
+
+        await tx.memberTransaction.create({
+          data: {
+            customerId: input.customerId,
+            idempotencyKey,
+            type: "MANUAL_ADJUST",
+            creditChangeCents: input.deltaCents,
+            balanceAfterCents: newBalanceCents,
+            sessionsChange: 0,
+            cashPaidCents: 0,
+            paymentMethod: "MANUAL",
+            description: `Manual Adjust (${signPrefix}RM ${rmAmt}): ${cleanReason}`,
+          },
+        });
+
+        return { newBalanceCents };
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+    );
+
+    revalidateMemberPaths();
+    return { success: true, data: result };
+  } catch (error) {
+    if (
+      idempotencyKey &&
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002"
+    ) {
+      const existingTx = await prisma.memberTransaction.findUnique({
+        where: { idempotencyKey },
+      });
+      if (existingTx) {
+        return { success: true, data: { newBalanceCents: existingTx.balanceAfterCents } };
+      }
+    }
+    console.error("[adjustMemberCredit]", error);
+    const msg = error instanceof Error ? error.message : "Failed to adjust credit.";
+    return { success: false, error: msg };
+  }
+}
+
+// ----------------------------------------------------------------
+// 12. Ledger Reconciliation / Credit Tally Check
+// ----------------------------------------------------------------
+export interface CreditTallyMismatch {
+  customerId: string;
+  name: string;
+  phoneNumber: string;
+  storedBalanceCents: number;
+  ledgerSumCents: number;
+  diffCents: number;
+}
+
+export interface CreditTallyReport {
+  checkedCount: number;
+  mismatchedCount: number;
+  mismatches: CreditTallyMismatch[];
+  checkedAtIso: string;
+}
+
+export async function verifyMemberCreditTally(): Promise<ActionResult<CreditTallyReport>> {
+  await requireAdmin();
+  try {
+    const [customers, sums] = await Promise.all([
+      prisma.customer.findMany({
+        where: {
+          OR: [
+            { isMember: true },
+            { creditBalanceCents: { not: 0 } },
+            { memberTransactions: { some: {} } },
+          ],
+        },
+        select: {
+          id: true,
+          name: true,
+          phoneNumber: true,
+          creditBalanceCents: true,
+        },
+      }),
+      prisma.memberTransaction.groupBy({
+        by: ["customerId"],
+        _sum: { creditChangeCents: true },
+      }),
+    ]);
+
+    const sumMap = new Map(
+      sums.map((row) => [row.customerId, row._sum.creditChangeCents ?? 0])
+    );
+
+    const mismatches: CreditTallyMismatch[] = [];
+    for (const c of customers) {
+      const ledgerSumCents = sumMap.get(c.id) ?? 0;
+      if (c.creditBalanceCents !== ledgerSumCents) {
+        mismatches.push({
+          customerId: c.id,
+          name: c.name,
+          phoneNumber: c.phoneNumber,
+          storedBalanceCents: c.creditBalanceCents,
+          ledgerSumCents,
+          diffCents: c.creditBalanceCents - ledgerSumCents,
+        });
+      }
+    }
+
+    return {
+      success: true,
+      data: {
+        checkedCount: customers.length,
+        mismatchedCount: mismatches.length,
+        mismatches,
+        checkedAtIso: new Date().toISOString(),
+      },
+    };
+  } catch (error) {
+    console.error("[verifyMemberCreditTally]", error);
+    return { success: false, error: "Failed to run credit tally check." };
+  }
+}

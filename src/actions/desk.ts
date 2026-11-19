@@ -408,7 +408,16 @@ interface RecordDeskSaleInput {
  */
 export async function recordDeskSale(
   input: RecordDeskSaleInput
-): Promise<ActionResult<{ referenceCode: string; totalCents: number }>> {
+): Promise<
+  ActionResult<{
+    referenceCode: string;
+    totalCents: number;
+    creditUsedCents: number;
+    remainingCreditCents: number;
+    customerName: string;
+    customerPhone: string;
+  }>
+> {
   await requireAdmin();
   const idempotencyKey = input.idempotencyKey?.trim() || null;
 
@@ -470,12 +479,23 @@ export async function recordDeskSale(
         if (idempotencyKey) {
           const existingIdempotent = await tx.booking.findUnique({
             where: { checkoutIdempotencyKey: idempotencyKey },
-            select: { referenceCode: true, totalPriceCents: true },
+            select: {
+              referenceCode: true,
+              totalPriceCents: true,
+              creditUsedCents: true,
+              customer: {
+                select: { name: true, phoneNumber: true, creditBalanceCents: true },
+              },
+            },
           });
           if (existingIdempotent) {
             return {
               referenceCode: existingIdempotent.referenceCode,
               totalCents: existingIdempotent.totalPriceCents,
+              creditUsedCents: existingIdempotent.creditUsedCents,
+              remainingCreditCents: existingIdempotent.customer.creditBalanceCents,
+              customerName: existingIdempotent.customer.name,
+              customerPhone: existingIdempotent.customer.phoneNumber,
             };
           }
         }
@@ -732,7 +752,14 @@ export async function recordDeskSale(
           });
         }
 
-        return { referenceCode: finalRefCode, totalCents: netCashCollectedCents };
+        return {
+          referenceCode: finalRefCode,
+          totalCents: netCashCollectedCents,
+          creditUsedCents: actualCreditUsedCents,
+          remainingCreditCents: nextCreditBalance,
+          customerName: targetCustomer.name,
+          customerPhone: targetCustomer.phoneNumber,
+        };
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
     );
@@ -754,12 +781,26 @@ export async function recordDeskSale(
     ) {
       const existing = await prisma.booking.findUnique({
         where: { checkoutIdempotencyKey: idempotencyKey },
-        select: { referenceCode: true, totalPriceCents: true },
+        select: {
+          referenceCode: true,
+          totalPriceCents: true,
+          creditUsedCents: true,
+          customer: {
+            select: { name: true, phoneNumber: true, creditBalanceCents: true },
+          },
+        },
       });
       if (existing) {
         return {
           success: true,
-          data: { referenceCode: existing.referenceCode, totalCents: existing.totalPriceCents },
+          data: {
+            referenceCode: existing.referenceCode,
+            totalCents: existing.totalPriceCents,
+            creditUsedCents: existing.creditUsedCents,
+            remainingCreditCents: existing.customer.creditBalanceCents,
+            customerName: existing.customer.name,
+            customerPhone: existing.customer.phoneNumber,
+          },
         };
       }
     }
@@ -771,6 +812,8 @@ export async function recordDeskSale(
 
 /**
  * 1-Tap Manual Appointment Creation (Directly from Desk)
+ * Supports optional back-to-back guests for solo-stylist multi-person bookings
+ * with automatic Serializable overlap protection.
  */
 export async function createDeskAppointment(input: {
   customerName: string;
@@ -778,65 +821,181 @@ export async function createDeskAppointment(input: {
   serviceId: string;
   startDatetimeIso: string;
   notes?: string;
-}): Promise<ActionResult<{ referenceCode: string }>> {
+  additionalGuests?: { serviceId: string; guestLabel?: string }[];
+}): Promise<ActionResult<{ referenceCode: string; referenceCodes?: string[] }>> {
   await requireAdmin();
 
   try {
-    const { customerName, phoneNumber, serviceId, startDatetimeIso, notes } = input;
+    const {
+      customerName,
+      phoneNumber,
+      serviceId,
+      startDatetimeIso,
+      notes,
+      additionalGuests = [],
+    } = input;
 
-    const service = await prisma.service.findUnique({
-      where: { id: serviceId },
+    const requestedServiceIds = [
+      serviceId,
+      ...additionalGuests.map((g) => g.serviceId),
+    ];
+    const uniqueServiceIds = Array.from(new Set(requestedServiceIds));
+
+    const servicesList = await prisma.service.findMany({
+      where: { id: { in: uniqueServiceIds } },
     });
-    if (!service) return { success: false, error: "Service not found." };
+    const serviceMap = new Map(servicesList.map((s) => [s.id, s]));
 
-    const start = new Date(startDatetimeIso);
-    const end = new Date(start.getTime() + service.durationMinutes * 60000);
-
-    const cleanPhone = normalizePhoneNumber(phoneNumber) || phoneNumber.replace(/\s/g, "");
-    const customer = await prisma.customer.upsert({
-      where: { phoneNumber: cleanPhone },
-      update: { name: customerName },
-      create: { name: customerName, phoneNumber: cleanPhone },
-    });
-
-    let refCode = generateReferenceCode();
-    let attempts = 0;
-    while (attempts < 5) {
-      const found = await prisma.booking.findUnique({
-        where: { referenceCode: refCode },
-      });
-      if (!found) break;
-      refCode = generateReferenceCode();
-      attempts++;
+    if (!serviceMap.get(serviceId)) {
+      return { success: false, error: "Service not found." };
+    }
+    for (const guest of additionalGuests) {
+      if (!serviceMap.get(guest.serviceId)) {
+        return { success: false, error: "Service not found for additional person." };
+      }
     }
 
-    const booking = await prisma.booking.create({
-      data: {
-        referenceCode: refCode,
-        customerId: customer.id,
-        serviceId: service.id,
-        startDatetime: start,
-        endDatetime: end,
-        totalPriceCents: service.priceCents,
-        depositDueCents: null,
-        balanceDueCents: service.priceCents,
-        status: "CONFIRMED",
-        notes: notes || null,
-        receiptSubmittedAt: new Date(),
-        items: {
-          create: [{ serviceId: service.id, priceCents: service.priceCents }],
-        },
-      },
+    const overallStart = new Date(startDatetimeIso);
+    if (Number.isNaN(overallStart.getTime())) {
+      return { success: false, error: "Invalid appointment time." };
+    }
+
+    const cleanPhone = normalizePhoneNumber(phoneNumber) || phoneNumber.replace(/\s/g, "");
+    const totalPeople = 1 + additionalGuests.length;
+
+    // Build sequential back-to-back windows
+    let cursor = overallStart;
+    const legs: {
+      service: (typeof servicesList)[number];
+      start: Date;
+      end: Date;
+      personNote: string | null;
+    }[] = [];
+
+    const firstSvc = serviceMap.get(serviceId)!;
+    const firstEnd = new Date(cursor.getTime() + firstSvc.durationMinutes * 60000);
+    const trimmedNotes = notes?.trim() || "";
+    legs.push({
+      service: firstSvc,
+      start: cursor,
+      end: firstEnd,
+      personNote:
+        totalPeople > 1
+          ? `Person 1/${totalPeople}${trimmedNotes ? ` · ${trimmedNotes}` : ""}`
+          : trimmedNotes || null,
     });
+    cursor = firstEnd;
+
+    additionalGuests.forEach((guest, idx) => {
+      const svc = serviceMap.get(guest.serviceId)!;
+      const gStart = cursor;
+      const gEnd = new Date(gStart.getTime() + svc.durationMinutes * 60000);
+      const guestTag = guest.guestLabel?.trim();
+      const label = `Person ${idx + 2}/${totalPeople}${guestTag ? ` (${guestTag})` : ""}`;
+      legs.push({
+        service: svc,
+        start: gStart,
+        end: gEnd,
+        personNote: trimmedNotes ? `${label} · ${trimmedNotes}` : label,
+      });
+      cursor = gEnd;
+    });
+
+    const overallEnd = cursor;
+
+    const createdCodes = await prisma.$transaction(
+      async (tx) => {
+        // Server-side overlap guard across the full chained duration
+        const conflict = await tx.booking.findFirst({
+          where: {
+            status: { notIn: ["CANCELLED", "NO_SHOW"] },
+            AND: [
+              { startDatetime: { lt: overallEnd } },
+              { endDatetime: { gt: overallStart } },
+            ],
+          },
+          select: { referenceCode: true },
+        });
+        if (conflict) {
+          throw new Error(
+            "This time window overlaps with an existing appointment. Please choose another slot."
+          );
+        }
+
+        const blockout = await tx.timeBlockout.findFirst({
+          where: {
+            AND: [
+              { startDatetime: { lt: overallEnd } },
+              { endDatetime: { gt: overallStart } },
+            ],
+          },
+          select: { id: true },
+        });
+        if (blockout) {
+          throw new Error(
+            "This time window overlaps with a blocked-out time. Please choose another slot."
+          );
+        }
+
+        const customer = await tx.customer.upsert({
+          where: { phoneNumber: cleanPhone },
+          update: { name: customerName.trim() },
+          create: { name: customerName.trim(), phoneNumber: cleanPhone },
+        });
+
+        const codes: string[] = [];
+        const submittedAt = new Date();
+
+        for (const leg of legs) {
+          let refCode = generateReferenceCode();
+          let attempts = 0;
+          while (attempts < 5) {
+            const found = await tx.booking.findUnique({
+              where: { referenceCode: refCode },
+            });
+            if (!found) break;
+            refCode = generateReferenceCode();
+            attempts++;
+          }
+
+          const booking = await tx.booking.create({
+            data: {
+              referenceCode: refCode,
+              customerId: customer.id,
+              serviceId: leg.service.id,
+              startDatetime: leg.start,
+              endDatetime: leg.end,
+              totalPriceCents: leg.service.priceCents,
+              depositDueCents: null,
+              balanceDueCents: leg.service.priceCents,
+              status: "CONFIRMED",
+              notes: leg.personNote,
+              receiptSubmittedAt: submittedAt,
+              items: {
+                create: [{ serviceId: leg.service.id, priceCents: leg.service.priceCents }],
+              },
+            },
+          });
+          codes.push(booking.referenceCode);
+        }
+
+        return codes;
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+    );
 
     revalidatePath("/admin/desk");
     revalidatePath("/admin/bookings");
     revalidatePath("/admin");
 
-    return { success: true, data: { referenceCode: booking.referenceCode } };
+    return {
+      success: true,
+      data: { referenceCode: createdCodes[0], referenceCodes: createdCodes },
+    };
   } catch (error) {
     console.error("[createDeskAppointment]", error);
-    return { success: false, error: "Failed to create appointment." };
+    const msg = error instanceof Error ? error.message : "Failed to create appointment.";
+    return { success: false, error: msg };
   }
 }
 

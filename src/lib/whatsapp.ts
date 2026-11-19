@@ -263,3 +263,100 @@ export function buildEmergencyApologyWhatsAppUrl(details: EmergencyApologyDetail
   return `https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`;
 }
 
+export interface MemberCreditWhatsAppDetails {
+  customerName: string;
+  customerPhone: string;
+  action: "RELOAD" | "DEDUCT" | "BALANCE";
+  amountCents?: number;
+  newBalanceCents: number;
+  currencySymbol?: string;
+  referenceCode?: string;
+  businessName?: string;
+  language?: "en" | "zh";
+}
+
+export function buildMemberCreditWhatsAppUrl(details: MemberCreditWhatsAppDetails): string {
+  const {
+    customerName,
+    customerPhone,
+    action,
+    amountCents = 0,
+    newBalanceCents,
+    currencySymbol = "RM",
+    referenceCode,
+    businessName = process.env.NEXT_PUBLIC_BUSINESS_NAME || "Our Salon",
+    language = "zh",
+  } = details;
+
+  const isZh = language === "zh";
+  const fmt = (c: number) => `${currencySymbol} ${(c / 100).toFixed(2)}`;
+
+  let msg = "";
+  if (isZh) {
+    if (action === "RELOAD") {
+      msg = [
+        `您好 ${customerName}！感谢您在 *${businessName}* 充值会员储值。`,
+        ``,
+        `本次充值：*+${fmt(amountCents)}*`,
+        `最新储值余额：*${fmt(newBalanceCents)}*`,
+        ``,
+        `此消息为您的储值凭证，如有任何疑问欢迎随时联系我们。`,
+      ].join("\n");
+    } else if (action === "DEDUCT") {
+      msg = [
+        `您好 ${customerName}！感谢今日光临 *${businessName}*。`,
+        ``,
+        ...(referenceCode ? [`单号：${referenceCode}`] : []),
+        `本次储值扣款：*-${fmt(amountCents)}*`,
+        `剩余储值余额：*${fmt(newBalanceCents)}*`,
+        ``,
+        `期待下次为您服务！`,
+      ].join("\n");
+    } else {
+      msg = [
+        `您好 ${customerName}！这里是 *${businessName}*。`,
+        ``,
+        `您目前的会员储值余额为：*${fmt(newBalanceCents)}*`,
+        ``,
+        `欢迎随时预约到店！`,
+      ].join("\n");
+    }
+  } else {
+    if (action === "RELOAD") {
+      msg = [
+        `Hi ${customerName}! Thank you for reloading your member credit at *${businessName}*.`,
+        ``,
+        `Amount Credited: *+${fmt(amountCents)}*`,
+        `New Credit Balance: *${fmt(newBalanceCents)}*`,
+        ``,
+        `Please keep this message as your balance receipt.`,
+      ].join("\n");
+    } else if (action === "DEDUCT") {
+      msg = [
+        `Hi ${customerName}! Thank you for visiting *${businessName}* today.`,
+        ``,
+        ...(referenceCode ? [`Ref: ${referenceCode}`] : []),
+        `Credit Used: *-${fmt(amountCents)}*`,
+        `Remaining Balance: *${fmt(newBalanceCents)}*`,
+        ``,
+        `We look forward to seeing you again!`,
+      ].join("\n");
+    } else {
+      msg = [
+        `Hi ${customerName}! This is *${businessName}*.`,
+        ``,
+        `Your current member credit balance is: *${fmt(newBalanceCents)}*`,
+        ``,
+        `Let us know anytime you would like to book an appointment!`,
+      ].join("\n");
+    }
+  }
+
+  let cleanPhone = customerPhone.replace(/\D/g, "");
+  if (cleanPhone.startsWith("0")) {
+    cleanPhone = "60" + cleanPhone.slice(1);
+  }
+
+  return `https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`;
+}
+
