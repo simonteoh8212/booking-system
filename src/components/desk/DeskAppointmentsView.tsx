@@ -6,7 +6,13 @@ import {
   createDeskAppointment,
   type DeskAppointmentItem,
 } from "@/actions/desk";
-import { formatPrice, toBusinessDateString, formatSlotTimeRange } from "@/lib/utils";
+import {
+  formatPrice,
+  toBusinessDateString,
+  formatSlotTimeRange,
+  createBusinessDateTime,
+  generateIdempotencyKey,
+} from "@/lib/utils";
 import { format, addDays } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,13 +27,20 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
-import type { ServiceDto, BookingStatus, DeskLanguageMode, TimeSlot } from "@/types";
+import type {
+  ServiceDto,
+  BookingStatus,
+  DeskLanguageMode,
+  TimeSlot,
+  BusinessScheduleDto,
+} from "@/types";
 import {
   DESK_DICT,
   resolveServiceName,
   resolveDeskText,
 } from "@/lib/desk-i18n";
 import { getAvailableSlots } from "@/actions/booking";
+import { getBusinessSchedules } from "@/actions/schedule";
 import { getOperatingHoursInfo } from "@/lib/operating-hours";
 import { DeskText } from "./DeskText";
 import {
@@ -88,9 +101,10 @@ export function DeskAppointmentsView({
     slotStartTimeIso: "",
     notes: "",
   });
-  const [hasSecondPerson, setHasSecondPerson] = useState(false);
-  const [secondServiceId, setSecondServiceId] = useState<string>(services[0]?.id || "");
-  const [secondGuestLabel, setSecondGuestLabel] = useState("");
+  const [additionalGuests, setAdditionalGuests] = useState<
+    { id: string; serviceId: string; guestLabel: string }[]
+  >([]);
+  const [schedules, setSchedules] = useState<BusinessScheduleDto[]>([]);
   const [availableSlots, setAvailableSlots] = useState<TimeSlot[]>([]);
   const [isLoadingSlots, setIsLoadingSlots] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
@@ -103,18 +117,26 @@ export function DeskAppointmentsView({
     if (services.length > 0 && !addForm.serviceId) {
       setAddForm((prev) => ({ ...prev, serviceId: services[0].id }));
     }
-    if (services.length > 0 && !secondServiceId) {
-      setSecondServiceId(services[0].id);
-    }
-  }, [services, addForm.serviceId, secondServiceId]);
+  }, [services, addForm.serviceId]);
+
+  // Load business schedules once when Add modal opens (for closing-time warning)
+  useEffect(() => {
+    if (!isAddOpen || schedules.length > 0) return;
+    getBusinessSchedules().then((res) => {
+      if (res.success) setSchedules(res.data);
+    });
+  }, [isAddOpen, schedules.length]);
 
   const firstService = services.find((s) => s.id === addForm.serviceId) || services[0];
-  const secondService = services.find((s) => s.id === secondServiceId) || services[0];
   const firstDuration = firstService?.durationMinutes || 45;
-  const secondDuration = hasSecondPerson ? (secondService?.durationMinutes || 45) : 0;
-  const totalDurationMinutes = firstDuration + secondDuration;
+  const totalDurationMinutes =
+    firstDuration +
+    additionalGuests.reduce((sum, guest) => {
+      const svc = services.find((s) => s.id === guest.serviceId) || services[0];
+      return sum + (svc?.durationMinutes || 45);
+    }, 0);
 
-  // Fetch available slots whenever isAddOpen, date, or combined duration changes
+  // Fetch available slots whenever isAddOpen, date, or Person 1's duration changes
   useEffect(() => {
     if (!isAddOpen) return;
 
@@ -128,7 +150,7 @@ export function DeskAppointmentsView({
     let ignore = false;
     setIsLoadingSlots(true);
 
-    getAvailableSlots(addForm.date, totalDurationMinutes)
+    getAvailableSlots(addForm.date, firstDuration)
       .then((res) => {
         if (ignore) return;
         if (res.success) {
@@ -160,10 +182,32 @@ export function DeskAppointmentsView({
   }, [
     isAddOpen,
     addForm.date,
-    totalDurationMinutes,
+    firstDuration,
     todayStr,
     operatingHours.isPastOperatingHoursToday,
   ]);
+
+  const closingWarning = useMemo(() => {
+    if (!addForm.slotStartTimeIso || !addForm.date) return null;
+    const start = new Date(addForm.slotStartTimeIso);
+    if (Number.isNaN(start.getTime())) return null;
+
+    const overallEnd = new Date(start.getTime() + totalDurationMinutes * 60000);
+    const dayOfWeek = new Date(`${addForm.date}T12:00:00`).getDay();
+    const matchedSchedule = schedules.find((s) => s.dayOfWeek === dayOfWeek);
+    const fallbackEndHour = Number(process.env.NEXT_PUBLIC_OPERATING_HOUR_END ?? 19);
+    const closeTimeStr =
+      matchedSchedule?.closeTime ||
+      `${String(fallbackEndHour).padStart(2, "0")}:00`;
+    const closingDate = createBusinessDateTime(addForm.date, closeTimeStr);
+
+    if (overallEnd.getTime() <= closingDate.getTime()) return null;
+
+    return {
+      closingLabel: format(closingDate, "h:mm a"),
+      overallEndLabel: format(overallEnd, "h:mm a"),
+    };
+  }, [addForm.slotStartTimeIso, addForm.date, totalDurationMinutes, schedules]);
 
   // Handle 1-Tap status change
   function handleMarkStatus(bookingId: string, status: BookingStatus) {
@@ -213,14 +257,13 @@ export function DeskAppointmentsView({
         serviceId: addForm.serviceId,
         startDatetimeIso: addForm.slotStartTimeIso,
         notes: addForm.notes.trim() || undefined,
-        additionalGuests: hasSecondPerson
-          ? [
-              {
-                serviceId: secondServiceId || addForm.serviceId,
-                guestLabel: secondGuestLabel.trim() || undefined,
-              },
-            ]
-          : undefined,
+        additionalGuests:
+          additionalGuests.length > 0
+            ? additionalGuests.map((g) => ({
+                serviceId: g.serviceId || addForm.serviceId,
+                guestLabel: g.guestLabel.trim() || undefined,
+              }))
+            : undefined,
       });
 
       if (res.success) {
@@ -233,9 +276,7 @@ export function DeskAppointmentsView({
           slotStartTimeIso: "",
           notes: "",
         });
-        setHasSecondPerson(false);
-        setSecondServiceId(services[0]?.id || "");
-        setSecondGuestLabel("");
+        setAdditionalGuests([]);
         onRefresh();
       } else {
         setAddError(res.error);
@@ -550,7 +591,7 @@ export function DeskAppointmentsView({
 
       {/* ADD APPOINTMENT MODAL */}
       <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
-        <DialogContent className="max-w-md p-6">
+        <DialogContent className="max-w-md p-6 max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-xl font-bold">
               <DeskText
@@ -610,7 +651,7 @@ export function DeskAppointmentsView({
             <div className="space-y-1.5">
               <div className="flex items-center justify-between gap-2">
                 <Label className="text-sm font-bold">
-                  {hasSecondPerson ? (
+                  {additionalGuests.length > 0 ? (
                     <span>{isZh ? "第 1 位服务" : "Person 1 Service"} *</span>
                   ) : (
                     <>
@@ -623,23 +664,25 @@ export function DeskAppointmentsView({
                     </>
                   )}
                 </Label>
-                {!hasSecondPerson && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      setHasSecondPerson(true);
-                      if (!secondServiceId && services[0]?.id) {
-                        setSecondServiceId(services[0].id);
-                      }
-                    }}
-                    className="h-7 px-2.5 text-xs font-semibold rounded-lg gap-1 cursor-pointer"
-                  >
-                    <UserPlus className="h-3.5 w-3.5 text-primary" />
-                    <span>{isZh ? "+ 加第2位 (连续时段)" : "+ Add 2nd Person"}</span>
-                  </Button>
-                )}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    setAdditionalGuests((prev) => [
+                      ...prev,
+                      {
+                        id: generateIdempotencyKey(),
+                        serviceId: services[0]?.id || addForm.serviceId || "",
+                        guestLabel: "",
+                      },
+                    ])
+                  }
+                  className="h-7 px-2.5 text-xs font-semibold rounded-lg gap-1 cursor-pointer"
+                >
+                  <UserPlus className="h-3.5 w-3.5 text-primary" />
+                  <span>{isZh ? "+ 加人 (连续时段)" : "+ Add Person"}</span>
+                </Button>
               </div>
               <select
                 value={addForm.serviceId}
@@ -660,18 +703,22 @@ export function DeskAppointmentsView({
               </select>
             </div>
 
-            {hasSecondPerson && (
-              <div className="p-3.5 rounded-xl border border-primary/30 bg-primary/5 space-y-3">
+            {additionalGuests.map((guest, idx) => (
+              <div
+                key={guest.id}
+                className="p-3.5 rounded-xl border border-primary/30 bg-primary/5 space-y-3"
+              >
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-xs font-bold uppercase tracking-wider text-primary">
-                    {isZh ? "第 2 位顾客（自动接续下一时段）" : "Person 2 (Auto Back-to-Back)"}
+                    {isZh
+                      ? `第 ${idx + 2} 位顾客（自动接续下一时段）`
+                      : `Person ${idx + 2} (Auto Back-to-Back)`}
                   </span>
                   <button
                     type="button"
-                    onClick={() => {
-                      setHasSecondPerson(false);
-                      setSecondGuestLabel("");
-                    }}
+                    onClick={() =>
+                      setAdditionalGuests((prev) => prev.filter((g) => g.id !== guest.id))
+                    }
                     className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-destructive cursor-pointer"
                   >
                     <X className="h-3.5 w-3.5" />
@@ -681,11 +728,18 @@ export function DeskAppointmentsView({
 
                 <div className="space-y-1.5">
                   <Label className="text-xs font-semibold">
-                    {isZh ? "第 2 位服务 *" : "Person 2 Service *"}
+                    {isZh ? `第 ${idx + 2} 位服务 *` : `Person ${idx + 2} Service *`}
                   </Label>
                   <select
-                    value={secondServiceId}
-                    onChange={(e) => setSecondServiceId(e.target.value)}
+                    value={guest.serviceId}
+                    onChange={(e) => {
+                      const nextId = e.target.value;
+                      setAdditionalGuests((prev) =>
+                        prev.map((g) =>
+                          g.id === guest.id ? { ...g, serviceId: nextId } : g
+                        )
+                      );
+                    }}
                     className="w-full h-11 rounded-xl border px-3 text-sm font-semibold bg-background"
                   >
                     {services.map((s) => {
@@ -704,17 +758,26 @@ export function DeskAppointmentsView({
 
                 <div className="space-y-1">
                   <Label className="text-xs font-semibold text-muted-foreground">
-                    {isZh ? "第 2 位备注 / 称呼（选填）" : "Person 2 Name / Note (Optional)"}
+                    {isZh
+                      ? `第 ${idx + 2} 位备注 / 称呼（选填）`
+                      : `Person ${idx + 2} Name / Note (Optional)`}
                   </Label>
                   <Input
                     placeholder={isZh ? "例如：朋友 / 女儿" : "e.g. Friend / Daughter"}
-                    value={secondGuestLabel}
-                    onChange={(e) => setSecondGuestLabel(e.target.value)}
+                    value={guest.guestLabel}
+                    onChange={(e) => {
+                      const nextLabel = e.target.value;
+                      setAdditionalGuests((prev) =>
+                        prev.map((g) =>
+                          g.id === guest.id ? { ...g, guestLabel: nextLabel } : g
+                        )
+                      );
+                    }}
                     className="h-10 text-sm rounded-xl bg-background"
                   />
                 </div>
               </div>
-            )}
+            ))}
 
             {/* Same-day after hours alert banner */}
             {addForm.date === todayStr && operatingHours.isPastOperatingHoursToday && (
@@ -831,34 +894,65 @@ export function DeskAppointmentsView({
               </div>
             </div>
 
-            {hasSecondPerson && addForm.slotStartTimeIso && (
-              <div className="p-3 rounded-xl border border-border bg-muted/40 text-xs space-y-1 tabular-nums">
+            {additionalGuests.length > 0 && addForm.slotStartTimeIso && (
+              <div className="p-3 rounded-xl border border-border bg-muted/40 text-xs space-y-1.5 tabular-nums">
                 <div className="font-semibold text-foreground">
                   {isZh
-                    ? `连续时段预览（共 ${totalDurationMinutes} 分钟）`
-                    : `Back-to-Back Schedule (${totalDurationMinutes}m total)`}
+                    ? `连续时段预览（共 ${additionalGuests.length + 1} 位 · ${totalDurationMinutes} 分钟）`
+                    : `Back-to-Back Schedule (${additionalGuests.length + 1} people · ${totalDurationMinutes}m total)`}
                 </div>
                 {(() => {
-                  const p1Start = new Date(addForm.slotStartTimeIso);
-                  const p1End = new Date(p1Start.getTime() + firstDuration * 60000);
-                  const p2End = new Date(p1End.getTime() + secondDuration * 60000);
+                  let cursor = new Date(addForm.slotStartTimeIso);
+                  const rows: { label: string; range: string; isFirst: boolean }[] = [];
+
+                  const p1End = new Date(cursor.getTime() + firstDuration * 60000);
+                  rows.push({
+                    label: isZh ? "第 1 位：" : "Person 1:",
+                    range: formatSlotTimeRange(cursor.toISOString(), p1End.toISOString()),
+                    isFirst: true,
+                  });
+                  cursor = p1End;
+
+                  additionalGuests.forEach((guest, idx) => {
+                    const svc = services.find((s) => s.id === guest.serviceId) || services[0];
+                    const dur = svc?.durationMinutes || 45;
+                    const gEnd = new Date(cursor.getTime() + dur * 60000);
+                    rows.push({
+                      label: isZh ? `第 ${idx + 2} 位：` : `Person ${idx + 2}:`,
+                      range: formatSlotTimeRange(cursor.toISOString(), gEnd.toISOString()),
+                      isFirst: false,
+                    });
+                    cursor = gEnd;
+                  });
+
                   return (
                     <div className="text-muted-foreground space-y-0.5">
-                      <div>
-                        <span className="font-semibold text-foreground">
-                          {isZh ? "第 1 位：" : "Person 1:"}
-                        </span>{" "}
-                        {formatSlotTimeRange(p1Start.toISOString(), p1End.toISOString())}
-                      </div>
-                      <div>
-                        <span className="font-semibold text-primary">
-                          {isZh ? "第 2 位：" : "Person 2:"}
-                        </span>{" "}
-                        {formatSlotTimeRange(p1End.toISOString(), p2End.toISOString())}
-                      </div>
+                      {rows.map((r) => (
+                        <div key={r.label}>
+                          <span
+                            className={`font-semibold ${
+                              r.isFirst ? "text-foreground" : "text-primary"
+                            }`}
+                          >
+                            {r.label}
+                          </span>{" "}
+                          {r.range}
+                        </div>
+                      ))}
                     </div>
                   );
                 })()}
+              </div>
+            )}
+
+            {closingWarning && (
+              <div className="p-3 rounded-xl bg-amber-500/15 border border-amber-500/35 text-amber-800 dark:text-amber-300 flex items-start gap-2 text-xs">
+                <AlertCircle className="h-4 w-4 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
+                <span>
+                  {isZh
+                    ? `注意：预计结束时间为 ${closingWarning.overallEndLabel}，已超过店铺打烊时间（${closingWarning.closingLabel}）。`
+                    : `Notice: Combined booking finishes at ${closingWarning.overallEndLabel}, which exceeds shop closing time (${closingWarning.closingLabel}).`}
+                </span>
               </div>
             )}
           </div>
