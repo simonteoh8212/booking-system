@@ -1,7 +1,11 @@
 import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { connection } from "next/server";
-import { getMembers, getPromoPackages } from "@/actions/members";
+import {
+  getMembers,
+  getPromoPackages,
+  getMemberCreditSummary,
+} from "@/actions/members";
 import { getServices } from "@/actions/services";
 import { getDepositSetting } from "@/actions/deposit";
 import { MemberManager } from "@/components/admin/MemberManager";
@@ -12,18 +16,21 @@ export const metadata: Metadata = { title: "Members" };
 
 export default async function AdminMembersPage() {
   await connection();
-  const [membersRes, promosRes, servicesRes, depositRes, cookieStore] = await Promise.all([
-    getMembers(),
-    getPromoPackages(),
-    getServices(),
-    getDepositSetting(),
-    cookies(),
-  ]);
+  const [membersRes, promosRes, servicesRes, depositRes, summaryRes, cookieStore] =
+    await Promise.all([
+      getMembers(),
+      getPromoPackages(),
+      getServices(),
+      getDepositSetting(),
+      getMemberCreditSummary(),
+      cookies(),
+    ]);
 
   const members = membersRes.success ? membersRes.data : [];
   const promos = promosRes.success ? promosRes.data : [];
   const services = servicesRes.success ? servicesRes.data : [];
   const currencySymbol = depositRes.success ? depositRes.data.currencySymbol : "RM";
+  const initialSummary = summaryRes.success ? summaryRes.data : undefined;
   const cookieLang = cookieStore.get("app_desk_language")?.value as
     | DeskLanguageMode
     | undefined;
@@ -36,6 +43,7 @@ export default async function AdminMembersPage() {
       services={services}
       currencySymbol={currencySymbol}
       initialLanguage={initialLanguage}
+      initialSummary={initialSummary}
     />
   );
 }

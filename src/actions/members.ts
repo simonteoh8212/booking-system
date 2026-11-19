@@ -1209,3 +1209,44 @@ export async function verifyMemberCreditTally(): Promise<ActionResult<CreditTall
     return { success: false, error: "Failed to run credit tally check." };
   }
 }
+
+// ----------------------------------------------------------------
+// 13. Shop-Wide Outstanding Member Credit & Package Summary
+// ----------------------------------------------------------------
+export interface MemberCreditSummary {
+  totalMembers: number;
+  membersWithCreditCount: number;
+  totalOutstandingCreditCents: number;
+  totalRemainingSessions: number;
+}
+
+export async function getMemberCreditSummary(): Promise<ActionResult<MemberCreditSummary>> {
+  await requireAdmin();
+  try {
+    const [totalMembers, creditAgg, pkgAgg] = await Promise.all([
+      prisma.customer.count({ where: { isMember: true } }),
+      prisma.customer.aggregate({
+        where: { creditBalanceCents: { gt: 0 } },
+        _sum: { creditBalanceCents: true },
+        _count: { _all: true },
+      }),
+      prisma.memberPackage.aggregate({
+        where: { status: "ACTIVE", remainingSessions: { gt: 0 } },
+        _sum: { remainingSessions: true },
+      }),
+    ]);
+
+    return {
+      success: true,
+      data: {
+        totalMembers,
+        membersWithCreditCount: creditAgg._count._all,
+        totalOutstandingCreditCents: creditAgg._sum.creditBalanceCents ?? 0,
+        totalRemainingSessions: pkgAgg._sum.remainingSessions ?? 0,
+      },
+    };
+  } catch (error) {
+    console.error("[getMemberCreditSummary]", error);
+    return { success: false, error: "Failed to load member credit summary." };
+  }
+}

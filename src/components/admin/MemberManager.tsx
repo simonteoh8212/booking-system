@@ -17,7 +17,9 @@ import {
   adjustMemberPackageSession,
   adjustMemberCredit,
   verifyMemberCreditTally,
+  getMemberCreditSummary,
   type CreditTallyReport,
+  type MemberCreditSummary,
 } from "@/actions/members";
 import { buildMemberCreditWhatsAppUrl } from "@/lib/whatsapp";
 import { formatPrice, generateIdempotencyKey } from "@/lib/utils";
@@ -84,6 +86,7 @@ interface MemberManagerProps {
   services: ServiceDto[];
   currencySymbol?: string;
   initialLanguage?: DeskLanguageMode;
+  initialSummary?: MemberCreditSummary;
 }
 
 export function MemberManager({
@@ -92,12 +95,30 @@ export function MemberManager({
   services,
   currencySymbol = "RM",
   initialLanguage = "ONLY_EN",
+  initialSummary,
 }: MemberManagerProps) {
   const { langMode } = useDeskLanguage(initialLanguage);
   const isZh = langMode === "ONLY_ZH";
   const dateLocale = isZh ? zhCN : enUS;
   const [activeTab, setActiveTab] = useState<"MEMBERS" | "PROMOS">("MEMBERS");
   const [members, setMembers] = useState<MemberDto[]>(initialMembers);
+  const [creditSummary, setCreditSummary] = useState<MemberCreditSummary>(() => {
+    if (initialSummary) return initialSummary;
+    const onlyMembers = initialMembers.filter((m) => m.isMember);
+    return {
+      totalMembers: onlyMembers.length,
+      membersWithCreditCount: initialMembers.filter((m) => m.creditBalanceCents > 0).length,
+      totalOutstandingCreditCents: initialMembers.reduce(
+        (sum, m) => sum + m.creditBalanceCents,
+        0
+      ),
+      totalRemainingSessions: initialMembers.reduce(
+        (sum, m) =>
+          sum + m.activePackages.reduce((ps, p) => ps + p.remainingSessions, 0),
+        0
+      ),
+    };
+  });
   const [promos, setPromos] = useState<PromoPackageDto[]>(initialPromos);
   const [searchQuery, setSearchQuery] = useState("");
   const [includeNonMembers, setIncludeNonMembers] = useState(false);
@@ -239,8 +260,12 @@ export function MemberManager({
 
   function refreshMembers(q = searchQuery, incNon = includeNonMembers) {
     startTransition(async () => {
-      const res = await getMembers(q, incNon);
+      const [res, sumRes] = await Promise.all([
+        getMembers(q, incNon),
+        getMemberCreditSummary(),
+      ]);
       if (res.success) setMembers(res.data);
+      if (sumRes.success) setCreditSummary(sumRes.data);
     });
   }
 
@@ -650,6 +675,47 @@ export function MemberManager({
       <h1 className="text-xl sm:text-2xl font-bold tracking-tight">
         {isZh ? "会员与配套" : "Members & Promos"}
       </h1>
+
+      {/* Shop-Wide Member Credit & Package KPI Strip */}
+      <div className="rounded-xl border border-border bg-card grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-border">
+        <div className="p-4 flex flex-col justify-between gap-1">
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+            {isZh ? "会员未消费储值总额" : "Total Outstanding Credit"}
+          </span>
+          <div className="text-xl sm:text-2xl font-bold font-mono tabular-nums text-primary">
+            {formatPrice(creditSummary.totalOutstandingCreditCents, currencySymbol)}
+          </div>
+          <span className="text-xs text-muted-foreground tabular-nums">
+            {isZh
+              ? `${creditSummary.membersWithCreditCount} 位会员仍有余额`
+              : `${creditSummary.membersWithCreditCount} members with credit`}
+          </span>
+        </div>
+
+        <div className="p-4 flex flex-col justify-between gap-1">
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+            {isZh ? "活跃会员数" : "Active Members"}
+          </span>
+          <div className="text-xl sm:text-2xl font-bold font-mono tabular-nums text-foreground">
+            {creditSummary.totalMembers}
+          </div>
+          <span className="text-xs text-muted-foreground">
+            {isZh ? "已登记会员账户" : "Registered member profiles"}
+          </span>
+        </div>
+
+        <div className="p-4 flex flex-col justify-between gap-1">
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+            {isZh ? "配套剩余总次数" : "Remaining Promo Sessions"}
+          </span>
+          <div className="text-xl sm:text-2xl font-bold font-mono tabular-nums text-foreground">
+            {creditSummary.totalRemainingSessions}
+          </div>
+          <span className="text-xs text-muted-foreground">
+            {isZh ? "有效配套可核销次数" : "Active package sessions"}
+          </span>
+        </div>
+      </div>
 
       {/* Top Bar: Segmented Tabs + Primary Action */}
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1468,26 +1534,41 @@ export function MemberManager({
                               )}
                             </div>
                           </div>
-                          <div className="text-right font-mono tabular-nums shrink-0">
+                          <div className="text-right font-mono tabular-nums shrink-0 space-y-0.5">
                             {tx.creditChangeCents !== 0 && (
-                              <div
-                                className={`font-bold ${
-                                  tx.creditChangeCents > 0
-                                    ? "text-primary"
-                                    : "text-foreground"
-                                }`}
-                              >
-                                {tx.creditChangeCents > 0 ? "+" : ""}
-                                {formatPrice(tx.creditChangeCents, currencySymbol)}
-                              </div>
+                              <>
+                                <div
+                                  className={`font-bold ${
+                                    tx.creditChangeCents > 0
+                                      ? "text-primary"
+                                      : "text-foreground"
+                                  }`}
+                                >
+                                  {tx.creditChangeCents > 0 ? "+" : ""}
+                                  {formatPrice(tx.creditChangeCents, currencySymbol)}
+                                </div>
+                                <div className="text-[11px] text-muted-foreground">
+                                  {isZh ? "余额 " : "Bal "}
+                                  {formatPrice(tx.balanceAfterCents, currencySymbol)}
+                                </div>
+                              </>
                             )}
                             {tx.sessionsChange !== 0 && (
-                              <div className="font-semibold text-foreground">
-                                {tx.sessionsChange > 0
-                                  ? `+${tx.sessionsChange}`
-                                  : tx.sessionsChange}{" "}
-                                {isZh ? "次" : "sess"}
-                              </div>
+                              <>
+                                <div className="font-semibold text-foreground">
+                                  {tx.sessionsChange > 0
+                                    ? `+${tx.sessionsChange}`
+                                    : tx.sessionsChange}{" "}
+                                  {isZh ? "次" : "sess"}
+                                </div>
+                                {tx.sessionsAfter !== null && (
+                                  <div className="text-[11px] text-muted-foreground">
+                                    {isZh
+                                      ? `剩 ${tx.sessionsAfter} 次`
+                                      : `${tx.sessionsAfter} left`}
+                                  </div>
+                                )}
+                              </>
                             )}
                           </div>
                         </div>

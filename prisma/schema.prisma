@@ -217,11 +217,12 @@ model BookingItem {
 // Admin user (single-tenant — typically one row)
 // ---------------------------------------------------------------------------
 model AdminUser {
-  id           String   @id @default(cuid())
-  username     String   @unique
-  passwordHash String
-  pinCode      String?  @default("1234")
-  createdAt    DateTime @default(now())
+  id               String   @id @default(cuid())
+  username         String   @unique
+  passwordHash     String
+  pinCode          String?  @default("1234")
+  recoveryCodeHash String?
+  createdAt        DateTime @default(now())
 
   @@map("admin_users")
 }

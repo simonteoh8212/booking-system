@@ -315,7 +315,7 @@ export async function GET() {
     sqlParts.push(
       buildInsertStatement(
         "admin_users",
-        ["id", "username", "passwordHash", "pinCode", "createdAt"],
+        ["id", "username", "passwordHash", "pinCode", "recoveryCodeHash", "createdAt"],
         adminUsers as unknown as Record<string, unknown>[]
       )
     );

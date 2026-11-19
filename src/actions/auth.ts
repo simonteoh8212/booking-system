@@ -1,6 +1,7 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
+import { randomBytes } from "crypto";
 import {
   signAndSetSession,
   clearSession,
@@ -137,6 +138,196 @@ export async function adminPinLogin(pin: string): Promise<ActionResult<void>> {
   } catch (error) {
     console.error("[adminPinLogin]", error);
     return { success: false, error: "Failed to sign in. Please try again." };
+  }
+}
+
+const RECOVERY_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+
+function generateRecoveryCode(): string {
+  const bytes = randomBytes(12);
+  let raw = "";
+  for (let i = 0; i < 12; i++) {
+    raw += RECOVERY_ALPHABET[bytes[i] % RECOVERY_ALPHABET.length];
+  }
+  return `${raw.slice(0, 4)}-${raw.slice(4, 8)}-${raw.slice(8, 12)}`;
+}
+
+function normalizeRecoveryCode(code: string): string {
+  return code.trim().toUpperCase().replace(/[\s-]+/g, "");
+}
+
+// ----------------------------------------------------------------
+// Recovery Code & Password Management
+// ----------------------------------------------------------------
+export async function getRecoveryCodeStatus(): Promise<
+  ActionResult<{ hasRecoveryCode: boolean }>
+> {
+  const session = await requireAdmin();
+  try {
+    const admin = await prisma.adminUser.findUnique({
+      where: { id: session.sub },
+      select: { recoveryCodeHash: true },
+    });
+    return {
+      success: true,
+      data: { hasRecoveryCode: Boolean(admin?.recoveryCodeHash) },
+    };
+  } catch (error) {
+    console.error("[getRecoveryCodeStatus]", error);
+    return { success: false, error: "Failed to load recovery code status." };
+  }
+}
+
+export async function regenerateRecoveryCode(): Promise<
+  ActionResult<{ recoveryCode: string }>
+> {
+  const session = await requireAdmin();
+  try {
+    const code = generateRecoveryCode();
+    const recoveryCodeHash = await bcrypt.hash(normalizeRecoveryCode(code), 12);
+
+    await prisma.adminUser.update({
+      where: { id: session.sub },
+      data: { recoveryCodeHash },
+    });
+
+    revalidatePath("/admin/settings");
+    return { success: true, data: { recoveryCode: code } };
+  } catch (error) {
+    console.error("[regenerateRecoveryCode]", error);
+    return { success: false, error: "Failed to generate recovery code." };
+  }
+}
+
+export async function updateAdminPassword(input: {
+  currentPassword: string;
+  newPassword: string;
+}): Promise<ActionResult<{ initialRecoveryCode?: string }>> {
+  const session = await requireAdmin();
+  try {
+    const { currentPassword, newPassword } = input;
+    if (!currentPassword) {
+      return { success: false, error: "Current password is required." };
+    }
+    if (!newPassword || newPassword.length < 8) {
+      return {
+        success: false,
+        error: "New password must be at least 8 characters.",
+      };
+    }
+
+    const admin = await prisma.adminUser.findUnique({
+      where: { id: session.sub },
+    });
+    if (!admin) {
+      return { success: false, error: "Admin account not found." };
+    }
+
+    const valid = await bcrypt.compare(currentPassword, admin.passwordHash);
+    if (!valid) {
+      return { success: false, error: "Current password is incorrect." };
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 12);
+    let initialRecoveryCode: string | undefined;
+    let recoveryCodeHash = admin.recoveryCodeHash;
+
+    if (!recoveryCodeHash) {
+      initialRecoveryCode = generateRecoveryCode();
+      recoveryCodeHash = await bcrypt.hash(
+        normalizeRecoveryCode(initialRecoveryCode),
+        12
+      );
+    }
+
+    await prisma.adminUser.update({
+      where: { id: admin.id },
+      data: { passwordHash, recoveryCodeHash },
+    });
+
+    revalidatePath("/admin/settings");
+    return { success: true, data: { initialRecoveryCode } };
+  } catch (error) {
+    console.error("[updateAdminPassword]", error);
+    return { success: false, error: "Failed to update password." };
+  }
+}
+
+export async function resetPasswordWithRecoveryCode(input: {
+  username: string;
+  recoveryCode: string;
+  newPassword: string;
+}): Promise<ActionResult<{ newRecoveryCode: string }>> {
+  try {
+    const cleanUsername = input.username.trim();
+    const normalizedCode = normalizeRecoveryCode(input.recoveryCode);
+    const newPassword = input.newPassword;
+
+    if (!cleanUsername) {
+      return { success: false, error: "Username is required." };
+    }
+    if (!normalizedCode || normalizedCode.length < 8) {
+      return { success: false, error: "Please enter a valid recovery code." };
+    }
+    if (!newPassword || newPassword.length < 8) {
+      return {
+        success: false,
+        error: "New password must be at least 8 characters.",
+      };
+    }
+
+    const clientIp = await getRequestClientIp();
+    const rateKey = `admin-recovery:${clientIp}`;
+    const rateCheck = checkRateLimit(rateKey, 5, 10 * 60 * 1000);
+    if (!rateCheck.allowed) {
+      return {
+        success: false,
+        error: `Too many recovery attempts. Please wait ${rateCheck.retryAfterSeconds}s and try again.`,
+      };
+    }
+
+    const admin = await prisma.adminUser.findUnique({
+      where: { username: cleanUsername },
+    });
+
+    if (!admin || !admin.recoveryCodeHash) {
+      recordFailedLookup(rateKey);
+      return { success: false, error: "Invalid username or recovery code." };
+    }
+
+    const validCode = await bcrypt.compare(normalizedCode, admin.recoveryCodeHash);
+    if (!validCode) {
+      recordFailedLookup(rateKey);
+      return { success: false, error: "Invalid username or recovery code." };
+    }
+
+    // Rotate password and issue a fresh one-time recovery code immediately
+    const passwordHash = await bcrypt.hash(newPassword, 12);
+    const newRecoveryCode = generateRecoveryCode();
+    const newRecoveryCodeHash = await bcrypt.hash(
+      normalizeRecoveryCode(newRecoveryCode),
+      12
+    );
+
+    await prisma.adminUser.update({
+      where: { id: admin.id },
+      data: {
+        passwordHash,
+        recoveryCodeHash: newRecoveryCodeHash,
+      },
+    });
+
+    recordSuccessfulLookup(rateKey);
+    await signAndSetSession({ sub: admin.id, username: admin.username });
+    await setTrustedDeviceCookie({ sub: admin.id, username: admin.username });
+
+    return { success: true, data: { newRecoveryCode } };
+  } catch (error) {
+    console.error("[resetPasswordWithRecoveryCode]", error);
+    return {
+      success: false,
+      error: "Failed to reset password. Please try again.",
+    };
   }
 }
 
