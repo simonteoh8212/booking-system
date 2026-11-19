@@ -6,6 +6,7 @@
     "dev": "next dev",
     "build": "prisma generate && next build",
     "build:cloudflare": "prisma generate && opennextjs-cloudflare build",
+    "env": "scp .env.prod florist-vps:~/booking-system/.env.prod && ssh florist-vps \"cd ~/booking-system && docker compose up -d --force-recreate\"",
     "deploy:cloudflare": "wrangler deploy",
     "postinstall": "prisma generate",
     "start": "next start",
