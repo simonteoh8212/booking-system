@@ -1021,14 +1021,18 @@ export function MemberManager({
               {members.map((member) => (
                 <div
                   key={member.id}
-                  className="p-4 md:grid md:grid-cols-12 md:items-center gap-3 hover:bg-muted/20 transition-colors"
+                  onClick={() => openMemberDetail(member.id)}
+                  className="p-4 md:grid md:grid-cols-12 md:items-center gap-3 hover:bg-muted/20 transition-colors cursor-pointer"
                 >
                   {/* Name & Phone */}
                   <div className="md:col-span-4 min-w-0">
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
-                        onClick={() => openMemberDetail(member.id)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openMemberDetail(member.id);
+                        }}
                         className="font-semibold text-sm text-foreground hover:text-primary truncate cursor-pointer text-left"
                       >
                         {member.name}
@@ -1081,7 +1085,10 @@ export function MemberManager({
                     <Button
                       size="sm"
                       variant="outline"
-                      onClick={() => openReloadModal(member)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openReloadModal(member);
+                      }}
                       className="h-8 px-2.5 rounded-lg text-xs font-semibold gap-1 cursor-pointer"
                     >
                       <Wallet className="h-3.5 w-3.5 text-primary" />
@@ -1090,7 +1097,10 @@ export function MemberManager({
                     <Button
                       size="sm"
                       variant="outline"
-                      onClick={() => openAssignPromoModal(member)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openAssignPromoModal(member);
+                      }}
                       className="h-8 px-2.5 rounded-lg text-xs font-semibold gap-1 cursor-pointer"
                     >
                       <Ticket className="h-3.5 w-3.5" />
@@ -1099,7 +1109,10 @@ export function MemberManager({
                     <Button
                       size="icon"
                       variant="ghost"
-                      onClick={() => openMemberDetail(member.id)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openMemberDetail(member.id);
+                      }}
                       disabled={loadingDetailId === member.id}
                       className="h-8 w-8 text-muted-foreground hover:text-foreground cursor-pointer"
                       aria-label={isZh ? "会员详情" : "Member details"}
