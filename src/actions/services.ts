@@ -3,16 +3,48 @@
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "./auth";
 import type { ActionResult, ServiceDto } from "@/types";
-import { revalidatePath } from "next/cache";
+import { revalidatePath, unstable_cache, updateTag } from "next/cache";
+
+const SERVICE_SELECT = {
+  id: true,
+  name: true,
+  description: true,
+  category: true,
+  type: true,
+  durationMinutes: true,
+  priceCents: true,
+  isActive: true,
+} as const;
+
+const getAllServicesCached = unstable_cache(
+  async (): Promise<ServiceDto[]> => {
+    return prisma.service.findMany({
+      select: SERVICE_SELECT,
+      orderBy: [{ category: "asc" }, { name: "asc" }],
+    });
+  },
+  ["services-all"],
+  { tags: ["services"], revalidate: 300 }
+);
+
+const getActiveServicesCached = unstable_cache(
+  async (): Promise<ServiceDto[]> => {
+    return prisma.service.findMany({
+      where: { isActive: true },
+      select: SERVICE_SELECT,
+      orderBy: [{ category: "asc" }, { name: "asc" }],
+    });
+  },
+  ["services-active"],
+  { tags: ["services"], revalidate: 300 }
+);
 
 // ----------------------------------------------------------------
 // List all services
 // ----------------------------------------------------------------
 export async function getServices(): Promise<ActionResult<ServiceDto[]>> {
   try {
-    const services = await prisma.service.findMany({
-      orderBy: [{ category: "asc" }, { name: "asc" }],
-    });
+    const services = await getAllServicesCached();
     return { success: true, data: services };
   } catch {
     return { success: false, error: "Failed to load services." };
@@ -24,10 +56,7 @@ export async function getServices(): Promise<ActionResult<ServiceDto[]>> {
 // ----------------------------------------------------------------
 export async function getActiveServices(): Promise<ActionResult<ServiceDto[]>> {
   try {
-    const services = await prisma.service.findMany({
-      where: { isActive: true },
-      orderBy: [{ category: "asc" }, { name: "asc" }],
-    });
+    const services = await getActiveServicesCached();
     return { success: true, data: services };
   } catch {
     return { success: false, error: "Failed to load services." };
@@ -53,7 +82,9 @@ export async function createService(
   await requireAdmin();
   try {
     const service = await prisma.service.create({ data: input });
+    updateTag("services");
     revalidatePath("/admin/services");
+    revalidatePath("/admin/desk");
     return { success: true, data: service };
   } catch {
     return { success: false, error: "Failed to create service." };
@@ -70,7 +101,9 @@ export async function updateService(
   await requireAdmin();
   try {
     const service = await prisma.service.update({ where: { id }, data: input });
+    updateTag("services");
     revalidatePath("/admin/services");
+    revalidatePath("/admin/desk");
     return { success: true, data: service };
   } catch {
     return { success: false, error: "Failed to update service." };
@@ -92,8 +125,10 @@ export async function deleteService(id: string): Promise<ActionResult<void>> {
       await tx.service.delete({ where: { id } });
     });
 
+    updateTag("services");
     revalidatePath("/admin/services");
     revalidatePath("/admin/bookings");
+    revalidatePath("/admin/desk");
     revalidatePath("/admin");
     return { success: true, data: undefined };
   } catch (error) {

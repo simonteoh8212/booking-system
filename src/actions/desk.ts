@@ -57,6 +57,7 @@ export interface DeskDailySummary {
   showMakeAppointment: boolean;
   showWalkIn: boolean;
   showBookedCheckout: boolean;
+  requireReportPin: boolean;
   servicesBreakdown: ServiceSalesCount[];
 }
 
@@ -124,21 +125,32 @@ export async function getDeskDailySummary(
       console.error("[getDeskDailySummary] depositSetting fetch warning:", settingErr);
     }
 
-    // Fetch bookings and member cash reloads/package purchases safely
-    let bookings: any[] = [];
-    let yesterdayBookings: { totalPriceCents: number }[] = [];
-    let monthBookings: { totalPriceCents: number }[] = [];
+    // Fetch today's bookings and SQL aggregates for yesterday/month & member sales
+    type TodayBookingWithRelations = Prisma.BookingGetPayload<{
+      include: {
+        service: true;
+        items: {
+          include: { service: true };
+        };
+      };
+    }>;
+
+    let bookings: TodayBookingWithRelations[] = [];
+    let yesterdayBookingSalesCents = 0;
+    let yesterdayCompletedCount = 0;
+    let monthBookingSalesCents = 0;
+    let monthCompletedCount = 0;
     let todayMemberSalesCents = 0;
     let yesterdayMemberSalesCents = 0;
     let monthMemberSalesCents = 0;
     try {
       const [
         bToday,
-        bYesterday,
-        bMonth,
-        mToday,
-        mYesterday,
-        mMonth,
+        bYesterdayAgg,
+        bMonthAgg,
+        mTodayAgg,
+        mYesterdayAgg,
+        mMonthAgg,
       ] = await Promise.all([
         prisma.booking.findMany({
           where: {
@@ -153,48 +165,52 @@ export async function getDeskDailySummary(
           },
           orderBy: { startDatetime: "asc" },
         }),
-        prisma.booking.findMany({
+        prisma.booking.aggregate({
           where: {
             startDatetime: { gte: startOfYesterday, lte: endOfYesterday },
             status: "COMPLETED",
           },
-          select: { totalPriceCents: true },
+          _sum: { totalPriceCents: true },
+          _count: { _all: true },
         }),
-        prisma.booking.findMany({
+        prisma.booking.aggregate({
           where: {
             startDatetime: { gte: startOfMonth, lte: endOfMonth },
             status: "COMPLETED",
           },
-          select: { totalPriceCents: true },
+          _sum: { totalPriceCents: true },
+          _count: { _all: true },
         }),
-        prisma.memberTransaction.findMany({
+        prisma.memberTransaction.aggregate({
           where: {
             createdAt: { gte: startOfDay, lte: endOfDay },
             cashPaidCents: { gt: 0 },
           },
-          select: { cashPaidCents: true },
+          _sum: { cashPaidCents: true },
         }),
-        prisma.memberTransaction.findMany({
+        prisma.memberTransaction.aggregate({
           where: {
             createdAt: { gte: startOfYesterday, lte: endOfYesterday },
             cashPaidCents: { gt: 0 },
           },
-          select: { cashPaidCents: true },
+          _sum: { cashPaidCents: true },
         }),
-        prisma.memberTransaction.findMany({
+        prisma.memberTransaction.aggregate({
           where: {
             createdAt: { gte: startOfMonth, lte: endOfMonth },
             cashPaidCents: { gt: 0 },
           },
-          select: { cashPaidCents: true },
+          _sum: { cashPaidCents: true },
         }),
       ]);
       bookings = bToday;
-      yesterdayBookings = bYesterday;
-      monthBookings = bMonth;
-      todayMemberSalesCents = mToday.reduce((s, t) => s + t.cashPaidCents, 0);
-      yesterdayMemberSalesCents = mYesterday.reduce((s, t) => s + t.cashPaidCents, 0);
-      monthMemberSalesCents = mMonth.reduce((s, t) => s + t.cashPaidCents, 0);
+      yesterdayBookingSalesCents = bYesterdayAgg._sum.totalPriceCents ?? 0;
+      yesterdayCompletedCount = bYesterdayAgg._count._all;
+      monthBookingSalesCents = bMonthAgg._sum.totalPriceCents ?? 0;
+      monthCompletedCount = bMonthAgg._count._all;
+      todayMemberSalesCents = mTodayAgg._sum.cashPaidCents ?? 0;
+      yesterdayMemberSalesCents = mYesterdayAgg._sum.cashPaidCents ?? 0;
+      monthMemberSalesCents = mMonthAgg._sum.cashPaidCents ?? 0;
     } catch (bookingErr) {
       console.error("[getDeskDailySummary] Bookings query warning:", bookingErr);
     }
@@ -258,15 +274,8 @@ export async function getDeskDailySummary(
       (a, b) => b.count - a.count || b.totalCents - a.totalCents
     );
 
-    const yesterdaySalesCents =
-      yesterdayBookings.reduce((sum, b) => sum + b.totalPriceCents, 0) +
-      yesterdayMemberSalesCents;
-    const yesterdayCompletedCount = yesterdayBookings.length;
-
-    const monthSalesCents =
-      monthBookings.reduce((sum, b) => sum + b.totalPriceCents, 0) +
-      monthMemberSalesCents;
-    const monthCompletedCount = monthBookings.length;
+    const yesterdaySalesCents = yesterdayBookingSalesCents + yesterdayMemberSalesCents;
+    const monthSalesCents = monthBookingSalesCents + monthMemberSalesCents;
 
     const currency = "MYR";
     const currencySymbol = "RM";
@@ -278,6 +287,7 @@ export async function getDeskDailySummary(
     const showMakeAppointment = depositSetting?.showMakeAppointment ?? true;
     const showWalkIn = depositSetting?.showWalkIn ?? true;
     const showBookedCheckout = depositSetting?.showBookedCheckout ?? true;
+    const requireReportPin = depositSetting?.requireReportPin ?? true;
 
     return {
       success: true,
@@ -302,6 +312,7 @@ export async function getDeskDailySummary(
         showMakeAppointment,
         showWalkIn,
         showBookedCheckout,
+        requireReportPin,
         servicesBreakdown,
       },
     };
@@ -1516,5 +1527,216 @@ export async function deleteDeskExpense(expenseId: string): Promise<ActionResult
   } catch (error) {
     console.error("[deleteDeskExpense]", error);
     return { success: false, error: "Failed to delete expense. / 删除支出失败" };
+  }
+}
+
+// ----------------------------------------------------------------
+// Today's Itemized Sales Details (Bookings + Member Reloads/Promos)
+// ----------------------------------------------------------------
+export type TodaySalePaymentMethod = "CASH" | "DUITNOW_QR" | "CARD" | "OTHER";
+
+export interface TodaySaleItemDto {
+  id: string;
+  source: "BOOKING" | "WALKIN" | "MEMBER_RELOAD" | "MEMBER_PROMO";
+  referenceCode: string;
+  timestampIso: string;
+  timeStr: string;
+  customerName: string;
+  phoneNumber: string;
+  title: string;
+  paymentMethod: TodaySalePaymentMethod;
+  amountCents: number;
+  creditUsedCents: number;
+}
+
+export interface TodaySalesDetailsDto {
+  dateStr: string;
+  currencySymbol: string;
+  totalSalesCents: number;
+  totalExpensesCents: number;
+  netSalesCents: number;
+  expensesCount: number;
+  totalCount: number;
+  paymentChannels: {
+    cashCents: number;
+    cashCount: number;
+    qrCents: number;
+    qrCount: number;
+    cardCents: number;
+    cardCount: number;
+    otherCents: number;
+    otherCount: number;
+  };
+  items: TodaySaleItemDto[];
+}
+
+function detectBookingPaymentMethod(notes?: string | null): TodaySalePaymentMethod {
+  if (notes?.includes("CASH")) return "CASH";
+  if (notes?.includes("DUITNOW_QR")) return "DUITNOW_QR";
+  if (notes?.includes("CARD")) return "CARD";
+  return "OTHER";
+}
+
+function normalizeMemberPaymentMethod(method?: string | null): TodaySalePaymentMethod {
+  if (method === "CASH") return "CASH";
+  if (method === "DUITNOW_QR") return "DUITNOW_QR";
+  if (method === "CARD") return "CARD";
+  return "OTHER";
+}
+
+export async function getTodaySalesDetails(
+  targetDateInput?: string
+): Promise<ActionResult<TodaySalesDetailsDto>> {
+  await requireAdmin();
+
+  try {
+    const dateStr = targetDateInput || toBusinessDateString(new Date());
+    const startOfDay = createBusinessDateTime(dateStr, "00:00");
+    const endOfDay = new Date(
+      createBusinessDateTime(dateStr, "23:59").getTime() + 59999
+    );
+
+    const [depositSetting, bookings, memberCashTxs, dayExpenses] = await Promise.all([
+      getOrEnsurePrimaryDepositSetting(),
+      prisma.booking.findMany({
+        where: {
+          startDatetime: { gte: startOfDay, lte: endOfDay },
+          status: "COMPLETED",
+        },
+        include: {
+          customer: { select: { name: true, phoneNumber: true } },
+          service: { select: { name: true } },
+          items: { include: { service: { select: { name: true } } } },
+        },
+        orderBy: { startDatetime: "desc" },
+      }),
+      prisma.memberTransaction.findMany({
+        where: {
+          createdAt: { gte: startOfDay, lte: endOfDay },
+          cashPaidCents: { gt: 0 },
+        },
+        include: {
+          customer: { select: { name: true, phoneNumber: true } },
+          memberPackage: { select: { name: true } },
+        },
+        orderBy: { createdAt: "desc" },
+      }),
+      prisma.expense.findMany({
+        where: {
+          date: { gte: startOfDay, lte: endOfDay },
+        },
+        select: { amountCents: true },
+      }),
+    ]);
+
+    const paymentChannels = {
+      cashCents: 0,
+      cashCount: 0,
+      qrCents: 0,
+      qrCount: 0,
+      cardCents: 0,
+      cardCount: 0,
+      otherCents: 0,
+      otherCount: 0,
+    };
+
+    const addChannel = (method: TodaySalePaymentMethod, amountCents: number) => {
+      if (method === "CASH") {
+        paymentChannels.cashCents += amountCents;
+        paymentChannels.cashCount += 1;
+      } else if (method === "DUITNOW_QR") {
+        paymentChannels.qrCents += amountCents;
+        paymentChannels.qrCount += 1;
+      } else if (method === "CARD") {
+        paymentChannels.cardCents += amountCents;
+        paymentChannels.cardCount += 1;
+      } else {
+        paymentChannels.otherCents += amountCents;
+        paymentChannels.otherCount += 1;
+      }
+    };
+
+    const formatKlTime = (dt: Date) =>
+      dt.toLocaleTimeString("en-US", {
+        hour: "numeric",
+        minute: "2-digit",
+        hour12: true,
+        timeZone: "Asia/Kuala_Lumpur",
+      });
+
+    const bookingItems: TodaySaleItemDto[] = bookings.map((b) => {
+      const dt = new Date(b.startDatetime);
+      const isWalkin = b.customer.phoneNumber.startsWith("WALKIN-");
+      const serviceNames =
+        b.items.length > 0
+          ? b.items.map((it) => it.service.name)
+          : b.service?.name
+          ? [b.service.name]
+          : ["Service"];
+      const method = detectBookingPaymentMethod(b.notes);
+      addChannel(method, b.totalPriceCents);
+
+      return {
+        id: b.id,
+        source: isWalkin ? "WALKIN" : "BOOKING",
+        referenceCode: b.referenceCode,
+        timestampIso: dt.toISOString(),
+        timeStr: formatKlTime(dt),
+        customerName: b.customer.name,
+        phoneNumber: b.customer.phoneNumber,
+        title: serviceNames.join(", "),
+        paymentMethod: method,
+        amountCents: b.totalPriceCents,
+        creditUsedCents: b.creditUsedCents ?? 0,
+      };
+    });
+
+    const memberItems: TodaySaleItemDto[] = memberCashTxs.map((mt) => {
+      const dt = new Date(mt.createdAt);
+      const method = normalizeMemberPaymentMethod(mt.paymentMethod);
+      addChannel(method, mt.cashPaidCents);
+      const isReload = mt.type === "CREDIT_RELOAD";
+
+      return {
+        id: mt.id,
+        source: isReload ? "MEMBER_RELOAD" : "MEMBER_PROMO",
+        referenceCode: `MEM-${mt.id.slice(-5).toUpperCase()}`,
+        timestampIso: dt.toISOString(),
+        timeStr: formatKlTime(dt),
+        customerName: mt.customer.name,
+        phoneNumber: mt.customer.phoneNumber,
+        title: isReload
+          ? "Member Credit Reload"
+          : mt.memberPackage?.name || "Member Promo Package",
+        paymentMethod: method,
+        amountCents: mt.cashPaidCents,
+        creditUsedCents: 0,
+      };
+    });
+
+    const items = [...bookingItems, ...memberItems].sort((a, b) =>
+      b.timestampIso.localeCompare(a.timestampIso)
+    );
+    const totalSalesCents = items.reduce((sum, item) => sum + item.amountCents, 0);
+    const totalExpensesCents = dayExpenses.reduce((sum, e) => sum + e.amountCents, 0);
+    const netSalesCents = totalSalesCents - totalExpensesCents;
+
+    return {
+      success: true,
+      data: {
+        dateStr,
+        currencySymbol: depositSetting?.currencySymbol || "RM",
+        totalSalesCents,
+        totalExpensesCents,
+        netSalesCents,
+        expensesCount: dayExpenses.length,
+        totalCount: items.length,
+        paymentChannels,
+        items,
+      },
+    };
+  } catch (error) {
+    console.error("[getTodaySalesDetails]", error);
+    return { success: false, error: "Failed to load today's sales details." };
   }
 }

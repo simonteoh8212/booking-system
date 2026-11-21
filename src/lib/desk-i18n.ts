@@ -179,14 +179,14 @@ export const DESK_DICT = {
     appointmentsHeader: { zh: "今日预约清单", en: "Today's Schedule" },
     checklistTab: { zh: "清单模式", en: "Checklist" },
     calendarTab: { zh: "日历模式", en: "Calendar" },
-    addAppointmentBtn: { zh: "+ 新增预约", en: "+ Add Appointment" },
+    addAppointmentBtn: { zh: "+ 新增预约", en: "Add Appointment" },
     noAppointmentsTitle: {
       zh: "该日期暂无预约",
       en: "No appointments scheduled for this date.",
     },
     noAppointmentsSub: {
       zh: "点击右上方“+ 新增预约”为客户登记时间",
-      en: "Tap '+ Add Appointment' above to register a booking.",
+      en: "Tap 'Add Appointment' above to register a booking.",
     },
     feeLabel: { zh: "费用", en: "Fee" },
     depositPaidLabel: { zh: "已付定金", en: "Deposit Paid" },

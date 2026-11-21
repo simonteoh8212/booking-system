@@ -51,7 +51,7 @@ import { resolveServiceName } from "@/lib/desk-i18n";
 interface DeskFinancialReportViewProps {
   currencySymbol?: string;
   languageMode?: DeskLanguageMode;
-  onBack: () => void;
+  onBack?: () => void;
 }
 
 const CATEGORY_CONFIG: Record<
@@ -331,17 +331,19 @@ export function DeskFinancialReportView({
   return (
     <div className="space-y-5 select-none">
       {/* Compact Top Action Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <Button
-          type="button"
-          onClick={onBack}
-          size="sm"
-          variant="outline"
-          className="h-9 px-3 rounded-lg font-semibold gap-1.5 cursor-pointer"
-        >
-          <ArrowLeft className="h-4 w-4 shrink-0" />
-          <span>{t("Back", "返回")}</span>
-        </Button>
+      <div className={`flex flex-wrap items-center gap-2 ${onBack ? "justify-between" : "justify-end"}`}>
+        {onBack && (
+          <Button
+            type="button"
+            onClick={onBack}
+            size="sm"
+            variant="outline"
+            className="h-9 px-3 rounded-lg font-semibold gap-1.5 cursor-pointer"
+          >
+            <ArrowLeft className="h-4 w-4 shrink-0" />
+            <span>{t("Back", "返回")}</span>
+          </Button>
+        )}
 
         <div className="flex items-center gap-2 flex-wrap">
           <Button

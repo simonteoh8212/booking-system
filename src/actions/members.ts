@@ -79,17 +79,30 @@ function revalidateMemberPaths() {
 }
 
 // ----------------------------------------------------------------
-// 1. List Members (with search & active promo packages)
+// 1. List Members (Server-side paginated with search & active promos)
 // ----------------------------------------------------------------
-export async function getMembers(
-  search?: string,
-  includeNonMembers: boolean = false
-): Promise<ActionResult<MemberDto[]>> {
+export interface PaginatedMembersResult {
+  members: MemberDto[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
+export async function getMembers(options?: {
+  search?: string;
+  includeNonMembers?: boolean;
+  page?: number;
+  pageSize?: number;
+}): Promise<ActionResult<PaginatedMembersResult>> {
   await requireAdmin();
   try {
-    const q = (search || "").trim();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const where: any = {};
+    const q = (options?.search || "").trim();
+    const includeNonMembers = Boolean(options?.includeNonMembers);
+    const pageSize = Math.min(100, Math.max(1, Math.floor(options?.pageSize ?? 25)));
+    const requestedPage = Math.max(1, Math.floor(options?.page ?? 1));
+
+    const where: Prisma.CustomerWhereInput = {};
 
     if (!includeNonMembers && !q) {
       where.isMember = true;
@@ -111,35 +124,66 @@ export async function getMembers(
       AND: [{ phoneNumber: { startsWith: "WALKIN-" } }, { isMember: false }],
     };
 
+    const total = await prisma.customer.count({ where });
+    const totalPages = Math.max(1, Math.ceil(total / pageSize));
+    const page = Math.min(requestedPage, totalPages);
+
     const customers = await prisma.customer.findMany({
       where,
       include: {
         memberPackages: {
+          where: {
+            status: "ACTIVE",
+            remainingSessions: { gt: 0 },
+          },
           orderBy: { createdAt: "desc" },
-        },
-        bookings: {
-          where: { status: "COMPLETED" },
-          select: { totalPriceCents: true },
-        },
-        memberTransactions: {
-          where: { cashPaidCents: { gt: 0 } },
-          select: { cashPaidCents: true },
         },
       },
       orderBy: [{ isMember: "desc" }, { updatedAt: "desc" }],
-      take: 200,
+      skip: (page - 1) * pageSize,
+      take: pageSize,
     });
 
-    const data: MemberDto[] = customers.map((c) => {
-      const pkgs = c.memberPackages.map(toMemberPackageDto);
-      const activePackages = pkgs.filter(
-        (p) => p.status === "ACTIVE" && p.remainingSessions > 0
-      );
-      const bookingSpent = c.bookings.reduce((sum, b) => sum + b.totalPriceCents, 0);
-      const reloadAndPackageSpent = c.memberTransactions.reduce(
-        (sum, t) => sum + t.cashPaidCents,
-        0
-      );
+    const customerIds = customers.map((c) => c.id);
+    const [bookingStats, memberTxStats] = customerIds.length
+      ? await Promise.all([
+          prisma.booking.groupBy({
+            by: ["customerId"],
+            where: {
+              customerId: { in: customerIds },
+              status: "COMPLETED",
+            },
+            _count: { _all: true },
+            _sum: { totalPriceCents: true },
+          }),
+          prisma.memberTransaction.groupBy({
+            by: ["customerId"],
+            where: {
+              customerId: { in: customerIds },
+              cashPaidCents: { gt: 0 },
+            },
+            _sum: { cashPaidCents: true },
+          }),
+        ])
+      : [[], []];
+
+    const bookingMap = new Map(
+      bookingStats.map((row) => [
+        row.customerId,
+        {
+          count: row._count._all,
+          spentCents: row._sum.totalPriceCents ?? 0,
+        },
+      ])
+    );
+    const txMap = new Map(
+      memberTxStats.map((row) => [row.customerId, row._sum.cashPaidCents ?? 0])
+    );
+
+    const members: MemberDto[] = customers.map((c) => {
+      const activePackages = c.memberPackages.map(toMemberPackageDto);
+      const bStat = bookingMap.get(c.id);
+      const reloadAndPackageSpent = txMap.get(c.id) ?? 0;
 
       return {
         id: c.id,
@@ -152,12 +196,21 @@ export async function getMembers(
         createdAt: c.createdAt.toISOString(),
         updatedAt: c.updatedAt.toISOString(),
         activePackages,
-        totalVisitsCount: c.bookings.length,
-        totalSpentCents: bookingSpent + reloadAndPackageSpent,
+        totalVisitsCount: bStat?.count ?? 0,
+        totalSpentCents: (bStat?.spentCents ?? 0) + reloadAndPackageSpent,
       };
     });
 
-    return { success: true, data };
+    return {
+      success: true,
+      data: {
+        members,
+        total,
+        page,
+        pageSize,
+        totalPages,
+      },
+    };
   } catch (error) {
     console.error("[getMembers]", error);
     return { success: false, error: "Failed to load members." };
@@ -348,6 +401,14 @@ export async function getMemberDetail(
   }
 }
 
+function getPhoneLookupVariants(cleanPhone: string): string[] {
+  const variants = new Set<string>([cleanPhone]);
+  if (cleanPhone.startsWith("0") && cleanPhone.length >= 10) {
+    variants.add(cleanPhone.slice(1));
+  }
+  return Array.from(variants);
+}
+
 // ----------------------------------------------------------------
 // 4. Quick Create / Upsert Member (Phone + Name)
 // ----------------------------------------------------------------
@@ -368,14 +429,22 @@ export async function quickCreateMember(input: {
       return { success: false, error: "Valid phone number is required." };
     }
 
-    const existing = await prisma.customer.findUnique({
-      where: { phoneNumber: cleanPhone },
+    const existing = await prisma.customer.findFirst({
+      where: { phoneNumber: { in: getPhoneLookupVariants(cleanPhone) } },
     });
 
+    if (existing?.isMember) {
+      return {
+        success: false,
+        error: `Phone number ${cleanPhone} is already registered to ${existing.name}.`,
+      };
+    }
+
     const customer = await prisma.customer.upsert({
-      where: { phoneNumber: cleanPhone },
+      where: { phoneNumber: existing?.phoneNumber ?? cleanPhone },
       update: {
         name: cleanName,
+        phoneNumber: cleanPhone,
         isMember: true,
         memberSince: existing?.memberSince || new Date(),
         notes: input.notes !== undefined ? input.notes.trim() || null : existing?.notes,
@@ -447,7 +516,10 @@ export async function updateMember(
     }
 
     const duplicate = await prisma.customer.findFirst({
-      where: { phoneNumber: cleanPhone, id: { not: id } },
+      where: {
+        phoneNumber: { in: getPhoneLookupVariants(cleanPhone) },
+        id: { not: id },
+      },
     });
     if (duplicate) {
       return {

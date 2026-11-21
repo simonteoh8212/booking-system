@@ -12,7 +12,7 @@ import {
 import {
   updateDeskLanguageSetting,
 } from "@/actions/deposit";
-import { formatPrice, getServiceImage, isInternalAppMode } from "@/lib/utils";
+import { formatPrice, getServiceImage, isInternalAppMode, toBusinessDateString } from "@/lib/utils";
 import Image from "next/image";
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
@@ -25,6 +25,7 @@ import { DeskCountSalesView, type DeskSaleSuccessData } from "./DeskCountSalesVi
 import { DeskFinancialReportView } from "./DeskFinancialReportView";
 import { AnimatedServiceCountBadge } from "./AnimatedServiceCountBadge";
 import { DeskPinUnlockDialog } from "./DeskPinUnlockDialog";
+import { TodaySalesDetailsDialog } from "@/components/admin/TodaySalesDetailsDialog";
 import { DeskLanguageSwitcher } from "./DeskLanguageSwitcher";
 import { DeskLanguageFirstTimeModal } from "./DeskLanguageFirstTimeModal";
 import { DeskText } from "./DeskText";
@@ -88,6 +89,10 @@ export function DeskHub({
 }: DeskHubProps) {
   const [view, setView] = useState<"HUB" | "APPOINTMENTS" | "COUNT_SALES" | "FINANCIAL_REPORT">("HUB");
   const [isPinDialogOpen, setIsPinDialogOpen] = useState(false);
+  const [isTodayDetailsOpen, setIsTodayDetailsOpen] = useState(false);
+  const [detailsDateStr, setDetailsDateStr] = useState<string>(() =>
+    toBusinessDateString(new Date())
+  );
   const [summary, setSummary] = useState<DeskDailySummary>(initialSummary);
   const [appointments, setAppointments] = useState<DeskAppointmentItem[]>(initialAppointments);
   const [preSelectedAppointmentId, setPreSelectedAppointmentId] = useState<string>("");
@@ -449,8 +454,13 @@ export function DeskHub({
     setView("COUNT_SALES");
   }
 
-  // Open Financial Report (with PIN check)
+  // Open Financial Report (with optional PIN check)
   function handleOpenFinancialReport() {
+    if (!(summary.requireReportPin ?? true)) {
+      setView("FINANCIAL_REPORT");
+      return;
+    }
+
     const isUnlocked =
       typeof window !== "undefined" &&
       sessionStorage.getItem("desk_finance_unlocked") === "true";
@@ -478,14 +488,34 @@ export function DeskHub({
         className={`rounded-xl border border-border bg-card grid ${colsClass} divide-y md:divide-y-0 md:divide-x divide-border`}
       >
         {isTodayCardVisible && (
-          <div className="p-4 sm:p-5 flex flex-col justify-between gap-2.5">
+          <div
+            onClick={() => {
+              setDetailsDateStr(summary.dateStr || toBusinessDateString(new Date()));
+              setIsMobileSalesOpen(false);
+              setIsTodayDetailsOpen(true);
+            }}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                setDetailsDateStr(summary.dateStr || toBusinessDateString(new Date()));
+                setIsMobileSalesOpen(false);
+                setIsTodayDetailsOpen(true);
+              }
+            }}
+            className="p-4 sm:p-5 flex flex-col justify-between gap-2.5 cursor-pointer hover:bg-muted/30 transition-colors"
+          >
             <div className="flex items-center justify-between">
               <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 {resolveDeskText(DESK_DICT.scoreboard.todaySales, languageMode).primary}
               </span>
               <button
                 type="button"
-                onClick={toggleTodaySales}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleTodaySales();
+                }}
                 className="text-muted-foreground hover:text-foreground cursor-pointer"
                 aria-label="Toggle today sales"
               >
@@ -501,24 +531,60 @@ export function DeskHub({
                 ? formatPrice(summary.totalSalesCents, currencySymbol)
                 : `${currencySymbol} ••••••`}
             </div>
-            <div className="text-xs text-muted-foreground tabular-nums">
-              {summary.completedCount}{" "}
-              {resolveDeskText(DESK_DICT.scoreboard.todayClients, languageMode).primary} ·{" "}
-              {summary.pendingCount}{" "}
-              {resolveDeskText(DESK_DICT.scoreboard.waiting, languageMode).primary}
+            <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground tabular-nums">
+              <span>
+                {summary.completedCount}{" "}
+                {resolveDeskText(DESK_DICT.scoreboard.todayClients, languageMode).primary} ·{" "}
+                {summary.pendingCount}{" "}
+                {resolveDeskText(DESK_DICT.scoreboard.waiting, languageMode).primary}
+              </span>
+              <span className="inline-flex items-center gap-0.5 font-semibold text-primary shrink-0">
+                {languageMode === "ONLY_ZH" ? "查看明细" : "Details"}
+                <ChevronRight className="h-3.5 w-3.5" />
+              </span>
             </div>
           </div>
         )}
 
         {isYesterdayCardVisible && (
-          <div className="p-4 sm:p-5 flex flex-col justify-between gap-2.5">
+          <div
+            onClick={() => {
+              const base = summary.dateStr || toBusinessDateString(new Date());
+              const [y, m, d] = base.split("-").map(Number);
+              const yest = new Date(Date.UTC(y, (m || 1) - 1, (d || 1) - 1))
+                .toISOString()
+                .slice(0, 10);
+              setDetailsDateStr(yest);
+              setIsMobileSalesOpen(false);
+              setIsTodayDetailsOpen(true);
+            }}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                const base = summary.dateStr || toBusinessDateString(new Date());
+                const [y, m, d] = base.split("-").map(Number);
+                const yest = new Date(Date.UTC(y, (m || 1) - 1, (d || 1) - 1))
+                  .toISOString()
+                  .slice(0, 10);
+                setDetailsDateStr(yest);
+                setIsMobileSalesOpen(false);
+                setIsTodayDetailsOpen(true);
+              }
+            }}
+            className="p-4 sm:p-5 flex flex-col justify-between gap-2.5 cursor-pointer hover:bg-muted/30 transition-colors"
+          >
             <div className="flex items-center justify-between">
               <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 {resolveDeskText(DESK_DICT.scoreboard.yesterdaySales, languageMode).primary}
               </span>
               <button
                 type="button"
-                onClick={toggleYesterdaySales}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleYesterdaySales();
+                }}
                 className="text-muted-foreground hover:text-foreground cursor-pointer"
                 aria-label="Toggle yesterday sales"
               >
@@ -1018,6 +1084,15 @@ export function DeskHub({
         onOpenChange={setIsPinDialogOpen}
         languageMode={languageMode}
         onSuccess={() => setView("FINANCIAL_REPORT")}
+      />
+
+      {/* Today's Sales Details Modal */}
+      <TodaySalesDetailsDialog
+        open={isTodayDetailsOpen}
+        onOpenChange={setIsTodayDetailsOpen}
+        initialDateStr={detailsDateStr}
+        languageMode={languageMode}
+        currencySymbol={currencySymbol}
       />
 
       {/* Mobile Drawer Navigation (Classic Hamburger Menu) */}

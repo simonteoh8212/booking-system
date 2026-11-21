@@ -27,6 +27,7 @@ import {
   Users,
   Box,
   PanelLeftClose,
+  BarChart3,
 } from "lucide-react";
 import { useState, useEffect, useTransition, useRef } from "react";
 import { format } from "date-fns";
@@ -56,6 +57,7 @@ const navItems: NavItem[] = [
   { href: "/admin/bookings", label: { zh: "预约记录", en: "Bookings" }, icon: CalendarDays },
   { href: "/admin/members", label: { zh: "会员配套", en: "Members" }, icon: Users },
   { href: "/admin/services", label: { zh: "服务与商品", en: "Catalog" }, icon: Package },
+  { href: "/admin/monthly-report", label: { zh: "月度收支", en: "Monthly Report" }, icon: BarChart3 },
   { href: "/admin/reports", label: { zh: "财务对账", en: "Statements" }, icon: FileText },
   { href: "/admin/settings", label: { zh: "系统设置", en: "Settings" }, icon: Settings },
 ];

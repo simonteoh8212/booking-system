@@ -14,7 +14,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { Zap, Flame, Loader2, Play, Check, Clock } from "lucide-react";
+import { Zap, Flame, Loader2, Play, Clock } from "lucide-react";
 import { format } from "date-fns";
 import toast from "react-hot-toast";
 import { normalizeDeskLanguageMode } from "@/lib/desk-i18n";
@@ -42,17 +42,58 @@ export function RushModeControl({
 
   const isZh = normalizeDeskLanguageMode(langMode) === "ONLY_ZH";
 
-  async function refreshStatus() {
-    const res = await getRushModeStatus();
-    if (res.success) {
-      setStatus(res.data);
-    }
-  }
-
   useEffect(() => {
-    refreshStatus();
-    // Refresh status every 30 seconds to update remaining minutes
-    const timer = setInterval(refreshStatus, 30000);
+    let active = true;
+
+    const loadStatus = async () => {
+      if (typeof document !== "undefined" && document.hidden) return;
+      const res = await getRushModeStatus();
+      if (active && res.success) {
+        setStatus(res.data);
+      }
+    };
+
+    void loadStatus();
+
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        void loadStatus();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      active = false;
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, []);
+
+  // Local countdown when Rush Mode is active; only hits DB when timer expires
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (typeof document !== "undefined" && document.hidden) return;
+
+      setStatus((prev) => {
+        if (!prev.isActive || !prev.expiresAt) return prev;
+        const diffMs = new Date(prev.expiresAt).getTime() - Date.now();
+        if (diffMs <= 0) {
+          void getRushModeStatus().then((res) => {
+            if (res.success) setStatus(res.data);
+          });
+          return {
+            isActive: false,
+            expiresAt: null,
+            reason: null,
+            minutesRemaining: 0,
+          };
+        }
+        return {
+          ...prev,
+          minutesRemaining: Math.max(1, Math.ceil(diffMs / 60000)),
+        };
+      });
+    }, 30000);
+
     return () => clearInterval(timer);
   }, []);
 

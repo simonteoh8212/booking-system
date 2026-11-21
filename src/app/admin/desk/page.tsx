@@ -50,6 +50,7 @@ export default async function DeskPage() {
         showMakeAppointment: fallbackSetting?.showMakeAppointment ?? true,
         showWalkIn: fallbackSetting?.showWalkIn ?? true,
         showBookedCheckout: fallbackSetting?.showBookedCheckout ?? true,
+        requireReportPin: fallbackSetting?.requireReportPin ?? true,
         servicesBreakdown: [],
       };
 

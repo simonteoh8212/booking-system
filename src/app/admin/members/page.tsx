@@ -18,7 +18,7 @@ export default async function AdminMembersPage() {
   await connection();
   const [membersRes, promosRes, servicesRes, depositRes, summaryRes, cookieStore] =
     await Promise.all([
-      getMembers(),
+      getMembers({ page: 1, pageSize: 25 }),
       getPromoPackages(),
       getServices(),
       getDepositSetting(),
@@ -26,7 +26,9 @@ export default async function AdminMembersPage() {
       cookies(),
     ]);
 
-  const members = membersRes.success ? membersRes.data : [];
+  const membersData = membersRes.success
+    ? membersRes.data
+    : { members: [], total: 0, page: 1, pageSize: 25, totalPages: 1 };
   const promos = promosRes.success ? promosRes.data : [];
   const services = servicesRes.success ? servicesRes.data : [];
   const currencySymbol = depositRes.success ? depositRes.data.currencySymbol : "RM";
@@ -38,7 +40,10 @@ export default async function AdminMembersPage() {
 
   return (
     <MemberManager
-      initialMembers={members}
+      initialMembers={membersData.members}
+      initialTotalMembers={membersData.total}
+      initialPage={membersData.page}
+      pageSize={membersData.pageSize}
       initialPromos={promos}
       services={services}
       currencySymbol={currencySymbol}

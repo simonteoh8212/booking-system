@@ -66,6 +66,7 @@ export default async function SettingsPage() {
         showMakeAppointment: true,
         showWalkIn: true,
         showBookedCheckout: true,
+        requireReportPin: true,
       };
 
   const cookieStore = await cookies();
@@ -87,7 +88,11 @@ export default async function SettingsPage() {
       </section>
 
       <section>
-        <AdminPinSettingsForm currentPin={currentPin} initialLanguage={activeLang} />
+        <AdminPinSettingsForm
+          currentPin={currentPin}
+          initialRequireReportPin={depositSetting.requireReportPin ?? true}
+          initialLanguage={activeLang}
+        />
       </section>
 
       <section>

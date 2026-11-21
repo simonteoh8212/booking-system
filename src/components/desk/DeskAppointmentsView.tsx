@@ -33,7 +33,9 @@ import type {
   DeskLanguageMode,
   TimeSlot,
   BusinessScheduleDto,
+  MemberDto,
 } from "@/types";
+import { AppointmentMemberSearch } from "@/components/admin/AppointmentMemberSearch";
 import {
   DESK_DICT,
   resolveServiceName,
@@ -93,6 +95,7 @@ export function DeskAppointmentsView({
 
   // New Appointment modal
   const [isAddOpen, setIsAddOpen] = useState(false);
+  const [selectedMember, setSelectedMember] = useState<MemberDto | null>(null);
   const [addForm, setAddForm] = useState({
     name: "",
     phone: "",
@@ -268,6 +271,7 @@ export function DeskAppointmentsView({
 
       if (res.success) {
         setIsAddOpen(false);
+        setSelectedMember(null);
         setAddForm({
           name: "",
           phone: "",
@@ -590,8 +594,14 @@ export function DeskAppointmentsView({
       )}
 
       {/* ADD APPOINTMENT MODAL */}
-      <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
-        <DialogContent className="max-w-md p-6 max-h-[90vh] overflow-y-auto">
+      <Dialog
+        open={isAddOpen}
+        onOpenChange={(open) => {
+          setIsAddOpen(open);
+          if (!open) setSelectedMember(null);
+        }}
+      >
+        <DialogContent className="w-[calc(100%-2rem)] sm:max-w-lg p-5 sm:p-6 max-h-[90vh] overflow-y-auto overflow-x-hidden rounded-2xl">
           <DialogHeader>
             <DialogTitle className="text-xl font-bold">
               <DeskText
@@ -613,6 +623,32 @@ export function DeskAppointmentsView({
           )}
 
           <div className="space-y-4 my-2">
+            <AppointmentMemberSearch
+              selectedMember={selectedMember}
+              services={services}
+              currencySymbol={currencySymbol}
+              isZh={isZh}
+              onSelectMember={(member) => {
+                setSelectedMember(member);
+                const promoSvcId = member.activePackages
+                  .flatMap((p) => p.serviceIds)
+                  .find((sid) => services.some((s) => s.id === sid));
+                setAddForm((prev) => ({
+                  ...prev,
+                  name: member.name,
+                  phone: member.phoneNumber,
+                  ...(promoSvcId ? { serviceId: promoSvcId } : {}),
+                }));
+              }}
+              onClearMember={() => {
+                setSelectedMember(null);
+                setAddForm((prev) => ({ ...prev, name: "", phone: "" }));
+              }}
+              onQuickSelectService={(serviceId) => {
+                setAddForm((prev) => ({ ...prev, serviceId }));
+              }}
+            />
+
             <div className="space-y-1.5">
               <Label className="text-sm font-bold">
                 <DeskText
@@ -678,7 +714,7 @@ export function DeskAppointmentsView({
                       },
                     ])
                   }
-                  className="h-7 px-2.5 text-xs font-semibold rounded-lg gap-1 cursor-pointer"
+                  className="h-9 sm:h-8 px-3 text-xs font-semibold rounded-lg gap-1.5 shrink-0 cursor-pointer"
                 >
                   <UserPlus className="h-3.5 w-3.5 text-primary" />
                   <span>{isZh ? "+ 加人 (连续时段)" : "+ Add Person"}</span>
@@ -802,8 +838,8 @@ export function DeskAppointmentsView({
               </div>
             )}
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="space-y-1.5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-1.5 min-w-0">
                 <Label className="text-sm font-bold">
                   <DeskText
                     text={DESK_DICT.appointmentView.date}
@@ -816,13 +852,13 @@ export function DeskAppointmentsView({
                   min={minAllowedDate}
                   value={addForm.date}
                   onChange={(e) => setAddForm({ ...addForm, date: e.target.value })}
-                  className="h-12 text-base rounded-xl"
+                  className="h-12 text-base rounded-xl w-full"
                 />
               </div>
 
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <Label className="text-sm font-bold">
+              <div className="space-y-1.5 min-w-0">
+                <div className="flex flex-wrap items-center justify-between gap-1.5">
+                  <Label className="text-sm font-bold whitespace-nowrap">
                     <DeskText
                       text={DESK_DICT.appointmentView.timeSlot}
                       mode={languageMode}
@@ -830,7 +866,7 @@ export function DeskAppointmentsView({
                     /> *
                   </Label>
                   {isLoadingSlots ? (
-                    <span className="text-xs text-muted-foreground flex items-center gap-1 font-normal">
+                    <span className="text-xs text-muted-foreground flex items-center gap-1 font-normal shrink-0">
                       <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
                       <DeskText
                         text={DESK_DICT.appointmentView.loadingSlots}
@@ -839,7 +875,7 @@ export function DeskAppointmentsView({
                       />
                     </span>
                   ) : availableSlots.length > 0 ? (
-                    <Badge variant="outline" className="text-xs h-5 px-2 font-semibold text-emerald-600 dark:text-emerald-400 border-emerald-500/30 bg-emerald-500/10">
+                    <Badge variant="outline" className="text-xs h-5 px-2 font-semibold shrink-0 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 bg-emerald-500/10">
                       {availableSlots.length}{" "}
                       <DeskText
                         text={DESK_DICT.appointmentView.slotsAvailableBadge}
@@ -957,13 +993,13 @@ export function DeskAppointmentsView({
             )}
           </div>
 
-          <DialogFooter className="gap-2 sm:gap-0">
+          <DialogFooter className="-mx-5 -mb-5 sm:-mx-6 sm:-mb-6 gap-2.5 px-5 py-4 sm:px-6">
             <Button
               type="button"
               variant="outline"
               onClick={() => setIsAddOpen(false)}
               disabled={isPending}
-              className="h-12 text-base font-semibold rounded-xl"
+              className="h-11 sm:h-10 w-full sm:w-auto px-5 text-sm sm:text-base font-semibold rounded-xl"
             >
               <DeskText
                 text={DESK_DICT.appointmentView.cancel}
@@ -981,7 +1017,7 @@ export function DeskAppointmentsView({
                 !addForm.slotStartTimeIso ||
                 (addForm.date === todayStr && operatingHours.isPastOperatingHoursToday)
               }
-              className="h-12 text-base font-bold bg-primary hover:bg-primary/90 text-primary-foreground gap-2 rounded-xl disabled:opacity-50"
+              className="h-11 sm:h-10 w-full sm:w-auto px-5 text-sm sm:text-base font-bold bg-primary hover:bg-primary/90 text-primary-foreground gap-2 rounded-xl disabled:opacity-50"
             >
               {isPending ? (
                 <>

@@ -2,20 +2,28 @@
 
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "./auth";
-import { revalidatePath } from "next/cache";
+import { revalidatePath, unstable_cache, updateTag } from "next/cache";
 import type { ActionResult, BusinessScheduleDto, TimeBlockoutDto } from "@/types";
 
 // ----------------------------------------------------------------
 // Business hours
 // ----------------------------------------------------------------
 
+const getBusinessSchedulesCached = unstable_cache(
+  async (): Promise<BusinessScheduleDto[]> => {
+    return prisma.businessSchedule.findMany({
+      orderBy: { dayOfWeek: "asc" },
+    });
+  },
+  ["business-schedules"],
+  { tags: ["business-schedules"], revalidate: 300 }
+);
+
 export async function getBusinessSchedules(): Promise<
   ActionResult<BusinessScheduleDto[]>
 > {
   try {
-    const schedules = await prisma.businessSchedule.findMany({
-      orderBy: { dayOfWeek: "asc" },
-    });
+    const schedules = await getBusinessSchedulesCached();
     return { success: true, data: schedules };
   } catch {
     return { success: false, error: "Failed to fetch business hours." };
@@ -33,6 +41,7 @@ export async function upsertBusinessSchedule(
       update: data,
       create: { dayOfWeek, ...data },
     });
+    updateTag("business-schedules");
     revalidatePath("/admin/settings");
     return { success: true, data: schedule };
   } catch {

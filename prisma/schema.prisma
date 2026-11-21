@@ -77,6 +77,7 @@ model Customer {
   memberPackages     MemberPackage[]
   memberTransactions MemberTransaction[]
 
+  @@index([isMember, updatedAt])
   @@map("customers")
 }
 
@@ -125,6 +126,7 @@ model MemberPackage {
   bookingItems      BookingItem[]
 
   @@index([customerId])
+  @@index([customerId, status])
   @@map("member_packages")
 }
 
@@ -191,6 +193,8 @@ model Booking {
 
   @@index([startDatetime])
   @@index([status])
+  @@index([startDatetime, status])
+  @@index([customerId, status])
   @@map("bookings")
 }
 
@@ -249,6 +253,7 @@ model DepositSetting {
   showMakeAppointment   Boolean  @default(true)
   showWalkIn            Boolean  @default(true)
   showBookedCheckout    Boolean  @default(true)
+  requireReportPin      Boolean  @default(true)
   updatedAt      DateTime @updatedAt
 
   @@map("deposit_settings")

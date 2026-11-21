@@ -53,6 +53,7 @@ export default async function AdminDashboardPage() {
         showMakeAppointment: true,
         showWalkIn: true,
         showBookedCheckout: true,
+        requireReportPin: true,
         servicesBreakdown: [],
       };
   return (

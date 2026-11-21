@@ -110,8 +110,14 @@ export function formatSlotTimeRange(
  */
 export function normalizePhoneNumber(raw: string): string {
   const digits = raw.replace(/\D/g, "");
+  if (digits.startsWith("0060") && digits.length >= 13) {
+    return "0" + digits.slice(4);
+  }
   if (digits.startsWith("60") && digits.length >= 11) {
     return "0" + digits.slice(2);
+  }
+  if (digits.startsWith("1") && digits.length >= 9 && digits.length <= 10) {
+    return "0" + digits;
   }
   return digits;
 }

@@ -116,6 +116,7 @@ export interface DepositSettingDto {
   showMakeAppointment?: boolean;
   showWalkIn?: boolean;
   showBookedCheckout?: boolean;
+  requireReportPin?: boolean;
 }
 
 export interface DepositExemptCustomerDto {

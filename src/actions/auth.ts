@@ -18,7 +18,8 @@ import {
   recordSuccessfulLookup,
 } from "@/lib/rate-limit";
 import { redirect } from "next/navigation";
-import { revalidatePath } from "next/cache";
+import { revalidatePath, updateTag } from "next/cache";
+import { getOrEnsurePrimaryDepositSetting } from "./deposit";
 import type { ActionResult } from "@/types";
 import bcrypt from "bcryptjs";
 
@@ -370,6 +371,84 @@ export async function updateAdminPin(newPin: string): Promise<ActionResult<void>
   } catch (error) {
     console.error("[updateAdminPin]", error);
     return { success: false, error: "Failed to update PIN." };
+  }
+}
+
+// ----------------------------------------------------------------
+// Toggle Monthly Financial Report 4-Digit PIN Requirement
+// ----------------------------------------------------------------
+export async function updateReportPinRequirement(input: {
+  requirePin: boolean;
+  password?: string;
+}): Promise<ActionResult<{ requireReportPin: boolean }>> {
+  const session = await requireAdmin();
+  try {
+    const admin = await prisma.adminUser.findUnique({
+      where: { id: session.sub },
+    });
+    if (!admin) {
+      return { success: false, error: "Admin user not found." };
+    }
+
+    if (input.requirePin) {
+      if (!admin.pinCode || !/^\d{4}$/.test(admin.pinCode)) {
+        return {
+          success: false,
+          error: "Please set a 4-digit PIN first before enabling report lock.",
+        };
+      }
+    } else {
+      const password = input.password?.trim() ? input.password : "";
+      if (!password) {
+        return {
+          success: false,
+          error: "Please enter your account password to disable PIN lock.",
+        };
+      }
+
+      const clientIp = await getRequestClientIp();
+      const rateKey = `report-pin-toggle:${session.sub}:${clientIp}`;
+      const rateCheck = checkRateLimit(rateKey, 6, 5 * 60 * 1000);
+      if (!rateCheck.allowed) {
+        return {
+          success: false,
+          error: `Too many failed attempts. Please wait ${rateCheck.retryAfterSeconds}s and try again.`,
+        };
+      }
+
+      const valid = await bcrypt.compare(password, admin.passwordHash);
+      if (!valid) {
+        recordFailedLookup(rateKey);
+        return {
+          success: false,
+          error: "Incorrect account password.",
+        };
+      }
+
+      recordSuccessfulLookup(rateKey);
+    }
+
+    const primary = await getOrEnsurePrimaryDepositSetting();
+    const updated = await prisma.depositSetting.update({
+      where: { id: primary.id },
+      data: { requireReportPin: Boolean(input.requirePin) },
+    });
+
+    updateTag("deposit-setting");
+    revalidatePath("/admin/settings");
+    revalidatePath("/admin/desk", "page");
+    revalidatePath("/admin/desk");
+
+    return {
+      success: true,
+      data: { requireReportPin: updated.requireReportPin },
+    };
+  } catch (error) {
+    console.error("[updateReportPinRequirement]", error);
+    return {
+      success: false,
+      error: "Failed to update report PIN lock setting.",
+    };
   }
 }
 

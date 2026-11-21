@@ -59,6 +59,7 @@ import {
   Loader2,
   ShoppingBag,
   Scissors,
+  ChevronLeft,
   ChevronRight,
   X,
   ShieldCheck,
@@ -82,6 +83,9 @@ const PACKAGE_STATUS_ZH: Record<string, string> = {
 
 interface MemberManagerProps {
   initialMembers: MemberDto[];
+  initialTotalMembers?: number;
+  initialPage?: number;
+  pageSize?: number;
   initialPromos: PromoPackageDto[];
   services: ServiceDto[];
   currencySymbol?: string;
@@ -91,6 +95,9 @@ interface MemberManagerProps {
 
 export function MemberManager({
   initialMembers,
+  initialTotalMembers,
+  initialPage = 1,
+  pageSize = 25,
   initialPromos,
   services,
   currencySymbol = "RM",
@@ -102,6 +109,10 @@ export function MemberManager({
   const dateLocale = isZh ? zhCN : enUS;
   const [activeTab, setActiveTab] = useState<"MEMBERS" | "PROMOS">("MEMBERS");
   const [members, setMembers] = useState<MemberDto[]>(initialMembers);
+  const [totalMembers, setTotalMembers] = useState<number>(
+    initialTotalMembers ?? initialMembers.length
+  );
+  const [currentPage, setCurrentPage] = useState<number>(initialPage);
   const [creditSummary, setCreditSummary] = useState<MemberCreditSummary>(() => {
     if (initialSummary) return initialSummary;
     const onlyMembers = initialMembers.filter((m) => m.isMember);
@@ -127,11 +138,13 @@ export function MemberManager({
   const searchSectionRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const focusScrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const searchDebounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const viewportCleanupRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     return () => {
       if (focusScrollTimerRef.current) clearTimeout(focusScrollTimerRef.current);
+      if (searchDebounceTimerRef.current) clearTimeout(searchDebounceTimerRef.current);
       viewportCleanupRef.current?.();
     };
   }, []);
@@ -258,16 +271,32 @@ export function MemberManager({
 
   const serviceNameMap = new Map(services.map((s) => [s.id, s.name]));
 
-  function refreshMembers(q = searchQuery, incNon = includeNonMembers) {
+  function refreshMembers(
+    q = searchQuery,
+    incNon = includeNonMembers,
+    targetPage = currentPage
+  ) {
     startTransition(async () => {
       const [res, sumRes] = await Promise.all([
-        getMembers(q, incNon),
+        getMembers({
+          search: q,
+          includeNonMembers: incNon,
+          page: targetPage,
+          pageSize,
+        }),
         getMemberCreditSummary(),
       ]);
-      if (res.success) setMembers(res.data);
+      if (res.success) {
+        setMembers(res.data.members);
+        setTotalMembers(res.data.total);
+        setCurrentPage(res.data.page);
+      }
       if (sumRes.success) setCreditSummary(sumRes.data);
     });
   }
+
+  const totalPages = Math.max(1, Math.ceil(totalMembers / pageSize));
+  const safePage = Math.min(currentPage, totalPages);
 
   async function refreshOpenDetail(customerId: string) {
     const res = await getMemberDetail(customerId);
@@ -853,7 +882,12 @@ export function MemberManager({
                 onChange={(e) => {
                   const val = e.target.value;
                   setSearchQuery(val);
-                  refreshMembers(val, includeNonMembers);
+                  if (searchDebounceTimerRef.current) {
+                    clearTimeout(searchDebounceTimerRef.current);
+                  }
+                  searchDebounceTimerRef.current = setTimeout(() => {
+                    refreshMembers(val, includeNonMembers, 1);
+                  }, 250);
                 }}
                 className="pl-9 pr-9 h-10 sm:h-9 rounded-lg text-base sm:text-sm bg-card"
               />
@@ -862,8 +896,11 @@ export function MemberManager({
                   type="button"
                   aria-label={isZh ? "清除搜索" : "Clear search"}
                   onClick={() => {
+                    if (searchDebounceTimerRef.current) {
+                      clearTimeout(searchDebounceTimerRef.current);
+                    }
                     setSearchQuery("");
-                    refreshMembers("", includeNonMembers);
+                    refreshMembers("", includeNonMembers, 1);
                     searchInputRef.current?.focus();
                   }}
                   className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-md text-muted-foreground hover:text-foreground cursor-pointer"
@@ -877,9 +914,12 @@ export function MemberManager({
                 type="checkbox"
                 checked={includeNonMembers}
                 onChange={(e) => {
+                  if (searchDebounceTimerRef.current) {
+                    clearTimeout(searchDebounceTimerRef.current);
+                  }
                   const next = e.target.checked;
                   setIncludeNonMembers(next);
-                  refreshMembers(searchQuery, next);
+                  refreshMembers(searchQuery, next, 1);
                 }}
                 className="h-3.5 w-3.5 rounded"
               />
@@ -1126,6 +1166,79 @@ export function MemberManager({
                   </div>
                 </div>
               ))}
+
+              {/* Server-Side Pagination Controls */}
+              {totalPages > 1 && (
+                <div className="pt-2 flex flex-col sm:flex-row items-center justify-between gap-3">
+                  <div className="text-xs text-muted-foreground tabular-nums">
+                    {isZh
+                      ? `第 ${safePage} / ${totalPages} 页 · 共 ${totalMembers} 位`
+                      : `Showing ${(safePage - 1) * pageSize + 1}–${Math.min(
+                          safePage * pageSize,
+                          totalMembers
+                        )} of ${totalMembers}`}
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={isPending || safePage <= 1}
+                      onClick={() => refreshMembers(searchQuery, includeNonMembers, safePage - 1)}
+                      className="h-10 sm:h-8 px-3 rounded-lg text-xs font-semibold gap-1 cursor-pointer"
+                    >
+                      <ChevronLeft className="h-3.5 w-3.5" />
+                      <span>{isZh ? "上一页" : "Prev"}</span>
+                    </Button>
+
+                    <div className="flex items-center gap-1.5">
+                      {Array.from({ length: totalPages }, (_, i) => i + 1)
+                        .filter(
+                          (p) =>
+                            p === 1 ||
+                            p === totalPages ||
+                            Math.abs(p - safePage) <= 1
+                        )
+                        .map((p, idx, arr) => {
+                          const prevPage = arr[idx - 1];
+                          const showEllipsis = prevPage && p - prevPage > 1;
+                          return (
+                            <span key={p} className="inline-flex items-center gap-1.5">
+                              {showEllipsis && (
+                                <span className="text-xs text-muted-foreground px-1">…</span>
+                              )}
+                              <Button
+                                type="button"
+                                variant={p === safePage ? "default" : "outline"}
+                                size="sm"
+                                disabled={isPending}
+                                onClick={() =>
+                                  refreshMembers(searchQuery, includeNonMembers, p)
+                                }
+                                className="h-10 w-10 sm:h-8 sm:w-8 p-0 rounded-lg text-xs font-mono font-semibold cursor-pointer"
+                              >
+                                {p}
+                              </Button>
+                            </span>
+                          );
+                        })}
+                    </div>
+
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={isPending || safePage >= totalPages}
+                      onClick={() => refreshMembers(searchQuery, includeNonMembers, safePage + 1)}
+                      className="h-10 sm:h-8 px-3 rounded-lg text-xs font-semibold gap-1 cursor-pointer"
+                    >
+                      <span>{isZh ? "下一页" : "Next"}</span>
+                      <ChevronRight className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -1233,14 +1346,14 @@ export function MemberManager({
       <Sheet open={!!detailTarget} onOpenChange={(o) => !o && setDetailTarget(null)}>
         <SheetContent
           side="right"
-          className="w-full sm:max-w-lg p-0 flex flex-col overflow-hidden"
+          className="data-[side=right]:w-full sm:data-[side=right]:max-w-lg p-0 flex flex-col overflow-hidden"
         >
           {detailTarget && (
             <>
-              <SheetHeader className="p-5 border-b border-border text-left space-y-3">
-                <div className="flex items-start justify-between gap-2 pr-6">
-                  <div>
-                    <SheetTitle className="text-lg font-bold">
+              <SheetHeader className="p-4 sm:p-5 border-b border-border text-left space-y-3">
+                <div className="flex items-start justify-between gap-2 pr-8">
+                  <div className="min-w-0">
+                    <SheetTitle className="text-lg font-bold truncate">
                       {detailTarget.name}
                     </SheetTitle>
                     <SheetDescription className="font-mono text-xs tabular-nums">
@@ -1254,12 +1367,13 @@ export function MemberManager({
                         : `${formatPrice(detailTarget.totalSpentCents, currencySymbol)} spent`}
                     </SheetDescription>
                   </div>
-                  <div className="flex items-center gap-1">
+                  <div className="hidden sm:flex items-center gap-1.5 shrink-0">
                     <Button
                       size="icon"
                       variant="ghost"
                       className="h-8 w-8 cursor-pointer"
                       onClick={() => openEditMember(detailTarget)}
+                      aria-label={isZh ? "编辑会员" : "Edit member"}
                     >
                       <Pencil className="h-3.5 w-3.5" />
                     </Button>
@@ -1268,27 +1382,28 @@ export function MemberManager({
                       variant="ghost"
                       className="h-8 w-8 text-destructive hover:bg-destructive/10 cursor-pointer"
                       onClick={() => setDeleteMemberTarget(detailTarget)}
+                      aria-label={isZh ? "删除会员" : "Delete member"}
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                     </Button>
                   </div>
                 </div>
 
-                {/* Wallet Strip & Quick Actions */}
-                <div className="flex items-center justify-between gap-3 p-3 rounded-xl bg-muted/60 border border-border">
-                  <div>
+                {/* Wallet Strip: Compact Summary on Mobile (actions live in bottom thumb dock), Full Row on Desktop */}
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-3.5 rounded-xl bg-muted/60 border border-border">
+                  <div className="flex items-center justify-between sm:block gap-2">
                     <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                       {isZh ? "储值余额" : "Credit Balance"}
                     </div>
-                    <div className="text-xl font-bold font-mono tabular-nums text-primary">
+                    <div className="text-xl font-bold font-mono tabular-nums text-primary whitespace-nowrap">
                       {formatPrice(detailTarget.creditBalanceCents, currencySymbol)}
                     </div>
                   </div>
-                  <div className="flex flex-wrap items-center gap-1.5">
+                  <div className="hidden sm:flex items-center gap-2">
                     <Button
                       size="sm"
                       onClick={() => openReloadModal(detailTarget)}
-                      className="h-8 rounded-lg text-xs font-semibold cursor-pointer"
+                      className="h-8 px-3 rounded-lg text-xs font-semibold cursor-pointer"
                     >
                       {isZh ? "充值" : "Reload"}
                     </Button>
@@ -1296,7 +1411,7 @@ export function MemberManager({
                       size="sm"
                       variant="outline"
                       onClick={() => openAssignPromoModal(detailTarget)}
-                      className="h-8 rounded-lg text-xs font-semibold cursor-pointer"
+                      className="h-8 px-3 rounded-lg text-xs font-semibold cursor-pointer"
                     >
                       {isZh ? "绑定配套" : "Bind Promo"}
                     </Button>
@@ -1304,7 +1419,7 @@ export function MemberManager({
                       size="icon"
                       variant="outline"
                       onClick={() => openAdjustCreditModal(detailTarget)}
-                      className="h-8 w-8 rounded-lg cursor-pointer"
+                      className="h-8 w-8 shrink-0 rounded-lg cursor-pointer"
                       title={isZh ? "手动调账" : "Adjust Credit"}
                       aria-label={isZh ? "手动调账" : "Adjust Credit"}
                     >
@@ -1322,7 +1437,7 @@ export function MemberManager({
                         })}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-card text-emerald-600 hover:bg-emerald-500/10 transition-colors"
+                        className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border bg-card text-emerald-600 hover:bg-emerald-500/10 transition-colors"
                         title={isZh ? "WhatsApp 发送余额" : "Send Balance on WhatsApp"}
                         aria-label={isZh ? "WhatsApp 发送余额" : "Send Balance on WhatsApp"}
                       >
@@ -1332,8 +1447,8 @@ export function MemberManager({
                   </div>
                 </div>
 
-                {/* Drawer Tabs */}
-                <div className="flex items-center gap-1 border-b border-border -mb-5 pt-1">
+                {/* Drawer Tabs: Full-width segmented pills for easy thumb tapping */}
+                <div className="grid grid-cols-3 gap-1 p-1 rounded-xl bg-muted/60">
                   {(
                     [
                       {
@@ -1342,11 +1457,11 @@ export function MemberManager({
                       },
                       {
                         id: "HISTORY",
-                        label: `${isZh ? "消费记录" : "History"} (${detailTarget.purchaseHistory.length})`,
+                        label: `${isZh ? "消费" : "History"} (${detailTarget.purchaseHistory.length})`,
                       },
                       {
                         id: "LEDGER",
-                        label: `${isZh ? "明细账单" : "Ledger"} (${detailTarget.transactions.length})`,
+                        label: `${isZh ? "账单" : "Ledger"} (${detailTarget.transactions.length})`,
                       },
                     ] as const
                   ).map((t) => (
@@ -1354,10 +1469,10 @@ export function MemberManager({
                       key={t.id}
                       type="button"
                       onClick={() => setDetailTab(t.id)}
-                      className={`px-3 py-2 text-xs font-semibold border-b-2 transition-colors cursor-pointer ${
+                      className={`h-9 px-2 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer truncate ${
                         detailTab === t.id
-                          ? "border-primary text-foreground"
-                          : "border-transparent text-muted-foreground hover:text-foreground"
+                          ? "bg-card shadow-xs text-foreground"
+                          : "text-muted-foreground hover:text-foreground"
                       }`}
                     >
                       {t.label}
@@ -1366,7 +1481,7 @@ export function MemberManager({
                 </div>
               </SheetHeader>
 
-              <div className="flex-1 overflow-y-auto p-5 space-y-3">
+              <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-3">
                 {detailTab === "PACKAGES" && (
                   <>
                     {detailTarget.allPackages.length === 0 ? (
@@ -1589,6 +1704,88 @@ export function MemberManager({
                     )}
                   </>
                 )}
+              </div>
+
+              {/* Mobile One-Handed Bottom Thumb Dock */}
+              <div className="sm:hidden border-t border-border bg-card/95 backdrop-blur-xs p-3 pb-4 space-y-2 shrink-0">
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    onClick={() => openReloadModal(detailTarget)}
+                    className="h-11 flex-1 rounded-xl text-sm font-bold cursor-pointer"
+                  >
+                    {isZh ? "充值" : "Reload"}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => openAssignPromoModal(detailTarget)}
+                    className="h-11 flex-1 rounded-xl text-sm font-semibold cursor-pointer"
+                  >
+                    {isZh ? "绑定配套" : "Bind Promo"}
+                  </Button>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="outline"
+                    onClick={() => openAdjustCreditModal(detailTarget)}
+                    className="h-10 w-10 rounded-xl shrink-0 cursor-pointer"
+                    title={isZh ? "手动调账" : "Adjust Credit"}
+                    aria-label={isZh ? "手动调账" : "Adjust Credit"}
+                  >
+                    <SlidersHorizontal className="h-4 w-4" />
+                  </Button>
+                  {!detailTarget.phoneNumber.startsWith("WALKIN-") && (
+                    <a
+                      href={buildMemberCreditWhatsAppUrl({
+                        customerName: detailTarget.name,
+                        customerPhone: detailTarget.phoneNumber,
+                        action: "BALANCE",
+                        newBalanceCents: detailTarget.creditBalanceCents,
+                        currencySymbol,
+                        language: isZh ? "zh" : "en",
+                      })}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-border bg-card text-emerald-600 hover:bg-emerald-500/10 transition-colors"
+                      title={isZh ? "WhatsApp 发送余额" : "Send Balance on WhatsApp"}
+                      aria-label={isZh ? "WhatsApp 发送余额" : "Send Balance on WhatsApp"}
+                    >
+                      <MessageCircle className="h-4 w-4" />
+                    </a>
+                  )}
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="outline"
+                    onClick={() => openEditMember(detailTarget)}
+                    className="h-10 w-10 rounded-xl shrink-0 cursor-pointer"
+                    aria-label={isZh ? "编辑会员" : "Edit member"}
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="outline"
+                    onClick={() => setDeleteMemberTarget(detailTarget)}
+                    className="h-10 w-10 rounded-xl shrink-0 text-destructive border-destructive/30 hover:bg-destructive/10 cursor-pointer"
+                    aria-label={isZh ? "删除会员" : "Delete member"}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => setDetailTarget(null)}
+                    className="h-10 px-4 ml-auto rounded-xl text-xs font-semibold text-muted-foreground cursor-pointer"
+                  >
+                    {isZh ? "关闭" : "Close"}
+                  </Button>
+                </div>
               </div>
             </>
           )}

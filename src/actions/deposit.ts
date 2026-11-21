@@ -2,7 +2,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "./auth";
-import { revalidatePath } from "next/cache";
+import { revalidatePath, unstable_cache, updateTag } from "next/cache";
 import {
   DEFAULT_DUITNOW_PAYLOAD,
   parseDuitNowPayload,
@@ -29,6 +29,7 @@ const DEFAULT_SETTING: DepositSettingDto = {
   showMakeAppointment: true,
   showWalkIn: true,
   showBookedCheckout: true,
+  requireReportPin: true,
 };
 
 /**
@@ -36,7 +37,7 @@ const DEFAULT_SETTING: DepositSettingDto = {
  * If multiple rows exist (e.g. from old migrations or separate upserts),
  * keeps the latest updated record and purges orphan duplicates to prevent state desync.
  */
-export async function getOrEnsurePrimaryDepositSetting() {
+async function fetchOrEnsurePrimaryDepositSettingUncached() {
   const all = await prisma.depositSetting.findMany({
     orderBy: { updatedAt: "desc" },
   });
@@ -64,6 +65,16 @@ export async function getOrEnsurePrimaryDepositSetting() {
   return all[0];
 }
 
+const getCachedPrimaryDepositSetting = unstable_cache(
+  fetchOrEnsurePrimaryDepositSettingUncached,
+  ["primary-deposit-setting"],
+  { tags: ["deposit-setting"], revalidate: 300 }
+);
+
+export async function getOrEnsurePrimaryDepositSetting() {
+  return getCachedPrimaryDepositSetting();
+}
+
 /**
  * Fetch current deposit configuration (public or admin).
  */
@@ -80,6 +91,7 @@ export async function getDepositSetting(): Promise<ActionResult<DepositSettingDt
         where: { id: setting.id },
         data: { currency: "MYR", currencySymbol: "RM" },
       });
+      updateTag("deposit-setting");
     }
 
     return {
@@ -102,6 +114,7 @@ export async function getDepositSetting(): Promise<ActionResult<DepositSettingDt
         showMakeAppointment: setting.showMakeAppointment ?? true,
         showWalkIn: setting.showWalkIn ?? true,
         showBookedCheckout: setting.showBookedCheckout ?? true,
+        requireReportPin: setting.requireReportPin ?? true,
       },
     };
   } catch (error) {
@@ -132,7 +145,7 @@ export async function updateDepositSetting(
     const deskLanguage = normalizeDeskLanguageMode(input.deskLanguage);
 
     // Find primary canonical row
-    const primary = await getOrEnsurePrimaryDepositSetting();
+    const primary = await fetchOrEnsurePrimaryDepositSettingUncached();
 
     const updated = await prisma.depositSetting.update({
       where: { id: primary.id },
@@ -157,6 +170,7 @@ export async function updateDepositSetting(
       },
     });
 
+    updateTag("deposit-setting");
     revalidatePath("/admin/settings");
     revalidatePath("/admin/services");
     revalidatePath("/admin/bookings");
@@ -179,6 +193,7 @@ export async function updateDepositSetting(
         currency: updated.currency,
         currencySymbol: updated.currencySymbol,
         deskLanguage: normalizeDeskLanguageMode(updated.deskLanguage),
+        requireReportPin: updated.requireReportPin ?? true,
       },
     };
   } catch (error) {
@@ -196,12 +211,13 @@ export async function updateDeskLanguageSetting(
   await requireAdmin();
   try {
     const normalized = normalizeDeskLanguageMode(mode);
-    const primary = await getOrEnsurePrimaryDepositSetting();
+    const primary = await fetchOrEnsurePrimaryDepositSettingUncached();
     const updated = await prisma.depositSetting.update({
       where: { id: primary.id },
       data: { deskLanguage: normalized },
     });
 
+    updateTag("deposit-setting");
     revalidatePath("/admin/desk");
     revalidatePath("/admin/settings");
 
@@ -224,13 +240,14 @@ export async function updateDeskCurrencySetting(
 ): Promise<ActionResult<{ currency: string; currencySymbol: string }>> {
   await requireAdmin();
   try {
-    const primary = await getOrEnsurePrimaryDepositSetting();
+    const primary = await fetchOrEnsurePrimaryDepositSettingUncached();
 
     const updated = await prisma.depositSetting.update({
       where: { id: primary.id },
       data: { currency: "MYR", currencySymbol: "RM" },
     });
 
+    updateTag("deposit-setting");
     revalidatePath("/admin/desk", "page");
     revalidatePath("/admin/desk");
     revalidatePath("/admin/settings");
@@ -288,7 +305,7 @@ export async function updateDeskScoreboardSettings(input: {
   await requireAdmin();
 
   try {
-    const primary = await getOrEnsurePrimaryDepositSetting();
+    const primary = await fetchOrEnsurePrimaryDepositSettingUncached();
 
     // Enforce business rule: Either Walk-in or Booked checkout must be shown; cannot both be false
     const finalWalkIn =
@@ -321,6 +338,7 @@ export async function updateDeskScoreboardSettings(input: {
       },
     });
 
+    updateTag("deposit-setting");
     revalidatePath("/admin/desk", "page");
     revalidatePath("/admin/desk");
     revalidatePath("/admin/settings");
@@ -345,6 +363,7 @@ export async function updateDeskScoreboardSettings(input: {
         showMakeAppointment: updated.showMakeAppointment ?? true,
         showWalkIn: updated.showWalkIn ?? true,
         showBookedCheckout: updated.showBookedCheckout ?? true,
+        requireReportPin: updated.requireReportPin ?? true,
       },
     };
   } catch (error) {

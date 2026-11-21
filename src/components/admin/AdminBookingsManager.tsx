@@ -42,7 +42,8 @@ import { useDeskLanguage } from "@/lib/use-desk-language";
 import { createDeskAppointment } from "@/actions/desk";
 import { getAvailableSlots } from "@/actions/booking";
 import { getOperatingHoursInfo } from "@/lib/operating-hours";
-import type { BookingDto, BookingStatus, DeskLanguageMode, ServiceDto, TimeSlot } from "@/types";
+import type { BookingDto, BookingStatus, DeskLanguageMode, MemberDto, ServiceDto, TimeSlot } from "@/types";
+import { AppointmentMemberSearch } from "@/components/admin/AppointmentMemberSearch";
 import {
   Search,
   CheckCircle2,
@@ -134,6 +135,7 @@ export function AdminBookingsManager({
   const minAllowedDate = operatingHours.isPastOperatingHoursToday ? tomorrowStr : todayStr;
 
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [selectedMember, setSelectedMember] = useState<MemberDto | null>(null);
   const [createForm, setCreateForm] = useState({
     name: "",
     phone: "",
@@ -271,6 +273,7 @@ export function AdminBookingsManager({
 
       if (res.success) {
         setIsCreateOpen(false);
+        setSelectedMember(null);
         refetchBookings(activeTab, searchQuery);
         showToast(
           isZh
@@ -1041,7 +1044,7 @@ export function AdminBookingsManager({
             </div>
           )}
 
-          <DialogFooter className="gap-2 sm:gap-0">
+          <DialogFooter className="gap-2.5">
             <Button
               variant="outline"
               size="sm"
@@ -1076,8 +1079,14 @@ export function AdminBookingsManager({
       />
 
       {/* Manual Appointment Creation Modal */}
-      <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-        <DialogContent className="max-w-md p-6 rounded-2xl">
+      <Dialog
+        open={isCreateOpen}
+        onOpenChange={(open) => {
+          setIsCreateOpen(open);
+          if (!open) setSelectedMember(null);
+        }}
+      >
+        <DialogContent className="w-[calc(100%-2rem)] sm:max-w-lg p-5 sm:p-6 max-h-[90vh] overflow-y-auto overflow-x-hidden rounded-2xl">
           <DialogHeader>
             <DialogTitle className="text-lg font-bold flex items-center gap-2">
               <CalendarCheck className="h-5 w-5 text-primary" />
@@ -1093,6 +1102,36 @@ export function AdminBookingsManager({
           )}
 
           <div className="space-y-3.5 py-1">
+            <AppointmentMemberSearch
+              selectedMember={selectedMember}
+              services={services}
+              currencySymbol={currencySymbol}
+              isZh={isZh}
+              onSelectMember={(member) => {
+                setSelectedMember(member);
+                const promoSvcId = member.activePackages
+                  .flatMap((p) => p.serviceIds)
+                  .find((sid) => services.some((s) => s.id === sid));
+                setCreateForm((prev) => ({
+                  ...prev,
+                  name: member.name,
+                  phone: member.phoneNumber,
+                  ...(promoSvcId ? { serviceId: promoSvcId } : {}),
+                }));
+                if (promoSvcId) {
+                  void loadSlotsFor(createForm.date, promoSvcId);
+                }
+              }}
+              onClearMember={() => {
+                setSelectedMember(null);
+                setCreateForm((prev) => ({ ...prev, name: "", phone: "" }));
+              }}
+              onQuickSelectService={(serviceId) => {
+                setCreateForm((prev) => ({ ...prev, serviceId }));
+                void loadSlotsFor(createForm.date, serviceId);
+              }}
+            />
+
             <div className="space-y-1.5">
               <Label className="text-xs font-semibold">{t("Customer Name", "顾客姓名")} *</Label>
               <Input
@@ -1133,8 +1172,8 @@ export function AdminBookingsManager({
               </select>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="space-y-1.5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+              <div className="space-y-1.5 min-w-0">
                 <Label className="text-xs font-semibold">{t("Date", "日期")} *</Label>
                 <Input
                   type="date"
@@ -1145,11 +1184,11 @@ export function AdminBookingsManager({
                     setCreateForm({ ...createForm, date: nextDate });
                     void loadSlotsFor(nextDate, effectiveServiceId);
                   }}
-                  className="h-10 text-base sm:text-sm rounded-lg"
+                  className="h-10 text-base sm:text-sm rounded-lg w-full"
                 />
               </div>
 
-              <div className="space-y-1.5">
+              <div className="space-y-1.5 min-w-0">
                 <Label className="text-xs font-semibold">{t("Time Slot", "时段")} *</Label>
 
                 {isLoadingSlots ? (
@@ -1194,14 +1233,14 @@ export function AdminBookingsManager({
             </div>
           </div>
 
-          <DialogFooter className="gap-2 sm:gap-0 pt-2">
+          <DialogFooter className="-mx-5 -mb-5 sm:-mx-6 sm:-mb-6 gap-2.5 px-5 py-4 sm:px-6">
             <Button
               type="button"
               variant="outline"
               size="sm"
               onClick={() => setIsCreateOpen(false)}
               disabled={isPending}
-              className="h-9 text-xs"
+              className="h-10 sm:h-9 w-full sm:w-auto text-xs"
             >
               {t("Cancel", "取消")}
             </Button>
@@ -1216,7 +1255,7 @@ export function AdminBookingsManager({
                 !createForm.slotStartTimeIso ||
                 (createForm.date === todayStr && operatingHours.isPastOperatingHoursToday)
               }
-              className="h-9 text-xs font-semibold gap-1.5 cursor-pointer"
+              className="h-10 sm:h-9 w-full sm:w-auto text-xs font-semibold gap-1.5 cursor-pointer"
             >
               {isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
               <span>{t("Create Appointment", "确认创建")}</span>

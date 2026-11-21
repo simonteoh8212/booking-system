@@ -33,29 +33,7 @@ export function DeskScoreboardSettingsForm({
   const isZh = langMode === "ONLY_ZH";
   const t = (en: string, zh: string) => (isZh ? zh : en);
 
-  const [showTodaySales, setShowTodaySales] = useState<boolean>(
-    initialSetting.showTodaySales ?? true
-  );
-  const [showYesterdaySales, setShowYesterdaySales] = useState<boolean>(
-    initialSetting.showYesterdaySales ?? true
-  );
-  const [showMonthlySales, setShowMonthlySales] = useState<boolean>(
-    initialSetting.showMonthlySales ?? true
-  );
-  const [showServiceBreakdown, setShowServiceBreakdown] = useState<boolean>(
-    initialSetting.showServiceBreakdown ?? true
-  );
-  const [showMakeAppointment, setShowMakeAppointment] = useState<boolean>(
-    initialSetting.showMakeAppointment ?? true
-  );
-  const [showWalkIn, setShowWalkIn] = useState<boolean>(
-    initialSetting.showWalkIn ?? true
-  );
-  const [showBookedCheckout, setShowBookedCheckout] = useState<boolean>(
-    initialSetting.showBookedCheckout ?? true
-  );
-
-  const [savedSetting, setSavedSetting] = useState({
+  const initialVisibility = {
     showTodaySales: initialSetting.showTodaySales ?? true,
     showYesterdaySales: initialSetting.showYesterdaySales ?? true,
     showMonthlySales: initialSetting.showMonthlySales ?? true,
@@ -63,69 +41,68 @@ export function DeskScoreboardSettingsForm({
     showMakeAppointment: initialSetting.showMakeAppointment ?? true,
     showWalkIn: initialSetting.showWalkIn ?? true,
     showBookedCheckout: initialSetting.showBookedCheckout ?? true,
-  });
+  };
+
+  const [draft, setDraft] = useState(initialVisibility);
+  const [savedSetting, setSavedSetting] = useState(initialVisibility);
 
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
   const hasChanges =
-    showTodaySales !== savedSetting.showTodaySales ||
-    showYesterdaySales !== savedSetting.showYesterdaySales ||
-    showMonthlySales !== savedSetting.showMonthlySales ||
-    showServiceBreakdown !== savedSetting.showServiceBreakdown ||
-    showMakeAppointment !== savedSetting.showMakeAppointment ||
-    showWalkIn !== savedSetting.showWalkIn ||
-    showBookedCheckout !== savedSetting.showBookedCheckout;
+    draft.showTodaySales !== savedSetting.showTodaySales ||
+    draft.showYesterdaySales !== savedSetting.showYesterdaySales ||
+    draft.showMonthlySales !== savedSetting.showMonthlySales ||
+    draft.showServiceBreakdown !== savedSetting.showServiceBreakdown ||
+    draft.showMakeAppointment !== savedSetting.showMakeAppointment ||
+    draft.showWalkIn !== savedSetting.showWalkIn ||
+    draft.showBookedCheckout !== savedSetting.showBookedCheckout;
 
   function handleDiscard() {
-    setShowTodaySales(savedSetting.showTodaySales);
-    setShowYesterdaySales(savedSetting.showYesterdaySales);
-    setShowMonthlySales(savedSetting.showMonthlySales);
-    setShowServiceBreakdown(savedSetting.showServiceBreakdown);
-    setShowMakeAppointment(savedSetting.showMakeAppointment);
-    setShowWalkIn(savedSetting.showWalkIn);
-    setShowBookedCheckout(savedSetting.showBookedCheckout);
+    setDraft(savedSetting);
     setErrorMessage(null);
   }
 
   function handleHideAll() {
-    setShowTodaySales(false);
-    setShowYesterdaySales(false);
-    setShowMonthlySales(false);
-    setShowServiceBreakdown(false);
-    setShowMakeAppointment(false);
+    setDraft((prev) => ({
+      ...prev,
+      showTodaySales: false,
+      showYesterdaySales: false,
+      showMonthlySales: false,
+      showServiceBreakdown: false,
+      showMakeAppointment: false,
+    }));
   }
 
   function handleShowAll() {
-    setShowTodaySales(true);
-    setShowYesterdaySales(true);
-    setShowMonthlySales(true);
-    setShowServiceBreakdown(true);
-    setShowMakeAppointment(true);
+    setDraft((prev) => ({
+      ...prev,
+      showTodaySales: true,
+      showYesterdaySales: true,
+      showMonthlySales: true,
+      showServiceBreakdown: true,
+      showMakeAppointment: true,
+    }));
   }
 
-  function handleToggleWalkIn() {
-    if (showWalkIn && !showBookedCheckout) {
+  function toggleField(key: keyof typeof draft) {
+    if (key === "showWalkIn" && draft.showWalkIn && !draft.showBookedCheckout) {
       toast.error(t("Keep at least one checkout mode enabled.", "至少保留一种开单方式。"));
       return;
     }
-    setShowWalkIn(!showWalkIn);
-  }
-
-  function handleToggleBookedCheckout() {
-    if (showBookedCheckout && !showWalkIn) {
+    if (key === "showBookedCheckout" && draft.showBookedCheckout && !draft.showWalkIn) {
       toast.error(t("Keep at least one checkout mode enabled.", "至少保留一种开单方式。"));
       return;
     }
-    setShowBookedCheckout(!showBookedCheckout);
+    setDraft((prev) => ({ ...prev, [key]: !prev[key] }));
   }
 
   const scoreboardToggles = [
-    showTodaySales,
-    showYesterdaySales,
-    showMonthlySales,
-    showServiceBreakdown,
-    showMakeAppointment,
+    draft.showTodaySales,
+    draft.showYesterdaySales,
+    draft.showMonthlySales,
+    draft.showServiceBreakdown,
+    draft.showMakeAppointment,
   ];
   const activeCount = scoreboardToggles.filter(Boolean).length;
   const allHidden = activeCount === 0;
@@ -133,32 +110,16 @@ export function DeskScoreboardSettingsForm({
 
   function handleSave() {
     setErrorMessage(null);
+    const payload = { ...draft };
     startTransition(async () => {
-      const res = await updateDeskScoreboardSettings({
-        showTodaySales,
-        showYesterdaySales,
-        showMonthlySales,
-        showServiceBreakdown,
-        showMakeAppointment,
-        showWalkIn,
-        showBookedCheckout,
-      });
+      const res = await updateDeskScoreboardSettings(payload);
 
       if (res.success) {
-        const newSaved = {
-          showTodaySales,
-          showYesterdaySales,
-          showMonthlySales,
-          showServiceBreakdown,
-          showMakeAppointment,
-          showWalkIn,
-          showBookedCheckout,
-        };
-        setSavedSetting(newSaved);
+        setSavedSetting(payload);
 
         if (typeof window !== "undefined") {
           try {
-            localStorage.setItem("desk_scoreboard_visibility", JSON.stringify(newSaved));
+            localStorage.setItem("desk_scoreboard_visibility", JSON.stringify(payload));
           } catch {}
         }
 
@@ -175,50 +136,50 @@ export function DeskScoreboardSettingsForm({
     {
       key: "today",
       label: t("Today's Sales", "今日营业额"),
-      value: showTodaySales,
-      onToggle: () => setShowTodaySales(!showTodaySales),
+      value: draft.showTodaySales,
+      onToggle: () => toggleField("showTodaySales"),
       icon: TrendingUp,
     },
     {
       key: "yesterday",
       label: t("Yesterday's Sales", "昨日营业额"),
-      value: showYesterdaySales,
-      onToggle: () => setShowYesterdaySales(!showYesterdaySales),
+      value: draft.showYesterdaySales,
+      onToggle: () => toggleField("showYesterdaySales"),
       icon: History,
     },
     {
       key: "monthly",
       label: t("Monthly Sales", "本月营业额"),
-      value: showMonthlySales,
-      onToggle: () => setShowMonthlySales(!showMonthlySales),
+      value: draft.showMonthlySales,
+      onToggle: () => toggleField("showMonthlySales"),
       icon: CalendarRange,
     },
     {
       key: "breakdown",
       label: t("Service Breakdown", "服务销量明细"),
-      value: showServiceBreakdown,
-      onToggle: () => setShowServiceBreakdown(!showServiceBreakdown),
+      value: draft.showServiceBreakdown,
+      onToggle: () => toggleField("showServiceBreakdown"),
       icon: Scissors,
     },
     {
       key: "appointment",
       label: t("New Appointment Shortcut", "新建预约入口"),
-      value: showMakeAppointment,
-      onToggle: () => setShowMakeAppointment(!showMakeAppointment),
+      value: draft.showMakeAppointment,
+      onToggle: () => toggleField("showMakeAppointment"),
       icon: CalendarDays,
     },
     {
       key: "walkin",
       label: t("Walk-in Checkout", "散客直接开单"),
-      value: showWalkIn,
-      onToggle: handleToggleWalkIn,
+      value: draft.showWalkIn,
+      onToggle: () => toggleField("showWalkIn"),
       icon: UserPlus,
     },
     {
       key: "booked",
       label: t("Booked Checkout", "预约顾客结账"),
-      value: showBookedCheckout,
-      onToggle: handleToggleBookedCheckout,
+      value: draft.showBookedCheckout,
+      onToggle: () => toggleField("showBookedCheckout"),
       icon: CalendarCheck,
     },
   ];
@@ -281,7 +242,7 @@ export function DeskScoreboardSettingsForm({
                   role="switch"
                   aria-checked={row.value}
                   onClick={row.onToggle}
-                  className="w-full px-4 py-3 flex items-center justify-between gap-3 bg-card hover:bg-muted/40 transition-colors cursor-pointer text-left"
+                  className="w-full px-4 py-3 flex items-center justify-between gap-3 bg-card hover:bg-muted/40 transition-colors cursor-pointer text-left touch-manipulation select-none"
                 >
                   <span className="flex items-center gap-2.5 min-w-0">
                     <Icon
