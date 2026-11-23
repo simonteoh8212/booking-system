@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import { lockDeskSession } from "@/actions/auth";
 import {
@@ -91,6 +92,7 @@ export function DeskHub({
   services,
   businessName = "Salon Desk",
 }: DeskHubProps) {
+  const router = useRouter();
   const [view, setView] = useState<"HUB" | "APPOINTMENTS" | "COUNT_SALES" | "FINANCIAL_REPORT">("HUB");
   const [isPinDialogOpen, setIsPinDialogOpen] = useState(false);
   const [isTodayDetailsOpen, setIsTodayDetailsOpen] = useState(false);
@@ -345,6 +347,7 @@ export function DeskHub({
         if (sumRes.data.deskLanguage) setLanguageMode(sumRes.data.deskLanguage);
       }
       if (aptRes.success) setAppointments(aptRes.data);
+      router.refresh();
     });
   }
 

@@ -236,6 +236,39 @@ export function AdminBookingsManager({
     return () => window.removeEventListener("booking_status_updated", handleExternalUpdate);
   }, [activeTab, searchQuery, refetchBookings]);
 
+  // Keep list fresh on mount / window focus when navigating back from Salon Desk
+  const latestQueryRef = useRef({ activeTab, searchQuery, timeframe });
+  useEffect(() => {
+    latestQueryRef.current = { activeTab, searchQuery, timeframe };
+  }, [activeTab, searchQuery, timeframe]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const syncBookings = () => {
+      const { activeTab: tab, searchQuery: sq, timeframe: tf } = latestQueryRef.current;
+      const statusArg = tab === "ALL" ? "ALL" : (tab as BookingStatus);
+      void getAllBookings({
+        status: statusArg,
+        search: sq.trim() || undefined,
+        timeframe: tf,
+        pageSize: 100,
+      }).then((res) => {
+        if (!cancelled && res.success) {
+          setBookings(res.data.bookings);
+          setCounts(res.data.counts);
+        }
+      });
+    };
+
+    syncBookings();
+    const handleFocus = () => syncBookings();
+    window.addEventListener("focus", handleFocus);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("focus", handleFocus);
+    };
+  }, []);
+
   function showToast(msg: string) {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3500);
@@ -409,7 +442,9 @@ export function AdminBookingsManager({
 
   const tabOptions = [
     { id: "ALL", label: t("All", "全部"), count: counts.all },
-    { id: "PENDING", label: t("Pending", "待确认"), count: counts.pending },
+    ...(counts.pending > 0 || activeTab === "PENDING"
+      ? [{ id: "PENDING", label: t("Pending", "待确认"), count: counts.pending }]
+      : []),
     { id: "CONFIRMED", label: t("Confirmed", "已确认"), count: counts.confirmed },
     { id: "COMPLETED", label: t("Completed", "已完成"), count: counts.completed },
     { id: "CANCELLED", label: t("Cancelled", "已取消"), count: counts.cancelled },

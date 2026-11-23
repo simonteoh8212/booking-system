@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, useRef } from "react";
+import { useState, useTransition, useRef, useEffect } from "react";
 import toast from "react-hot-toast";
 import { getBookings, updateBookingStatus } from "@/actions/admin-bookings";
 import { AgendaCard } from "./AgendaCard";
@@ -82,6 +82,32 @@ export function AgendaView({
       if (result.success) setBookings(result.data);
     });
   }
+
+  // Always fetch fresh bookings on mount / window focus so switching from Desk -> Home never shows stale router-cached calendar data
+  useEffect(() => {
+    let cancelled = false;
+    const syncCurrentMonth = () => {
+      const rangeStart = startOfWeek(startOfMonth(currentMonth), { weekStartsOn: 0 });
+      const rangeEnd = endOfWeek(endOfMonth(currentMonth), { weekStartsOn: 0 });
+      void getBookings(rangeStart.toISOString(), rangeEnd.toISOString()).then((result) => {
+        if (!cancelled && result.success) {
+          setBookings(result.data);
+        }
+      });
+    };
+
+    syncCurrentMonth();
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") syncCurrentMonth();
+    };
+    window.addEventListener("focus", syncCurrentMonth);
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("focus", syncCurrentMonth);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [currentMonth]);
 
   // Navigation handlers (always step selected day; auto-switch month when crossing boundary)
   function stepDay(delta: -1 | 1) {
