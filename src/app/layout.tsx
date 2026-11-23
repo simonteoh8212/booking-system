@@ -138,7 +138,7 @@ export default function RootLayout({
               }
               ${
                 customPrimary
-                  ? `:root {
+                  ? `html:root:not(.dark) {
                 --primary: ${customPrimary};
                 --primary-foreground: ${customPrimaryFg};
                 --ring: ${customPrimary};
