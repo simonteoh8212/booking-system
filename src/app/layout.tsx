@@ -29,6 +29,36 @@ const notoSansSC = Noto_Sans_SC({
 
 const appName = process.env.NEXT_PUBLIC_APP_NAME || "SideBox";
 
+function sanitizeCssColor(raw?: string): string | null {
+  const val = raw?.trim();
+  if (!val) return null;
+  if (/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(val)) return val;
+  if (/^oklch\(\s*[0-9.]+%?\s+[0-9.]+\s+[0-9.]+\s*\)$/i.test(val)) return val;
+  return null;
+}
+
+function getContrastForeground(hexColor: string): string {
+  if (!hexColor.startsWith("#")) return "#ffffff";
+  const hex =
+    hexColor.length === 4
+      ? hexColor
+          .slice(1)
+          .split("")
+          .map((c) => c + c)
+          .join("")
+      : hexColor.slice(1);
+  const r = parseInt(hex.slice(0, 2), 16);
+  const g = parseInt(hex.slice(2, 4), 16);
+  const b = parseInt(hex.slice(4, 6), 16);
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luminance > 0.65 ? "#0f172a" : "#ffffff";
+}
+
+const customPrimary = sanitizeCssColor(process.env.NEXT_PUBLIC_PRIMARY_COLOR);
+const customPrimaryFg = customPrimary
+  ? getContrastForeground(customPrimary)
+  : null;
+
 export const metadata: Metadata = {
   title: appName,
   description: `${appName} point-of-sale & management web app`,
@@ -106,6 +136,23 @@ export default function RootLayout({
               html, body {
                 background-color: #ffffff !important;
               }
+              ${
+                customPrimary
+                  ? `:root {
+                --primary: ${customPrimary};
+                --primary-foreground: ${customPrimaryFg};
+                --ring: ${customPrimary};
+                --accent: color-mix(in srgb, ${customPrimary} 10%, #ffffff);
+                --accent-foreground: color-mix(in srgb, ${customPrimary} 85%, #000000);
+                --sidebar-primary: ${customPrimary};
+                --sidebar-primary-foreground: ${customPrimaryFg};
+                --sidebar-accent: color-mix(in srgb, ${customPrimary} 10%, #ffffff);
+                --sidebar-accent-foreground: color-mix(in srgb, ${customPrimary} 85%, #000000);
+                --sidebar-ring: ${customPrimary};
+                --chart-1: ${customPrimary};
+              }`
+                  : ""
+              }
               @keyframes pwa-spin {
                 0% { transform: rotate(0deg); }
                 100% { transform: rotate(360deg); }
@@ -174,7 +221,7 @@ export default function RootLayout({
                 width: "22px",
                 height: "22px",
                 border: "2.5px solid #e2e8f0",
-                borderTopColor: "#0284c7",
+                borderTopColor: customPrimary || "#0284c7",
                 borderRadius: "50%",
                 animation: "pwa-spin 0.75s linear infinite",
               }}

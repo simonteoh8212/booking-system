@@ -4,6 +4,11 @@ import type { MetadataRoute } from 'next'
 export default function manifest(): MetadataRoute.Manifest {
   const appName = process.env.NEXT_PUBLIC_APP_NAME || 'SideBox';
   const shortName = process.env.NEXT_PUBLIC_APP_SHORT_NAME || appName;
+  const rawPrimary = process.env.NEXT_PUBLIC_PRIMARY_COLOR?.trim();
+  const themeColor =
+    rawPrimary && /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(rawPrimary)
+      ? rawPrimary
+      : '#70adf5';
 
   return {
     id: '/admin/desk',
@@ -14,7 +19,7 @@ export default function manifest(): MetadataRoute.Manifest {
     scope: '/',
     display: 'standalone',
     background_color: '#ffffff',
-    theme_color: '#70adf5',
+    theme_color: themeColor,
     icons: [
       {
         src: '/icon-192.png',
