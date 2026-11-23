@@ -17,7 +17,7 @@ services:
         NEXT_PUBLIC_CURRENCY_SYMBOL: ${NEXT_PUBLIC_CURRENCY_SYMBOL:-RM}
         NEXT_PUBLIC_CURRENCY_CODE: ${NEXT_PUBLIC_CURRENCY_CODE:-MYR}
         NEXT_PUBLIC_BUSINESS_TIMEZONE: ${NEXT_PUBLIC_BUSINESS_TIMEZONE:-Asia/Kuala_Lumpur}
-    container_name: salon-prod
+    container_name: ${CONTAINER_NAME:-salon-prod}
     restart: unless-stopped
     ports:
       # Bound to localhost on 3001 (avoids conflict with nextjs-prod on 3000);
