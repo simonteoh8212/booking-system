@@ -3,7 +3,7 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "./auth";
-import { normalizePhoneNumber } from "@/lib/utils";
+import { normalizePhoneNumber, getPhoneSearchVariants } from "@/lib/utils";
 import { revalidatePath } from "next/cache";
 import type {
   ActionResult,
@@ -57,6 +57,27 @@ function toMemberTransactionDto(t: any): MemberTransactionDto {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function toPromoPackageDto(p: any): PromoPackageDto {
+  const pkgs = Array.isArray(p.memberPackages) ? p.memberPackages : [];
+  const activePkgs = pkgs.filter(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (mp: any) => mp.status === "ACTIVE" && (mp.remainingSessions ?? 0) > 0
+  );
+  const boundMembers = pkgs
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .filter((mp: any) => mp.customer)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .map((mp: any) => ({
+      memberPackageId: mp.id,
+      customerId: mp.customerId,
+      customerName: mp.customer.name,
+      customerPhone: mp.customer.phoneNumber,
+      remainingSessions: mp.remainingSessions,
+      totalSessions: mp.totalSessions,
+      status: mp.status,
+      expiresAt: mp.expiresAt ? new Date(mp.expiresAt).toISOString() : null,
+      createdAt: new Date(mp.createdAt).toISOString(),
+    }));
+
   return {
     id: p.id,
     name: p.name,
@@ -66,6 +87,10 @@ function toPromoPackageDto(p: any): PromoPackageDto {
     serviceIds: p.serviceIds || [],
     validityMonths: p.validityMonths ?? null,
     isActive: p.isActive,
+    boundCount: p._count?.memberPackages ?? (pkgs.length || p.boundCount || 0),
+    activeBoundCount:
+      pkgs.length > 0 ? activePkgs.length : p.activeBoundCount ?? 0,
+    boundMembers,
     createdAt: new Date(p.createdAt).toISOString(),
   };
 }
@@ -109,13 +134,12 @@ export async function getMembers(options?: {
     }
 
     if (q) {
-      const normalizedQ = normalizePhoneNumber(q);
+      const phoneVariants = getPhoneSearchVariants(q);
       where.OR = [
         { name: { contains: q, mode: "insensitive" } },
-        { phoneNumber: { contains: q } },
-        ...(normalizedQ && normalizedQ !== q && normalizedQ.length >= 3
-          ? [{ phoneNumber: { contains: normalizedQ } }]
-          : []),
+        ...phoneVariants.map((variant) => ({
+          phoneNumber: { contains: variant },
+        })),
       ];
     }
 
@@ -227,16 +251,15 @@ export async function lookupMembersForCheckout(
   try {
     const q = query.trim();
     if (!q) return { success: true, data: [] };
-    const normalizedQ = normalizePhoneNumber(q);
+    const phoneVariants = getPhoneSearchVariants(q);
 
     const customers = await prisma.customer.findMany({
       where: {
         NOT: { phoneNumber: { startsWith: "WALKIN-" } },
         OR: [
-          { phoneNumber: { contains: q } },
-          ...(normalizedQ && normalizedQ !== q && normalizedQ.length >= 3
-            ? [{ phoneNumber: { contains: normalizedQ } }]
-            : []),
+          ...phoneVariants.map((variant) => ({
+            phoneNumber: { contains: variant },
+          })),
           { name: { contains: q, mode: "insensitive" } },
         ],
       },
@@ -747,6 +770,26 @@ export async function getPromoPackages(): Promise<ActionResult<PromoPackageDto[]
   await requireAdmin();
   try {
     const promos = await prisma.promoPackage.findMany({
+      include: {
+        _count: {
+          select: { memberPackages: true },
+        },
+        memberPackages: {
+          include: {
+            customer: {
+              select: {
+                id: true,
+                name: true,
+                phoneNumber: true,
+              },
+            },
+          },
+          orderBy: [
+            { remainingSessions: "desc" },
+            { createdAt: "desc" },
+          ],
+        },
+      },
       orderBy: [{ isActive: "desc" }, { createdAt: "desc" }],
     });
     return { success: true, data: promos.map(toPromoPackageDto) };
@@ -824,6 +867,16 @@ export async function updatePromoPackage(
       return { success: false, error: "Select at least one eligible service." };
     }
 
+    const boundCount = await prisma.memberPackage.count({
+      where: { promoPackageId: id },
+    });
+    if (boundCount > 0) {
+      return {
+        success: false,
+        error: `This promo is already bound to ${boundCount} member(s) and its terms are locked. Create a new promo instead.`,
+      };
+    }
+
     const promo = await prisma.promoPackage.update({
       where: { id },
       data: {
@@ -851,6 +904,20 @@ export async function updatePromoPackage(
 export async function deletePromoPackage(id: string): Promise<ActionResult<void>> {
   await requireAdmin();
   try {
+    const activeBoundCount = await prisma.memberPackage.count({
+      where: {
+        promoPackageId: id,
+        status: "ACTIVE",
+        remainingSessions: { gt: 0 },
+      },
+    });
+    if (activeBoundCount > 0) {
+      return {
+        success: false,
+        error: `Cannot delete: ${activeBoundCount} member(s) still have active sessions on this promo.`,
+      };
+    }
+
     await prisma.promoPackage.delete({ where: { id } });
     revalidateMemberPaths();
     return { success: true, data: undefined };

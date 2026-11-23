@@ -1,8 +1,10 @@
 "use client";
 
 import { useState, useTransition, useRef } from "react";
-import { getBookings } from "@/actions/admin-bookings";
+import toast from "react-hot-toast";
+import { getBookings, updateBookingStatus } from "@/actions/admin-bookings";
 import { AgendaCard } from "./AgendaCard";
+import { DailyBriefingDialog } from "./DailyBriefingDialog";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import {
@@ -32,10 +34,12 @@ import {
   ChevronRight,
   CalendarDays,
   ArrowUp,
+  Clock,
 } from "lucide-react";
 import type { BookingDto, DeskLanguageMode } from "@/types";
 import { cn, toBusinessDateString } from "@/lib/utils";
 import { useDeskLanguage } from "@/lib/use-desk-language";
+import { resolveServiceName } from "@/lib/desk-i18n";
 
 interface AgendaViewProps {
   initialDate: string; // ISO
@@ -206,6 +210,41 @@ export function AgendaView({
     (b) => b.status === "CANCELLED" || b.status === "NO_SHOW"
   );
 
+  // Today's quick-glance summary (independent of whichever calendar day is selected)
+  const todayKey = toBusinessDateString(new Date());
+  const todayBookings = bookings.filter(
+    (b) => toBusinessDateString(b.startDatetime) === todayKey
+  );
+  const todayActive = todayBookings.filter(
+    (b) => b.status !== "CANCELLED" && b.status !== "NO_SHOW"
+  );
+  const todayPendingCount = todayActive.filter(
+    (b) => b.status === "PENDING"
+  ).length;
+  const todayConfirmedCount = todayActive.filter(
+    (b) => b.status === "CONFIRMED"
+  ).length;
+  const todayUpcoming = todayActive
+    .filter((b) => b.status === "PENDING" || b.status === "CONFIRMED")
+    .sort((a, b) => a.startDatetime.localeCompare(b.startDatetime));
+  const nextAppointment = todayUpcoming[0] ?? null;
+
+  function jumpToTodaySchedule() {
+    const today = new Date();
+    setSelectedDate(today);
+    if (!isSameMonth(today, currentMonth)) {
+      const thisMonth = startOfMonth(today);
+      setCurrentMonth(thisMonth);
+      loadMonthBookings(thisMonth);
+    }
+    setTimeout(() => {
+      detailsRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }, 60);
+  }
+
   const weekdays = isZh
     ? [
         { full: "周日", short: "日" },
@@ -227,91 +266,95 @@ export function AgendaView({
       ];
 
   return (
-    <div className="space-y-3 pt-2">
-      <h2 className="text-base font-semibold text-foreground">
-        {isZh ? "日程安排" : "Agenda"}
-      </h2>
-      <div className="space-y-5">
-      {/* Top Toolbar: Date navigation & View mode switch */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        {/* Left: Navigation Buttons & Date Picker */}
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={handlePrev}
-            className="h-9 w-9 shrink-0"
-            title={isZh ? "前一天" : "Previous Day"}
-            aria-label={isZh ? "前一天" : "Previous Day"}
-          >
-            <ChevronLeft className="h-4 w-4" />
-          </Button>
-
-          <Popover>
-            <PopoverTrigger
-              render={
-                <Button
-                  variant="outline"
-                  className="h-9 min-w-[210px] sm:min-w-[240px] justify-start gap-2 text-xs font-semibold"
-                >
-                  <CalendarIcon className="h-4 w-4 text-muted-foreground shrink-0" />
-                  <span>
-                    {isZh
-                      ? format(selectedDate, "yyyy年M月d日 EEEE", { locale: zhCN })
-                      : format(selectedDate, "EEEE, d MMMM yyyy")}
+    <div className="space-y-4 pt-1">
+      {/* Today's Quick-Glance Strip */}
+      <div className="rounded-xl border border-border bg-card px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="w-9 h-9 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
+            <Clock className="h-4 w-4" />
+          </div>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                {isZh ? "今日预约概览" : "Today at a Glance"}
+              </span>
+              <span className="text-xs font-semibold text-foreground tabular-nums">
+                {isZh
+                  ? `${todayActive.length} 个预约`
+                  : `${todayActive.length} ${todayActive.length === 1 ? "booking" : "bookings"}`}
+              </span>
+              {todayPendingCount > 0 && (
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-amber-500/15 text-amber-700 dark:text-amber-400 text-[11px] font-semibold tabular-nums">
+                  {isZh ? `${todayPendingCount} 待确认` : `${todayPendingCount} pending`}
+                </span>
+              )}
+              {todayConfirmedCount > 0 && (
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 text-[11px] font-semibold tabular-nums">
+                  {isZh ? `${todayConfirmedCount} 已确认` : `${todayConfirmedCount} confirmed`}
+                </span>
+              )}
+            </div>
+            <div className="text-xs text-muted-foreground truncate mt-0.5">
+              {nextAppointment ? (
+                <>
+                  <span className="font-semibold text-foreground">
+                    {isZh ? "下一位：" : "Up next: "}
+                    {new Intl.DateTimeFormat(isZh ? "zh-CN" : "en-US", {
+                      timeZone: "Asia/Kuala_Lumpur",
+                      hour: "numeric",
+                      minute: "2-digit",
+                      hour12: true,
+                    }).format(new Date(nextAppointment.startDatetime))}
                   </span>
-                </Button>
-              }
-            />
-            <PopoverContent className="w-auto p-0" align="start">
-              <Calendar
-                mode="single"
-                locale={locale}
-                selected={selectedDate}
-                onSelect={(d) => {
-                  if (d) {
-                    handleDateSelect(d);
-                    if (viewMode === "calendar") {
-                      setTimeout(() => {
-                        detailsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-                      }, 50);
-                    }
-                  }
-                }}
-              />
-            </PopoverContent>
-          </Popover>
-
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={handleNext}
-            className="h-9 w-9 shrink-0"
-            title={isZh ? "后一天" : "Next Day"}
-            aria-label={isZh ? "后一天" : "Next Day"}
-          >
-            <ChevronRight className="h-4 w-4" />
-          </Button>
-
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={handleToday}
-            className="h-9 text-xs font-semibold px-3"
-          >
-            {isZh ? "今天" : "Today"}
-          </Button>
+                  {" · "}
+                  <span>{nextAppointment.customer.name}</span>
+                  {" · "}
+                  <span>
+                    {resolveServiceName(nextAppointment.service.name, langMode).primary}
+                  </span>
+                </>
+              ) : todayActive.length > 0 ? (
+                <span>
+                  {isZh
+                    ? "今日所有预约已全部完成"
+                    : "All appointments for today are completed"}
+                </span>
+              ) : (
+                <span>
+                  {isZh ? "今日暂无预约" : "No appointments scheduled for today"}
+                </span>
+              )}
+            </div>
+          </div>
         </div>
 
-        {/* Right: View Toggle (Agenda View vs Calendar) */}
-        <div className="inline-flex rounded-xl border bg-muted/30 p-1 shadow-xs">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={jumpToTodaySchedule}
+          className="h-9 sm:h-8 px-3 rounded-lg text-xs font-semibold gap-1.5 cursor-pointer shrink-0"
+        >
+          <CalendarDays className="h-3.5 w-3.5 text-primary" />
+          <span>{isZh ? "查看今日安排" : "View Today's List"}</span>
+        </Button>
+      </div>
+
+      {/* Header Row: Section Title + View Switcher (No duplicate date bar in Calendar mode) */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-base font-semibold text-foreground">
+          {isZh ? "日程安排" : "Agenda"}
+        </h2>
+
+        {/* View Toggle (Agenda View vs Calendar) */}
+        <div className="inline-flex rounded-xl border bg-muted/40 p-1 shadow-2xs">
           <button
             type="button"
             onClick={() => setViewMode("agenda")}
             className={cn(
-              "px-4 py-1.5 text-xs font-semibold rounded-lg transition-all",
+              "h-9 sm:h-8 px-3.5 text-xs font-semibold rounded-lg transition-all cursor-pointer",
               viewMode === "agenda"
-                ? "bg-foreground text-background shadow-sm"
+                ? "bg-card text-foreground shadow-2xs"
                 : "text-muted-foreground hover:text-foreground"
             )}
           >
@@ -321,9 +364,9 @@ export function AgendaView({
             type="button"
             onClick={() => setViewMode("calendar")}
             className={cn(
-              "px-4 py-1.5 text-xs font-semibold rounded-lg transition-all",
+              "h-9 sm:h-8 px-3.5 text-xs font-semibold rounded-lg transition-all cursor-pointer",
               viewMode === "calendar"
-                ? "bg-foreground text-background shadow-sm"
+                ? "bg-card text-foreground shadow-2xs"
                 : "text-muted-foreground hover:text-foreground"
             )}
           >
@@ -331,6 +374,71 @@ export function AgendaView({
           </button>
         </div>
       </div>
+
+      <div className="space-y-5">
+        {/* Day Stepper Toolbar — shown only in Agenda View so Calendar mode doesn't stack two date bars */}
+        {viewMode === "agenda" && (
+          <div className="flex items-center gap-2 flex-wrap">
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={handlePrev}
+              className="h-10 w-10 sm:h-9 sm:w-9 shrink-0 cursor-pointer"
+              title={isZh ? "前一天" : "Previous Day"}
+              aria-label={isZh ? "前一天" : "Previous Day"}
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+
+            <Popover>
+              <PopoverTrigger
+                render={
+                  <Button
+                    variant="outline"
+                    className="h-10 sm:h-9 min-w-[200px] sm:min-w-[240px] justify-start gap-2 text-xs font-semibold cursor-pointer"
+                  >
+                    <CalendarIcon className="h-4 w-4 text-muted-foreground shrink-0" />
+                    <span className="truncate">
+                      {isZh
+                        ? format(selectedDate, "yyyy年M月d日 EEEE", { locale: zhCN })
+                        : format(selectedDate, "EEEE, d MMMM yyyy")}
+                    </span>
+                  </Button>
+                }
+              />
+              <PopoverContent className="w-auto p-0" align="start">
+                <Calendar
+                  mode="single"
+                  locale={locale}
+                  selected={selectedDate}
+                  onSelect={(d) => {
+                    if (d) handleDateSelect(d);
+                  }}
+                />
+              </PopoverContent>
+            </Popover>
+
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={handleNext}
+              className="h-10 w-10 sm:h-9 sm:w-9 shrink-0 cursor-pointer"
+              title={isZh ? "后一天" : "Next Day"}
+              aria-label={isZh ? "后一天" : "Next Day"}
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={handleToday}
+              className="h-10 sm:h-9 text-xs font-semibold px-3.5 cursor-pointer"
+            >
+              {isZh ? "今天" : "Today"}
+            </Button>
+          </div>
+        )}
 
       {/* Main Views Container with smooth transition */}
       <div className={cn("transition-opacity duration-200", isPending && "opacity-75")}>
@@ -348,22 +456,30 @@ export function AgendaView({
                   ? format(currentMonth, "yyyy年 M月", { locale: zhCN })
                   : format(currentMonth, "MMMM yyyy")}
               </h2>
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-2">
                 <Button
                   variant="outline"
                   size="icon"
                   onClick={handlePrevMonth}
-                  className="h-8 w-8 shrink-0"
+                  className="h-10 w-10 sm:h-8 sm:w-8 shrink-0 cursor-pointer"
                   title={isZh ? "上个月" : "Previous Month"}
                   aria-label={isZh ? "上个月" : "Previous Month"}
                 >
                   <ChevronLeft className="h-4 w-4" />
                 </Button>
                 <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={handleToday}
+                  className="h-10 sm:h-8 px-3 text-xs font-semibold cursor-pointer"
+                >
+                  {isZh ? "今天" : "Today"}
+                </Button>
+                <Button
                   variant="outline"
                   size="icon"
                   onClick={handleNextMonth}
-                  className="h-8 w-8 shrink-0"
+                  className="h-10 w-10 sm:h-8 sm:w-8 shrink-0 cursor-pointer"
                   title={isZh ? "下个月" : "Next Month"}
                   aria-label={isZh ? "下个月" : "Next Month"}
                 >
@@ -434,7 +550,7 @@ export function AgendaView({
                       !isCurrentMonth && "bg-muted/15 text-muted-foreground/45",
                       isCurrentMonth && "bg-card hover:bg-muted/30",
                       isSelected &&
-                        "border-2 border-blue-500 z-10 bg-blue-50/40 dark:bg-blue-950/20"
+                        "ring-2 ring-inset ring-primary z-10 bg-primary/5"
                     )}
                   >
                     {/* Top Row: Day Number & Count Badge */}
@@ -445,7 +561,7 @@ export function AgendaView({
                           !isCurrentMonth
                             ? "text-muted-foreground/40"
                             : isTodayCell
-                            ? "text-blue-600 font-bold"
+                            ? "text-primary font-bold"
                             : "text-foreground"
                         )}
                       >
@@ -458,7 +574,7 @@ export function AgendaView({
                           className={cn(
                             "w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 transition-colors",
                             isSelected
-                              ? "bg-blue-600 text-white shadow-xs"
+                              ? "bg-primary text-primary-foreground shadow-xs"
                               : "bg-muted text-muted-foreground font-semibold"
                           )}
                           title={
@@ -475,7 +591,7 @@ export function AgendaView({
                     {/* Today indicator dot if no badge */}
                     {isTodayCell && count === 0 && (
                       <div className="self-end">
-                        <span className="w-1.5 h-1.5 rounded-full bg-blue-500 block" />
+                        <span className="w-1.5 h-1.5 rounded-full bg-primary block" />
                       </div>
                     )}
                   </div>
@@ -509,7 +625,7 @@ export function AgendaView({
                   onClick={() => {
                     window.scrollTo({ top: 0, behavior: "smooth" });
                   }}
-                  className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground gap-1"
+                  className="h-9 sm:h-8 px-2.5 text-xs text-muted-foreground hover:text-foreground gap-1 cursor-pointer"
                   title={isZh ? "回到日历顶部" : "Scroll back up to calendar"}
                 >
                   <ArrowUp className="h-3.5 w-3.5" />
@@ -649,6 +765,28 @@ export function AgendaView({
       )}
       </div>
       </div>
+
+      <DailyBriefingDialog
+        appointments={todayUpcoming.map((b) => ({
+          id: b.id,
+          customerName: b.customer.name,
+          phoneNumber: b.customer.phoneNumber,
+          serviceName: b.service.name,
+          startDatetime: b.startDatetime,
+          status: b.status,
+        }))}
+        languageMode={langMode}
+        onConfirmBooking={async (id) => {
+          const res = await updateBookingStatus(id, "CONFIRMED");
+          if (res.success) {
+            handleUpdate(res.data);
+            toast.success(isZh ? "预约已确认" : "Booking confirmed");
+          } else {
+            toast.error(res.error);
+          }
+        }}
+        onViewAgenda={jumpToTodaySchedule}
+      />
     </div>
   );
 }

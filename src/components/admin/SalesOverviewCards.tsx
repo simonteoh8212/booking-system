@@ -7,6 +7,7 @@ import type { DeskDailySummary } from "@/actions/desk";
 import type { DeskLanguageMode } from "@/types";
 import { Eye, EyeOff, Scissors, ArrowRight, ChevronRight } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState, useSyncExternalStore } from "react";
 import { TodaySalesDetailsDialog } from "@/components/admin/TodaySalesDetailsDialog";
 
@@ -52,6 +53,7 @@ export function SalesOverviewCards({
   summary,
   initialLanguage = "ONLY_EN",
 }: SalesOverviewCardsProps) {
+  const router = useRouter();
   const { langMode } = useDeskLanguage(initialLanguage);
   const isZh = langMode === "ONLY_ZH";
   const currencySymbol = summary.currencySymbol || "RM";
@@ -124,37 +126,42 @@ export function SalesOverviewCards({
         </Link>
       </div>
 
-      {/* Unified KPI Strip */}
-      <div className="rounded-xl border border-border bg-card grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-border overflow-hidden">
+      {/* Unified KPI Strip (Compact 2-row grid on mobile, 3-col on desktop) */}
+      <div className="rounded-xl border border-border bg-card grid grid-cols-2 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-border overflow-hidden">
         {metrics.map((m) => {
           const isDailyClickable = m.key === "today" || m.key === "yesterday";
+          const isMonthClickable = m.key === "month";
           const targetDate = m.key === "yesterday" ? yesterdayStr : todayStr;
-          const openForDate = () => {
-            setDetailsDateStr(targetDate);
-            setIsTodayDetailsOpen(true);
+          const handleCardClick = () => {
+            if (isDailyClickable) {
+              setDetailsDateStr(targetDate);
+              setIsTodayDetailsOpen(true);
+            } else if (isMonthClickable) {
+              router.push("/admin/monthly-report");
+            }
           };
           return (
             <div
               key={m.key}
-              onClick={isDailyClickable ? openForDate : undefined}
-              role={isDailyClickable ? "button" : undefined}
-              tabIndex={isDailyClickable ? 0 : undefined}
-              onKeyDown={
-                isDailyClickable
-                  ? (e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        openForDate();
-                      }
-                    }
-                  : undefined
-              }
-              className={`p-5 flex flex-col justify-between gap-3 ${
-                isDailyClickable ? "cursor-pointer hover:bg-muted/30 transition-colors" : ""
+              onClick={handleCardClick}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  handleCardClick();
+                }
+              }}
+              className={`p-3.5 sm:p-5 flex flex-col justify-between gap-2 sm:gap-3 cursor-pointer hover:bg-muted/30 transition-colors ${
+                m.key === "today"
+                  ? "col-span-2 sm:col-span-1"
+                  : m.key === "yesterday"
+                  ? "border-r sm:border-r-0 border-border"
+                  : ""
               }`}
             >
               <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground truncate">
                   {m.label}
                 </span>
                 <button
@@ -163,7 +170,7 @@ export function SalesOverviewCards({
                     e.stopPropagation();
                     m.onToggle();
                   }}
-                  className="text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                  className="text-muted-foreground hover:text-foreground transition-colors cursor-pointer shrink-0"
                   aria-label={
                     isZh ? `切换${m.label}显示状态` : `Toggle ${m.label} visibility`
                   }
@@ -177,7 +184,7 @@ export function SalesOverviewCards({
               </div>
 
               <div
-                className={`text-2xl sm:text-3xl font-bold font-mono tabular-nums tracking-tight ${
+                className={`text-xl sm:text-3xl font-bold font-mono tabular-nums tracking-tight whitespace-nowrap ${
                   m.accent ? "text-primary" : "text-foreground"
                 }`}
               >
@@ -186,14 +193,18 @@ export function SalesOverviewCards({
                   : `${currencySymbol} ••••••`}
               </div>
 
-              <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground tabular-nums">
-                <span>{m.meta}</span>
-                {isDailyClickable && (
-                  <span className="inline-flex items-center gap-0.5 font-semibold text-primary shrink-0">
-                    {isZh ? "查看明细" : "Details"}
-                    <ChevronRight className="h-3.5 w-3.5" />
-                  </span>
-                )}
+              <div className="flex items-center justify-between gap-1.5 text-[11px] sm:text-xs text-muted-foreground tabular-nums">
+                <span className="truncate">{m.meta}</span>
+                <span className="inline-flex items-center gap-0.5 font-semibold text-primary shrink-0">
+                  {isMonthClickable
+                    ? isZh
+                      ? "月度报表"
+                      : "Report"
+                    : isZh
+                    ? "查看明细"
+                    : "Details"}
+                  <ChevronRight className="h-3.5 w-3.5" />
+                </span>
               </div>
             </div>
           );

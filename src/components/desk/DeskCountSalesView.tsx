@@ -1,12 +1,12 @@
 "use client";
 
 import { useState, useTransition, useEffect, useRef } from "react";
+import { format } from "date-fns";
 import { recordDeskSale, type DeskAppointmentItem } from "@/actions/desk";
 import { lookupMembersForCheckout } from "@/actions/members";
 import { formatPrice, generateIdempotencyKey } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
   DialogContent,
@@ -16,6 +16,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import type { ServiceDto, DeskLanguageMode, MemberDto } from "@/types";
+import type { CustomerReceiptData } from "@/lib/whatsapp";
 import { resolveServiceName } from "@/lib/desk-i18n";
 import {
   ArrowLeft,
@@ -43,6 +44,7 @@ export interface DeskSaleSuccessData {
   remainingCreditCents?: number;
   customerName?: string;
   customerPhone?: string;
+  receipt?: CustomerReceiptData;
 }
 
 interface DeskCountSalesViewProps {
@@ -191,21 +193,42 @@ export function DeskCountSalesView({
     return () => {
       ignore = true;
     };
-  }, [sourceType, activeAppointment, selectedServiceIds]);
+    // Only re-fetch member from DB when the selected appointment changes, not when toggling services
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    sourceType,
+    activeAppointment?.id,
+    activeAppointment?.phoneNumber,
+    activeAppointment?.customerId,
+  ]);
 
-  async function handleMemberSearchChange(val: string) {
+  const memberSearchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (memberSearchTimerRef.current) clearTimeout(memberSearchTimerRef.current);
+    };
+  }, []);
+
+  function handleMemberSearchChange(val: string) {
     setMemberSearchQuery(val);
+    if (memberSearchTimerRef.current) clearTimeout(memberSearchTimerRef.current);
+
     if (val.trim().length < 2) {
       setMemberSearchResults([]);
+      setIsSearchingMember(false);
       return;
     }
+
     setIsSearchingMember(true);
-    try {
-      const res = await lookupMembersForCheckout(val);
-      if (res.success) setMemberSearchResults(res.data);
-    } finally {
-      setIsSearchingMember(false);
-    }
+    memberSearchTimerRef.current = setTimeout(async () => {
+      try {
+        const res = await lookupMembersForCheckout(val);
+        if (res.success) setMemberSearchResults(res.data);
+      } finally {
+        setIsSearchingMember(false);
+      }
+    }, 250);
   }
 
   function handleSelectWalkinMember(member: MemberDto) {
@@ -333,6 +356,7 @@ export function DeskCountSalesView({
             remainingCreditCents: res.data?.remainingCreditCents,
             customerName: res.data?.customerName,
             customerPhone: res.data?.customerPhone,
+            receipt: res.data?.receipt,
           });
         } else {
           setErrorMessage(res.error);
@@ -457,7 +481,7 @@ export function DeskCountSalesView({
                         </div>
                       </div>
                       <span className="text-xs text-muted-foreground tabular-nums shrink-0">
-                        {apt.startDatetime.slice(11, 16)}
+                        {format(new Date(apt.startDatetime), "h:mm a")}
                       </span>
                     </button>
                   );
@@ -475,10 +499,21 @@ export function DeskCountSalesView({
                     placeholder={t("Member phone or name…", "搜索会员手机或姓名…")}
                     value={memberSearchQuery}
                     onChange={(e) => handleMemberSearchChange(e.target.value)}
-                    className="pl-9 h-9 rounded-lg text-base sm:text-sm bg-card"
+                    className="pl-9 pr-9 h-10 sm:h-9 rounded-lg text-base sm:text-sm bg-card"
                   />
-                  {isSearchingMember && (
+                  {isSearchingMember ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground absolute right-3 top-1/2 -translate-y-1/2" />
+                  ) : (
+                    memberSearchQuery && (
+                      <button
+                        type="button"
+                        onClick={() => handleMemberSearchChange("")}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-md text-muted-foreground hover:text-foreground cursor-pointer"
+                        aria-label={t("Clear search", "清除搜索")}
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    )
                   )}
                 </div>
                 <Button
@@ -486,7 +521,7 @@ export function DeskCountSalesView({
                   size="sm"
                   variant="outline"
                   onClick={() => setShowWalkinFields(!showWalkinFields)}
-                  className="h-9 rounded-lg text-xs cursor-pointer shrink-0"
+                  className="h-10 sm:h-9 rounded-lg text-xs cursor-pointer shrink-0"
                 >
                   {showWalkinFields ? t("Hide", "收起") : t("+ Walk-in Info", "+ 填写资料")}
                 </Button>
@@ -499,7 +534,7 @@ export function DeskCountSalesView({
                       key={m.id}
                       type="button"
                       onClick={() => handleSelectWalkinMember(m)}
-                      className="w-full px-3.5 py-2.5 hover:bg-muted/40 text-left flex items-center justify-between gap-2 cursor-pointer"
+                      className="w-full min-h-11 px-3.5 py-2.5 hover:bg-muted/40 text-left flex items-center justify-between gap-2 cursor-pointer"
                     >
                       <div className="min-w-0">
                         <div className="text-sm font-semibold truncate">{m.name}</div>
@@ -524,14 +559,14 @@ export function DeskCountSalesView({
                     placeholder={t("Customer Name", "顾客姓名")}
                     value={walkinName}
                     onChange={(e) => setWalkinName(e.target.value)}
-                    className="h-9 rounded-lg text-base sm:text-sm bg-card"
+                    className="h-10 sm:h-9 rounded-lg text-base sm:text-sm bg-card"
                   />
                   <Input
                     type="tel"
                     placeholder={t("Phone Number", "手机号码")}
                     value={walkinPhone}
                     onChange={(e) => setWalkinPhone(e.target.value)}
-                    className="h-9 rounded-lg text-base sm:text-sm bg-card tabular-nums"
+                    className="h-10 sm:h-9 rounded-lg text-base sm:text-sm bg-card tabular-nums"
                   />
                 </div>
               )}
@@ -548,11 +583,58 @@ export function DeskCountSalesView({
                 <span className="text-xs font-semibold text-primary tabular-nums">
                   {formatPrice(selectedMember.creditBalanceCents, currencySymbol)}
                 </span>
-                {selectedMember.activePackages.map((pkg) => (
-                  <Badge key={pkg.id} variant="secondary" className="text-[11px] tabular-nums">
-                    {pkg.name} ({pkg.remainingSessions}/{pkg.totalSessions})
-                  </Badge>
-                ))}
+                {selectedMember.activePackages.map((pkg) => {
+                  const eligibleSvc = services.find((s) =>
+                    pkg.serviceIds.includes(s.id)
+                  );
+                  const isApplied =
+                    eligibleSvc && promoRedemptions[eligibleSvc.id] === pkg.id;
+                  return (
+                    <button
+                      key={pkg.id}
+                      type="button"
+                      onClick={() => {
+                        if (!eligibleSvc) return;
+                        if (!selectedServiceIds.includes(eligibleSvc.id)) {
+                          const nextIds = [...selectedServiceIds, eligibleSvc.id];
+                          setSelectedServiceIds(nextIds);
+                          setPromoRedemptions((prev) => ({
+                            ...prev,
+                            [eligibleSvc.id]: pkg.id,
+                          }));
+                        } else {
+                          togglePromoForService(eligibleSvc.id, pkg.id);
+                        }
+                      }}
+                      title={
+                        eligibleSvc
+                          ? t(
+                              `Tap to apply ${pkg.name} to ${
+                                resolveServiceName(eligibleSvc.name, languageMode).primary
+                              }`,
+                              `点击使用 ${pkg.name}（${
+                                resolveServiceName(eligibleSvc.name, languageMode).primary
+                              }）`
+                            )
+                          : undefined
+                      }
+                      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold border tabular-nums transition-colors cursor-pointer ${
+                        isApplied
+                          ? "border-primary bg-primary text-primary-foreground shadow-2xs"
+                          : "border-primary/35 bg-background text-primary hover:bg-primary/10"
+                      }`}
+                    >
+                      {isApplied ? (
+                        <Check className="h-3 w-3 stroke-[2.5]" />
+                      ) : (
+                        <Ticket className="h-3 w-3" />
+                      )}
+                      <span>
+                        {pkg.name} ({pkg.remainingSessions}/{pkg.totalSessions})
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
               {sourceType === "WALKIN" && (
                 <button
@@ -772,38 +854,54 @@ export function DeskCountSalesView({
             </div>
           )}
 
-          <div className="grid grid-cols-3 gap-2 pt-2 border-t border-border">
-            {(
-              [
-                { id: "CASH", label: t("Cash", "现金"), icon: Banknote },
-                { id: "DUITNOW_QR", label: "QR", icon: QrCode },
-                { id: "CARD", label: t("Card", "刷卡"), icon: CreditCard },
-              ] as const
-            ).map((pm) => {
-              const active = paymentMethod === pm.id;
-              return (
-                <button
-                  key={pm.id}
-                  type="button"
-                  onClick={() => setPaymentMethod(pm.id)}
-                  className={`py-2 rounded-lg text-xs font-semibold border flex items-center justify-center gap-1.5 cursor-pointer transition-colors ${
-                    active
-                      ? "border-primary bg-accent text-accent-foreground"
-                      : "border-border bg-background text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  <pm.icon className="h-3.5 w-3.5" />
-                  <span>{pm.label}</span>
-                </button>
-              );
-            })}
-          </div>
+          {selectedServices.length > 0 && netPayableCents === 0 ? (
+            <div className="pt-2 border-t border-border">
+              <div className="px-3 py-2.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 text-xs font-semibold flex items-center justify-between gap-2">
+                <span>
+                  {t(
+                    "Covered by Promo / Member Credit",
+                    "已由配套 / 会员余额全额抵扣"
+                  )}
+                </span>
+                <span className="font-mono font-bold tabular-nums">
+                  {currencySymbol} 0.00
+                </span>
+              </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-3 gap-2 pt-2 border-t border-border">
+              {(
+                [
+                  { id: "CASH", label: t("Cash", "现金"), icon: Banknote },
+                  { id: "DUITNOW_QR", label: "QR", icon: QrCode },
+                  { id: "CARD", label: t("Card", "刷卡"), icon: CreditCard },
+                ] as const
+              ).map((pm) => {
+                const active = paymentMethod === pm.id;
+                return (
+                  <button
+                    key={pm.id}
+                    type="button"
+                    onClick={() => setPaymentMethod(pm.id)}
+                    className={`h-10 sm:h-9 rounded-lg text-xs font-semibold border flex items-center justify-center gap-1.5 cursor-pointer transition-colors ${
+                      active
+                        ? "border-primary bg-accent text-accent-foreground"
+                        : "border-border bg-background text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    <pm.icon className="h-3.5 w-3.5" />
+                    <span>{pm.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
 
           <Input
             placeholder={t("Note (optional)", "备注 (可选)")}
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
-            className="h-9 rounded-lg text-base sm:text-xs"
+            className="h-10 sm:h-9 rounded-lg text-base sm:text-xs"
           />
 
           <div className="hidden md:block pt-1">
@@ -843,7 +941,7 @@ export function DeskCountSalesView({
 
       {/* Receipt Confirmation Modal */}
       <Dialog open={isConfirmOpen} onOpenChange={setIsConfirmOpen}>
-        <DialogContent className="max-w-sm rounded-2xl p-5">
+        <DialogContent className="w-[calc(100%-2rem)] sm:max-w-sm rounded-2xl p-5">
           <DialogHeader>
             <DialogTitle className="text-lg font-bold">
               {t("Confirm Payment", "确认结账")}
@@ -852,7 +950,10 @@ export function DeskCountSalesView({
               {sourceType === "APPOINTMENT"
                 ? activeAppointment?.customerName
                 : selectedMember?.name || walkinName.trim() || t("Walk-in", "散客")}{" "}
-              · {paymentLabel}
+              ·{" "}
+              {netPayableCents === 0
+                ? t("Promo / Credit", "配套 / 储值抵扣")
+                : paymentLabel}
             </DialogDescription>
           </DialogHeader>
 
@@ -886,15 +987,20 @@ export function DeskCountSalesView({
             </div>
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="gap-2.5">
             <Button
               variant="outline"
               onClick={() => setIsConfirmOpen(false)}
               disabled={isPending}
+              className="h-11 sm:h-10 w-full sm:w-auto rounded-xl font-semibold cursor-pointer"
             >
               {t("Back", "返回修改")}
             </Button>
-            <Button onClick={handleFinalizeSale} disabled={isPending} className="gap-1.5">
+            <Button
+              onClick={handleFinalizeSale}
+              disabled={isPending}
+              className="h-11 sm:h-10 w-full sm:w-auto rounded-xl font-bold gap-1.5 cursor-pointer"
+            >
               {isPending && <Loader2 className="h-4 w-4 animate-spin" />}
               <span>{t("Confirm", "完成")}</span>
             </Button>

@@ -9,6 +9,8 @@ import {
 import { formatPrice, toBusinessDateString } from "@/lib/utils";
 import { resolveServiceName } from "@/lib/desk-i18n";
 import type { DeskLanguageMode } from "@/types";
+import type { CustomerReceiptData } from "@/lib/whatsapp";
+import { CustomerReceiptDialog } from "./CustomerReceiptDialog";
 import {
   Dialog,
   DialogContent,
@@ -71,6 +73,8 @@ export function TodaySalesDetailsDialog({
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<ChannelFilter>("ALL");
   const [copied, setCopied] = useState(false);
+  const [selectedReceipt, setSelectedReceipt] =
+    useState<CustomerReceiptData | null>(null);
 
   const fetchForDate = useCallback(
     async (dateToLoad: string) => {
@@ -500,12 +504,25 @@ export function TodaySalesDetailsDialog({
                   </div>
                 </div>
 
-                <div className="text-right shrink-0 space-y-1">
+                <div className="text-right shrink-0 space-y-1.5 flex flex-col items-end">
                   <div className="font-mono font-bold text-sm tabular-nums text-foreground">
                     {formatPrice(item.amountCents, currSym)}
                   </div>
-                  <div className="inline-flex items-center px-2 py-0.5 rounded-md bg-muted text-[11px] font-medium text-muted-foreground">
-                    {paymentLabel(item.paymentMethod)}
+                  <div className="flex items-center gap-1.5">
+                    <div className="inline-flex items-center px-2 py-0.5 rounded-md bg-muted text-[11px] font-medium text-muted-foreground">
+                      {paymentLabel(item.paymentMethod)}
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setSelectedReceipt(item.receipt)}
+                      className="h-7 px-2 rounded-md text-[11px] font-semibold gap-1 cursor-pointer"
+                      title={t("View / Print / WhatsApp Receipt", "查看 / 打印 / 发送收据")}
+                    >
+                      <Receipt className="h-3 w-3 text-primary" />
+                      <span>{t("Receipt", "收据")}</span>
+                    </Button>
                   </div>
                   {item.creditUsedCents > 0 && (
                     <div className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium tabular-nums">
@@ -529,6 +546,14 @@ export function TodaySalesDetailsDialog({
           </Button>
         </DialogFooter>
       </DialogContent>
+
+      <CustomerReceiptDialog
+        receipt={selectedReceipt}
+        open={!!selectedReceipt}
+        onOpenChange={(nextOpen) => !nextOpen && setSelectedReceipt(null)}
+        currencySymbol={currSym}
+        languageMode={languageMode}
+      />
     </Dialog>
   );
 }

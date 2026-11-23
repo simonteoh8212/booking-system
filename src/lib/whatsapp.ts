@@ -1,5 +1,3 @@
-import { format } from "date-fns";
-
 const MERCHANT_WHATSAPP = process.env.NEXT_PUBLIC_MERCHANT_WHATSAPP ?? "";
 
 export interface WhatsAppBookingDetails {
@@ -258,6 +256,8 @@ export function buildEmergencyApologyWhatsAppUrl(details: EmergencyApologyDetail
   let cleanPhone = customerPhone.replace(/\D/g, "");
   if (cleanPhone.startsWith("0")) {
     cleanPhone = "60" + cleanPhone.slice(1);
+  } else if (cleanPhone.startsWith("1") && (cleanPhone.length === 9 || cleanPhone.length === 10)) {
+    cleanPhone = "60" + cleanPhone;
   }
 
   return `https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`;
@@ -355,6 +355,179 @@ export function buildMemberCreditWhatsAppUrl(details: MemberCreditWhatsAppDetail
   let cleanPhone = customerPhone.replace(/\D/g, "");
   if (cleanPhone.startsWith("0")) {
     cleanPhone = "60" + cleanPhone.slice(1);
+  } else if (cleanPhone.startsWith("1") && (cleanPhone.length === 9 || cleanPhone.length === 10)) {
+    cleanPhone = "60" + cleanPhone;
+  }
+
+  return `https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`;
+}
+
+export interface CustomerReceiptLineItem {
+  name: string;
+  originalPriceCents: number;
+  paidPriceCents: number;
+  promoLabel?: string | null;
+}
+
+export interface CustomerReceiptData {
+  referenceCode: string;
+  timestampIso: string;
+  customerName: string;
+  customerPhone?: string | null;
+  items: CustomerReceiptLineItem[];
+  subtotalCents: number;
+  promoDiscountCents?: number;
+  depositPaidCents?: number;
+  creditUsedCents?: number;
+  remainingCreditCents?: number | null;
+  promoSummaries?: string[];
+  totalPaidCents: number;
+  paymentMethod: "CASH" | "DUITNOW_QR" | "CARD" | "OTHER" | string;
+}
+
+export function formatCustomerReceiptText(
+  receipt: CustomerReceiptData,
+  options?: {
+    language?: "en" | "zh";
+    businessName?: string;
+    currencySymbol?: string;
+  }
+): string {
+  const isZh = options?.language === "zh";
+  const businessName =
+    options?.businessName || process.env.NEXT_PUBLIC_BUSINESS_NAME || "Our Salon";
+  const currencySymbol =
+    options?.currencySymbol || process.env.NEXT_PUBLIC_CURRENCY_SYMBOL || "RM";
+  const fmt = (c: number) => `${currencySymbol} ${(c / 100).toFixed(2)}`;
+
+  const dt = new Date(receipt.timestampIso);
+  const formattedDateTime = Number.isNaN(dt.getTime())
+    ? receipt.timestampIso
+    : new Intl.DateTimeFormat(isZh ? "zh-CN" : "en-MY", {
+        timeZone: "Asia/Kuala_Lumpur",
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+        hour12: true,
+      }).format(dt);
+
+  const methodLabel =
+    receipt.paymentMethod === "CASH"
+      ? isZh
+        ? "现金 Cash"
+        : "Cash"
+      : receipt.paymentMethod === "DUITNOW_QR"
+      ? "DuitNow QR"
+      : receipt.paymentMethod === "CARD"
+      ? isZh
+        ? "刷卡 Card"
+        : "Card"
+      : isZh
+      ? "会员储值 / 配套"
+      : "Credit / Promo";
+
+  const lines: string[] = [];
+  lines.push(`🧾 *${businessName}* — ${isZh ? "消费收据" : "Official Receipt"}`);
+  lines.push(`${isZh ? "单号" : "Ref"}: ${receipt.referenceCode}`);
+  lines.push(`${isZh ? "时间" : "Date"}: ${formattedDateTime}`);
+  lines.push(`${isZh ? "顾客" : "Customer"}: ${receipt.customerName}`);
+  lines.push(`--------------------------------`);
+
+  for (const item of receipt.items) {
+    if (item.promoLabel) {
+      lines.push(
+        `• ${item.name}: ${fmt(0)} (${isZh ? "配套抵扣" : "Promo"}: ${item.promoLabel})`
+      );
+    } else {
+      lines.push(`• ${item.name}: ${fmt(item.paidPriceCents)}`);
+    }
+  }
+
+  lines.push(`--------------------------------`);
+
+  const hasDeductions =
+    (receipt.promoDiscountCents ?? 0) > 0 ||
+    (receipt.depositPaidCents ?? 0) > 0 ||
+    (receipt.creditUsedCents ?? 0) > 0;
+
+  if (hasDeductions) {
+    lines.push(`${isZh ? "消费小计" : "Subtotal"}: ${fmt(receipt.subtotalCents)}`);
+    if ((receipt.promoDiscountCents ?? 0) > 0) {
+      lines.push(
+        `${isZh ? "配套抵扣" : "Promo Redeemed"}: -${fmt(receipt.promoDiscountCents ?? 0)}`
+      );
+    }
+    if ((receipt.depositPaidCents ?? 0) > 0) {
+      lines.push(
+        `${isZh ? "已付定金" : "Deposit Paid"}: -${fmt(receipt.depositPaidCents ?? 0)}`
+      );
+    }
+    if ((receipt.creditUsedCents ?? 0) > 0) {
+      lines.push(
+        `${isZh ? "储值扣款" : "Member Credit Used"}: -${fmt(receipt.creditUsedCents ?? 0)}`
+      );
+    }
+  }
+
+  lines.push(
+    `${isZh ? "实付金额" : "Total Paid"}: *${fmt(receipt.totalPaidCents)}* (${methodLabel})`
+  );
+
+  const hasBalances =
+    receipt.remainingCreditCents != null ||
+    (receipt.promoSummaries && receipt.promoSummaries.length > 0);
+
+  if (hasBalances) {
+    lines.push(``);
+    if (receipt.remainingCreditCents != null) {
+      lines.push(
+        `${isZh ? "最新储值余额" : "Remaining Credit"}: *${fmt(receipt.remainingCreditCents)}*`
+      );
+    }
+    if (receipt.promoSummaries && receipt.promoSummaries.length > 0) {
+      lines.push(
+        `${isZh ? "配套余次" : "Promo Balance"}: ${receipt.promoSummaries.join(" · ")}`
+      );
+    }
+  }
+
+  lines.push(``);
+  lines.push(
+    isZh
+      ? `感谢光临 *${businessName}*，期待再次为您服务！`
+      : `Thank you for visiting *${businessName}*! We look forward to seeing you again.`
+  );
+
+  return lines.join("\n");
+}
+
+export function buildCustomerReceiptWhatsAppUrl(
+  receipt: CustomerReceiptData,
+  options?: {
+    phoneOverride?: string;
+    language?: "en" | "zh";
+    businessName?: string;
+    currencySymbol?: string;
+  }
+): string {
+  const msg = formatCustomerReceiptText(receipt, options);
+  const rawPhone = (options?.phoneOverride ?? receipt.customerPhone ?? "").trim();
+  const isPlaceholder = rawPhone.startsWith("WALKIN-");
+  let cleanPhone = isPlaceholder ? "" : rawPhone.replace(/\D/g, "");
+
+  if (cleanPhone.startsWith("0")) {
+    cleanPhone = "60" + cleanPhone.slice(1);
+  } else if (
+    cleanPhone.startsWith("1") &&
+    (cleanPhone.length === 9 || cleanPhone.length === 10)
+  ) {
+    cleanPhone = "60" + cleanPhone;
+  }
+
+  if (!cleanPhone) {
+    return `https://wa.me/?text=${encodeURIComponent(msg)}`;
   }
 
   return `https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`;

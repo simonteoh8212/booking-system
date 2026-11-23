@@ -19,6 +19,7 @@ import { invalidateBookingCache } from "@/lib/booking-cache";
 import { normalizeDeskLanguageMode } from "@/lib/desk-i18n";
 import { revalidatePath } from "next/cache";
 import { getOrEnsurePrimaryDepositSetting } from "./deposit";
+import type { CustomerReceiptData } from "@/lib/whatsapp";
 import type {
   ActionResult,
   BookingStatus,
@@ -427,6 +428,7 @@ export async function recordDeskSale(
     remainingCreditCents: number;
     customerName: string;
     customerPhone: string;
+    receipt?: CustomerReceiptData;
   }>
 > {
   await requireAdmin();
@@ -552,6 +554,7 @@ export async function recordDeskSale(
 
         // Process Promo Session Redemptions atomically
         const redeemedNotes: string[] = [];
+        const promoLabelByServiceId = new Map<string, string>();
         for (const item of itemLineData) {
           if (!item.memberPackageId) continue;
           const decremented = await tx.memberPackage.updateMany({
@@ -583,8 +586,11 @@ export async function recordDeskSale(
               data: { status: "COMPLETED" },
             });
           }
-          redeemedNotes.push(
-            `${updatedPkg?.name || "Promo"} (-1, ${nextRemaining}/${updatedPkg?.totalSessions ?? 0} left)`
+          const summaryStr = `${updatedPkg?.name || "Promo"} (-1, ${nextRemaining}/${updatedPkg?.totalSessions ?? 0} left)`;
+          redeemedNotes.push(summaryStr);
+          promoLabelByServiceId.set(
+            item.serviceId,
+            `${updatedPkg?.name || "Promo"} (${nextRemaining}/${updatedPkg?.totalSessions ?? 0} left)`
           );
         }
 
@@ -763,6 +769,31 @@ export async function recordDeskSale(
           });
         }
 
+        const receipt: CustomerReceiptData = {
+          referenceCode: finalRefCode,
+          timestampIso: new Date().toISOString(),
+          customerName: targetCustomer.name,
+          customerPhone: targetCustomer.phoneNumber,
+          items: itemLineData.map((it) => ({
+            name: it.serviceName,
+            originalPriceCents: it.originalPriceCents,
+            paidPriceCents: it.priceCents,
+            promoLabel: promoLabelByServiceId.get(it.serviceId) ?? null,
+          })),
+          subtotalCents: grossSubtotalCents,
+          promoDiscountCents,
+          depositPaidCents,
+          creditUsedCents: actualCreditUsedCents,
+          remainingCreditCents:
+            targetCustomer.isMember || actualCreditUsedCents > 0 || nextCreditBalance > 0
+              ? nextCreditBalance
+              : null,
+          promoSummaries: redeemedNotes,
+          totalPaidCents: netCashCollectedCents,
+          paymentMethod:
+            netCashCollectedCents > 0 ? paymentMethod : "OTHER",
+        };
+
         return {
           referenceCode: finalRefCode,
           totalCents: netCashCollectedCents,
@@ -770,6 +801,7 @@ export async function recordDeskSale(
           remainingCreditCents: nextCreditBalance,
           customerName: targetCustomer.name,
           customerPhone: targetCustomer.phoneNumber,
+          receipt,
         };
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
@@ -1131,7 +1163,7 @@ export async function getMonthlyFinancialReport(
         where: { title: "其他杂费" },
         data: { title: "Other Misc" },
       });
-    } catch (e) {
+    } catch {
       // ignore
     }
 
@@ -1547,6 +1579,7 @@ export interface TodaySaleItemDto {
   paymentMethod: TodaySalePaymentMethod;
   amountCents: number;
   creditUsedCents: number;
+  receipt: CustomerReceiptData;
 }
 
 export interface TodaySalesDetailsDto {
@@ -1604,9 +1637,27 @@ export async function getTodaySalesDetails(
           status: "COMPLETED",
         },
         include: {
-          customer: { select: { name: true, phoneNumber: true } },
-          service: { select: { name: true } },
-          items: { include: { service: { select: { name: true } } } },
+          customer: {
+            select: {
+              name: true,
+              phoneNumber: true,
+              isMember: true,
+              creditBalanceCents: true,
+            },
+          },
+          service: { select: { name: true, priceCents: true } },
+          items: {
+            include: {
+              service: { select: { name: true, priceCents: true } },
+              memberPackage: {
+                select: {
+                  name: true,
+                  remainingSessions: true,
+                  totalSessions: true,
+                },
+              },
+            },
+          },
         },
         orderBy: { startDatetime: "desc" },
       }),
@@ -1616,8 +1667,21 @@ export async function getTodaySalesDetails(
           cashPaidCents: { gt: 0 },
         },
         include: {
-          customer: { select: { name: true, phoneNumber: true } },
-          memberPackage: { select: { name: true } },
+          customer: {
+            select: {
+              name: true,
+              phoneNumber: true,
+              isMember: true,
+              creditBalanceCents: true,
+            },
+          },
+          memberPackage: {
+            select: {
+              name: true,
+              remainingSessions: true,
+              totalSessions: true,
+            },
+          },
         },
         orderBy: { createdAt: "desc" },
       }),
@@ -1676,6 +1740,63 @@ export async function getTodaySalesDetails(
       const method = detectBookingPaymentMethod(b.notes);
       addChannel(method, b.totalPriceCents);
 
+      const receiptItems =
+        b.items.length > 0
+          ? b.items.map((it) => {
+              const orig = it.originalPriceCents ?? it.service.priceCents ?? it.priceCents;
+              const promoLabel = it.memberPackage
+                ? `${it.memberPackage.name} (${it.memberPackage.remainingSessions}/${it.memberPackage.totalSessions} left)`
+                : null;
+              return {
+                name: it.service.name,
+                originalPriceCents: orig,
+                paidPriceCents: it.priceCents,
+                promoLabel,
+              };
+            })
+          : [
+              {
+                name: b.service?.name || "Service",
+                originalPriceCents:
+                  b.totalPriceCents +
+                  (b.promoDiscountCents ?? 0) +
+                  (b.creditUsedCents ?? 0) +
+                  (b.depositDueCents ?? 0),
+                paidPriceCents: b.totalPriceCents,
+                promoLabel: null,
+              },
+            ];
+
+      const subtotalCents = receiptItems.reduce(
+        (sum, it) => sum + it.originalPriceCents,
+        0
+      );
+      const promoSummaries = b.items
+        .filter((it) => it.memberPackage)
+        .map(
+          (it) =>
+            `${it.memberPackage!.name} (${it.memberPackage!.remainingSessions}/${it.memberPackage!.totalSessions} left)`
+        );
+
+      const receipt: CustomerReceiptData = {
+        referenceCode: b.referenceCode,
+        timestampIso: dt.toISOString(),
+        customerName: b.customer.name,
+        customerPhone: b.customer.phoneNumber,
+        items: receiptItems,
+        subtotalCents,
+        promoDiscountCents: b.promoDiscountCents ?? 0,
+        depositPaidCents: b.depositDueCents ?? 0,
+        creditUsedCents: b.creditUsedCents ?? 0,
+        remainingCreditCents:
+          b.customer.isMember || (b.creditUsedCents ?? 0) > 0
+            ? b.customer.creditBalanceCents
+            : null,
+        promoSummaries,
+        totalPaidCents: b.totalPriceCents,
+        paymentMethod: method,
+      };
+
       return {
         id: b.id,
         source: isWalkin ? "WALKIN" : "BOOKING",
@@ -1688,6 +1809,7 @@ export async function getTodaySalesDetails(
         paymentMethod: method,
         amountCents: b.totalPriceCents,
         creditUsedCents: b.creditUsedCents ?? 0,
+        receipt,
       };
     });
 
@@ -1696,21 +1818,56 @@ export async function getTodaySalesDetails(
       const method = normalizeMemberPaymentMethod(mt.paymentMethod);
       addChannel(method, mt.cashPaidCents);
       const isReload = mt.type === "CREDIT_RELOAD";
+      const refCode = `MEM-${mt.id.slice(-5).toUpperCase()}`;
+      const title = isReload
+        ? "Member Credit Reload"
+        : mt.memberPackage?.name || "Member Promo Package";
+
+      const receipt: CustomerReceiptData = {
+        referenceCode: refCode,
+        timestampIso: dt.toISOString(),
+        customerName: mt.customer.name,
+        customerPhone: mt.customer.phoneNumber,
+        items: [
+          {
+            name: title,
+            originalPriceCents: mt.cashPaidCents,
+            paidPriceCents: mt.cashPaidCents,
+            promoLabel: null,
+          },
+        ],
+        subtotalCents: mt.cashPaidCents,
+        promoDiscountCents: 0,
+        depositPaidCents: 0,
+        creditUsedCents: 0,
+        remainingCreditCents: isReload
+          ? mt.balanceAfterCents
+          : mt.customer.creditBalanceCents > 0
+          ? mt.customer.creditBalanceCents
+          : null,
+        promoSummaries:
+          !isReload && mt.memberPackage
+            ? [
+                `${mt.memberPackage.name} (${mt.memberPackage.remainingSessions}/${mt.memberPackage.totalSessions} left)`,
+              ]
+            : [],
+        totalPaidCents: mt.cashPaidCents,
+        paymentMethod: method,
+      };
 
       return {
         id: mt.id,
         source: isReload ? "MEMBER_RELOAD" : "MEMBER_PROMO",
-        referenceCode: `MEM-${mt.id.slice(-5).toUpperCase()}`,
+        referenceCode: refCode,
         timestampIso: dt.toISOString(),
         timeStr: formatKlTime(dt),
         customerName: mt.customer.name,
         phoneNumber: mt.customer.phoneNumber,
-        title: isReload
-          ? "Member Credit Reload"
-          : mt.memberPackage?.name || "Member Promo Package",
+        title,
         paymentMethod: method,
         amountCents: mt.cashPaidCents,
         creditUsedCents: 0,
+        receipt,
       };
     });
 

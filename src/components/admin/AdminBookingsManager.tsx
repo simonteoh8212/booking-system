@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useTransition, useMemo, useCallback } from "react";
+import { useState, useEffect, useTransition, useMemo, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { format, addDays } from "date-fns";
 import {
@@ -37,7 +37,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { formatPrice, cn, toBusinessDateString, formatSlotTimeRange } from "@/lib/utils";
+import {
+  formatPrice,
+  cn,
+  toBusinessDateString,
+  formatSlotTimeRange,
+  getPhoneSearchVariants,
+} from "@/lib/utils";
 import { useDeskLanguage } from "@/lib/use-desk-language";
 import { createDeskAppointment } from "@/actions/desk";
 import { getAvailableSlots } from "@/actions/booking";
@@ -128,6 +134,13 @@ export function AdminBookingsManager({
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [isEmergencyModalOpen, setIsEmergencyModalOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    };
+  }, []);
 
   const operatingHours = useMemo(() => getOperatingHoursInfo(), []);
   const todayStr = useMemo(() => toBusinessDateString(new Date()), []);
@@ -315,11 +328,13 @@ export function AdminBookingsManager({
 
   function handleSearchSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
     setCurrentPage(1);
     refetchBookings(activeTab, searchQuery, timeframe);
   }
 
   function handleClearSearch() {
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
     setSearchQuery("");
     setHighlightRef(null);
     setCurrentPage(1);
@@ -348,6 +363,11 @@ export function AdminBookingsManager({
 
   async function handleStatusSelect(bookingId: string, newStatus: BookingStatus) {
     if (updatingId) return;
+    if (newStatus === "CANCELLED") {
+      const target = bookings.find((b) => b.id === bookingId);
+      if (target) setCancelModalBooking(target);
+      return;
+    }
     setUpdatingId(bookingId);
 
     try {
@@ -398,11 +418,12 @@ export function AdminBookingsManager({
   const filteredBookings = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     if (!q) return bookings;
+    const phoneVariants = getPhoneSearchVariants(searchQuery);
     return bookings.filter(
       (b) =>
         b.referenceCode.toLowerCase().includes(q) ||
         b.customer.name.toLowerCase().includes(q) ||
-        b.customer.phoneNumber.includes(q) ||
+        phoneVariants.some((variant) => b.customer.phoneNumber.includes(variant)) ||
         b.service.name.toLowerCase().includes(q)
     );
   }, [bookings, searchQuery]);
@@ -424,7 +445,13 @@ export function AdminBookingsManager({
           new Date(b.startDatetime),
           "d MMM yyyy, h:mm a"
         )}.`;
-    return `https://wa.me/${b.customer.phoneNumber.replace(/\D/g, "")}?text=${encodeURIComponent(msg)}`;
+    let digits = b.customer.phoneNumber.replace(/\D/g, "");
+    if (digits.startsWith("0")) {
+      digits = "60" + digits.slice(1);
+    } else if (digits.startsWith("1") && digits.length >= 9 && digits.length <= 10) {
+      digits = "60" + digits;
+    }
+    return `https://wa.me/${digits}?text=${encodeURIComponent(msg)}`;
   }
 
   return (
@@ -488,7 +515,7 @@ export function AdminBookingsManager({
               type="button"
               onClick={() => handleTabChange(tab.id)}
               className={cn(
-                "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors shrink-0 cursor-pointer border",
+                "flex items-center gap-1.5 h-10 sm:h-8 px-3.5 rounded-lg text-xs font-semibold transition-colors shrink-0 cursor-pointer border",
                 isActive
                   ? "bg-primary text-primary-foreground border-primary"
                   : "bg-card hover:bg-muted text-muted-foreground hover:text-foreground border-border"
@@ -511,18 +538,23 @@ export function AdminBookingsManager({
         })}
       </div>
 
-      {/* Search & Timeframe */}
+      {/* Search & Timeframe (250ms live debounced server search) */}
       <form onSubmit={handleSearchSubmit} className="flex flex-col sm:flex-row gap-2">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
           <Input
             value={searchQuery}
             onChange={(e) => {
-              setSearchQuery(e.target.value);
+              const val = e.target.value;
+              setSearchQuery(val);
               setCurrentPage(1);
+              if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+              searchDebounceRef.current = setTimeout(() => {
+                refetchBookings(activeTab, val, timeframe);
+              }, 250);
             }}
             placeholder={t("Search reference, name, or phone…", "搜索单号、姓名或手机号…")}
-            className="pl-9 pr-9 h-9 rounded-lg bg-card text-base sm:text-sm"
+            className="pl-9 pr-9 h-10 sm:h-9 rounded-lg bg-card text-base sm:text-sm"
           />
           {searchQuery && (
             <button
@@ -536,43 +568,31 @@ export function AdminBookingsManager({
           )}
         </div>
 
-        <div className="flex items-center gap-2">
-          <Select
-            value={timeframe}
-            onValueChange={(val) => {
-              if (val) handleTimeframeChange(val as BookingTimeframe);
-            }}
-          >
-            <SelectTrigger className="w-[140px] sm:w-[155px] h-9 rounded-lg bg-card text-xs font-semibold shrink-0 cursor-pointer">
-              <CalendarDays className="h-3.5 w-3.5 mr-1.5 text-muted-foreground shrink-0" />
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="6_MONTHS" className="text-xs">
-                {t("Past 6 Months", "近 6 个月")}
-              </SelectItem>
-              <SelectItem value="30_DAYS" className="text-xs">
-                {t("Past 30 Days", "近 30 天")}
-              </SelectItem>
-              <SelectItem value="THIS_YEAR" className="text-xs">
-                {t("This Year", "今年")}
-              </SelectItem>
-              <SelectItem value="ALL_TIME" className="text-xs">
-                {t("All Time", "全部记录")}
-              </SelectItem>
-            </SelectContent>
-          </Select>
-
-          <Button
-            type="submit"
-            size="sm"
-            variant="secondary"
-            disabled={isPending}
-            className="h-9 px-3.5 text-xs font-semibold rounded-lg cursor-pointer shrink-0"
-          >
-            {isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : t("Search", "搜索")}
-          </Button>
-        </div>
+        <Select
+          value={timeframe}
+          onValueChange={(val) => {
+            if (val) handleTimeframeChange(val as BookingTimeframe);
+          }}
+        >
+          <SelectTrigger className="w-full sm:w-[160px] h-10 sm:h-9 rounded-lg bg-card text-xs font-semibold shrink-0 cursor-pointer">
+            <CalendarDays className="h-3.5 w-3.5 mr-1.5 text-muted-foreground shrink-0" />
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="6_MONTHS" className="text-xs">
+              {t("Past 6 Months", "近 6 个月")}
+            </SelectItem>
+            <SelectItem value="30_DAYS" className="text-xs">
+              {t("Past 30 Days", "近 30 天")}
+            </SelectItem>
+            <SelectItem value="THIS_YEAR" className="text-xs">
+              {t("This Year", "今年")}
+            </SelectItem>
+            <SelectItem value="ALL_TIME" className="text-xs">
+              {t("All Time", "全部记录")}
+            </SelectItem>
+          </SelectContent>
+        </Select>
       </form>
 
       {/* Mobile List (< md) */}
@@ -626,6 +646,11 @@ export function AdminBookingsManager({
                     <div className="text-xs text-muted-foreground mt-0.5 truncate">
                       {b.service.name} · {format(new Date(b.startDatetime), "d MMM, h:mm a")}
                     </div>
+                    {b.notes && (
+                      <div className="text-[11px] text-muted-foreground/85 mt-0.5 truncate">
+                        {b.notes}
+                      </div>
+                    )}
                   </div>
                   <BookingStatusBadge
                     status={b.status}
@@ -635,31 +660,37 @@ export function AdminBookingsManager({
                 </div>
 
                 <div className="flex items-center justify-between gap-2 pt-1">
-                  <div className="flex items-center gap-3 text-xs">
-                    <span className="font-semibold text-foreground tabular-nums">
+                  <div className="flex items-center gap-3 text-xs min-w-0">
+                    <span className="font-semibold text-foreground tabular-nums shrink-0">
                       {formatPrice(b.totalPriceCents, currencySymbol)}
                     </span>
-                    <a
-                      href={buildWhatsappUrl(b)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-primary hover:underline inline-flex items-center gap-1 font-medium"
-                    >
-                      <Phone className="h-3 w-3" />
-                      <span>{b.customer.phoneNumber}</span>
-                    </a>
+                    {b.customer.phoneNumber.startsWith("WALKIN-") ? (
+                      <span className="text-muted-foreground text-[11px]">
+                        {t("Walk-in", "散客")}
+                      </span>
+                    ) : (
+                      <a
+                        href={buildWhatsappUrl(b)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-emerald-600 dark:text-emerald-400 hover:underline inline-flex items-center gap-1 font-medium truncate"
+                      >
+                        <MessageCircle className="h-3.5 w-3.5 shrink-0" />
+                        <span className="font-mono truncate">{b.customer.phoneNumber}</span>
+                      </a>
+                    )}
                   </div>
 
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex items-center gap-2 shrink-0">
                     {isPendingBooking && (
                       <Button
                         size="sm"
                         disabled={isRowUpdating}
                         onClick={() => handleQuickConfirm(b)}
-                        className="h-7 px-2.5 text-xs font-semibold"
+                        className="h-10 px-3 text-xs font-semibold rounded-lg cursor-pointer"
                       >
                         {isRowUpdating ? (
-                          <Loader2 className="h-3 w-3 animate-spin" />
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
                         ) : (
                           t("Confirm", "确认")
                         )}
@@ -671,7 +702,7 @@ export function AdminBookingsManager({
                       onValueChange={(val) => handleStatusSelect(b.id, val as BookingStatus)}
                       disabled={isRowUpdating}
                     >
-                      <SelectTrigger className="w-24 h-7 text-xs bg-background">
+                      <SelectTrigger className="w-28 h-10 text-xs bg-background rounded-lg">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -682,6 +713,19 @@ export function AdminBookingsManager({
                         ))}
                       </SelectContent>
                     </Select>
+
+                    {(b.status === "PENDING" || b.status === "CONFIRMED") && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setCancelModalBooking(b)}
+                        className="h-10 w-10 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg cursor-pointer"
+                        title={t("Cancel booking", "取消预约")}
+                        aria-label={t("Cancel booking", "取消预约")}
+                      >
+                        <XCircle className="h-4 w-4" />
+                      </Button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -788,15 +832,21 @@ export function AdminBookingsManager({
                           <User className="h-3 w-3 text-muted-foreground shrink-0" />
                           <span>{b.customer.name}</span>
                         </p>
-                        <a
-                          href={buildWhatsappUrl(b)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-[11px] text-primary font-medium inline-flex items-center gap-1 hover:underline"
-                        >
-                          <Phone className="h-3 w-3" />
-                          <span>{b.customer.phoneNumber}</span>
-                        </a>
+                        {b.customer.phoneNumber.startsWith("WALKIN-") ? (
+                          <span className="text-[11px] text-muted-foreground">
+                            {t("Walk-in", "散客")}
+                          </span>
+                        ) : (
+                          <a
+                            href={buildWhatsappUrl(b)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-[11px] text-primary font-medium inline-flex items-center gap-1 hover:underline"
+                          >
+                            <Phone className="h-3 w-3" />
+                            <span>{b.customer.phoneNumber}</span>
+                          </a>
+                        )}
                       </div>
                     </TableCell>
 
@@ -866,16 +916,18 @@ export function AdminBookingsManager({
 
                     <TableCell className="align-middle text-right pr-4">
                       <div className="flex items-center justify-end gap-1.5">
-                        <a
-                          href={buildWhatsappUrl(b)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="p-1.5 rounded-lg border border-border text-primary hover:bg-muted transition-colors"
-                          title="WhatsApp"
-                          aria-label="WhatsApp"
-                        >
-                          <MessageCircle className="h-3.5 w-3.5" />
-                        </a>
+                        {!b.customer.phoneNumber.startsWith("WALKIN-") && (
+                          <a
+                            href={buildWhatsappUrl(b)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="p-1.5 rounded-lg border border-border text-primary hover:bg-muted transition-colors"
+                            title="WhatsApp"
+                            aria-label="WhatsApp"
+                          >
+                            <MessageCircle className="h-3.5 w-3.5" />
+                          </a>
+                        )}
 
                         {isPendingBooking && (
                           <Button
@@ -1012,7 +1064,7 @@ export function AdminBookingsManager({
 
       {/* Cancel Confirmation Dialog */}
       <Dialog open={!!cancelModalBooking} onOpenChange={(open) => !open && setCancelModalBooking(null)}>
-        <DialogContent className="max-w-md rounded-2xl">
+        <DialogContent className="w-[calc(100%-2rem)] sm:max-w-md rounded-2xl">
           <DialogHeader>
             <DialogTitle className="text-destructive flex items-center gap-2">
               <XCircle className="h-5 w-5" />
@@ -1049,7 +1101,7 @@ export function AdminBookingsManager({
               variant="outline"
               size="sm"
               onClick={() => setCancelModalBooking(null)}
-              className="text-xs"
+              className="h-10 sm:h-9 w-full sm:w-auto text-xs font-semibold cursor-pointer"
             >
               {t("Keep", "保留")}
             </Button>
@@ -1058,7 +1110,7 @@ export function AdminBookingsManager({
               size="sm"
               disabled={!!updatingId}
               onClick={handleConfirmCancel}
-              className="text-xs gap-1"
+              className="h-10 sm:h-9 w-full sm:w-auto text-xs font-semibold gap-1.5 cursor-pointer"
             >
               {updatingId && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
               {t("Cancel Booking", "确认取消")}
@@ -1189,7 +1241,16 @@ export function AdminBookingsManager({
               </div>
 
               <div className="space-y-1.5 min-w-0">
-                <Label className="text-xs font-semibold">{t("Time Slot", "时段")} *</Label>
+                <div className="flex flex-wrap items-center justify-between gap-1.5">
+                  <Label className="text-xs font-semibold whitespace-nowrap">
+                    {t("Time Slot", "时段")} *
+                  </Label>
+                  {!isLoadingSlots && availableSlots.length > 0 && (
+                    <span className="inline-flex items-center px-2 h-5 rounded-full text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 tabular-nums shrink-0">
+                      {availableSlots.length} {t("available", "个可选")}
+                    </span>
+                  )}
+                </div>
 
                 {isLoadingSlots ? (
                   <div className="h-10 rounded-lg border border-dashed flex items-center justify-center text-xs text-muted-foreground bg-muted/30">

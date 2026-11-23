@@ -268,6 +268,8 @@ export function MemberManager({
   const [promoServiceIds, setPromoServiceIds] = useState<string[]>([]);
   const [promoValidityMonths, setPromoValidityMonths] = useState<string>("");
   const [promoIsActive, setPromoIsActive] = useState(true);
+  const [boundMembersPromoTarget, setBoundMembersPromoTarget] =
+    useState<PromoPackageDto | null>(null);
 
   const serviceNameMap = new Map(services.map((s) => [s.id, s.name]));
 
@@ -440,6 +442,8 @@ export function MemberManager({
           setAssignTarget(null);
           assignIdempotencyKeyRef.current = null;
           refreshMembers();
+          const promoListRes = await getPromoPackages();
+          if (promoListRes.success) setPromos(promoListRes.data);
           if (detailTarget?.id === targetId) await refreshOpenDetail(targetId);
         } else {
           toast.error(res.error);
@@ -463,6 +467,15 @@ export function MemberManager({
           `${pkgName}: ${res.data.remainingSessions}/${res.data.totalSessions}`
         );
         refreshMembers();
+        const promoListRes = await getPromoPackages();
+        if (promoListRes.success) {
+          setPromos(promoListRes.data);
+          setBoundMembersPromoTarget((prev) =>
+            prev
+              ? promoListRes.data.find((p) => p.id === prev.id) ?? null
+              : null
+          );
+        }
         if (detailTarget?.id === customerId) await refreshOpenDetail(customerId);
       } else {
         toast.error(res.error);
@@ -626,6 +639,14 @@ export function MemberManager({
   }
 
   function openEditPromo(p: PromoPackageDto) {
+    if ((p.boundCount ?? 0) > 0) {
+      toast.error(
+        isZh
+          ? `该配套已绑定 ${p.boundCount} 位会员，条款已锁定。请新建配套。`
+          : `Locked: already bound to ${p.boundCount} member(s). Create a new promo for different terms.`
+      );
+      return;
+    }
     setEditPromoTarget(p);
     setPromoName(p.name);
     setPromoDesc(p.description || "");
@@ -700,48 +721,68 @@ export function MemberManager({
   }
 
   return (
-    <div className="space-y-5">
-      <h1 className="text-xl sm:text-2xl font-bold tracking-tight">
-        {isZh ? "会员与配套" : "Members & Promos"}
-      </h1>
+    <div className="space-y-4 sm:space-y-5">
+      <div className="flex items-center justify-between gap-3">
+        <h1 className="text-xl sm:text-2xl font-bold tracking-tight">
+          {isZh ? "会员与配套" : "Members & Promos"}
+        </h1>
 
-      {/* Shop-Wide Member Credit & Package KPI Strip */}
-      <div className="rounded-xl border border-border bg-card grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-border">
-        <div className="p-4 flex flex-col justify-between gap-1">
-          <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-            {isZh ? "会员未消费储值总额" : "Total Outstanding Credit"}
-          </span>
-          <div className="text-xl sm:text-2xl font-bold font-mono tabular-nums text-primary">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={handleRunTallyCheck}
+          disabled={isCheckingTally}
+          className="h-9 sm:h-8 px-3 rounded-lg text-xs font-semibold gap-1.5 cursor-pointer bg-card shrink-0"
+        >
+          {isCheckingTally ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+          ) : (
+            <ShieldCheck className="h-3.5 w-3.5 text-primary" />
+          )}
+          <span>{isZh ? "核对账目" : "Tally Check"}</span>
+        </Button>
+      </div>
+
+      {/* Shop-Wide Member Credit & Package KPI Strip (Compact 2-row grid on mobile, 3-col on desktop) */}
+      <div className="rounded-xl border border-border bg-card grid grid-cols-2 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-border overflow-hidden">
+        <div className="col-span-2 sm:col-span-1 p-3.5 sm:p-4 flex sm:flex-col items-center sm:items-start justify-between gap-2 sm:gap-1">
+          <div>
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground block">
+              {isZh ? "会员未消费储值总额" : "Total Outstanding Credit"}
+            </span>
+            <span className="text-xs text-muted-foreground tabular-nums">
+              {isZh
+                ? `${creditSummary.membersWithCreditCount} 位会员仍有余额`
+                : `${creditSummary.membersWithCreditCount} members with credit`}
+            </span>
+          </div>
+          <div className="text-xl sm:text-2xl font-bold font-mono tabular-nums text-primary whitespace-nowrap">
             {formatPrice(creditSummary.totalOutstandingCreditCents, currencySymbol)}
           </div>
-          <span className="text-xs text-muted-foreground tabular-nums">
-            {isZh
-              ? `${creditSummary.membersWithCreditCount} 位会员仍有余额`
-              : `${creditSummary.membersWithCreditCount} members with credit`}
-          </span>
         </div>
 
-        <div className="p-4 flex flex-col justify-between gap-1">
-          <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+        <div className="p-3 sm:p-4 flex flex-col justify-between gap-0.5 sm:gap-1 border-r sm:border-r-0 border-border">
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground truncate">
             {isZh ? "活跃会员数" : "Active Members"}
           </span>
-          <div className="text-xl sm:text-2xl font-bold font-mono tabular-nums text-foreground">
+          <div className="text-lg sm:text-2xl font-bold font-mono tabular-nums text-foreground">
             {creditSummary.totalMembers}
           </div>
-          <span className="text-xs text-muted-foreground">
-            {isZh ? "已登记会员账户" : "Registered member profiles"}
+          <span className="text-[11px] sm:text-xs text-muted-foreground truncate">
+            {isZh ? "已登记会员账户" : "Registered profiles"}
           </span>
         </div>
 
-        <div className="p-4 flex flex-col justify-between gap-1">
-          <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-            {isZh ? "配套剩余总次数" : "Remaining Promo Sessions"}
+        <div className="p-3 sm:p-4 flex flex-col justify-between gap-0.5 sm:gap-1">
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground truncate">
+            {isZh ? "配套剩余总次数" : "Remaining Sessions"}
           </span>
-          <div className="text-xl sm:text-2xl font-bold font-mono tabular-nums text-foreground">
+          <div className="text-lg sm:text-2xl font-bold font-mono tabular-nums text-foreground">
             {creditSummary.totalRemainingSessions}
           </div>
-          <span className="text-xs text-muted-foreground">
-            {isZh ? "有效配套可核销次数" : "Active package sessions"}
+          <span className="text-[11px] sm:text-xs text-muted-foreground truncate">
+            {isZh ? "有效配套可核销次数" : "Active promo sessions"}
           </span>
         </div>
       </div>
@@ -760,8 +801,8 @@ export function MemberManager({
           >
             <Users className="h-3.5 w-3.5" />
             <span>{isZh ? "会员列表" : "Members"}</span>
-            <span className="font-mono text-[11px] text-muted-foreground">
-              {members.length}
+            <span className="font-mono text-[11px] text-muted-foreground tabular-nums">
+              {totalMembers}
             </span>
           </button>
           <button
@@ -909,7 +950,7 @@ export function MemberManager({
                 </button>
               )}
             </div>
-            <label className="flex items-center gap-2 text-xs font-medium text-muted-foreground cursor-pointer select-none px-3 h-9 rounded-lg border border-border bg-card">
+            <label className="flex items-center gap-2 text-xs font-medium text-muted-foreground cursor-pointer select-none px-3 h-10 sm:h-9 rounded-lg border border-border bg-card shrink-0">
               <input
                 type="checkbox"
                 checked={includeNonMembers}
@@ -925,21 +966,6 @@ export function MemberManager({
               />
               <span>{isZh ? "包含散客" : "Include walk-ins"}</span>
             </label>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={handleRunTallyCheck}
-              disabled={isCheckingTally}
-              className="h-9 px-3 rounded-lg text-xs font-semibold gap-1.5 cursor-pointer bg-card"
-            >
-              {isCheckingTally ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
-              ) : (
-                <ShieldCheck className="h-3.5 w-3.5 text-primary" />
-              )}
-              <span>{isZh ? "核对账目" : "Tally Check"}</span>
-            </Button>
           </div>
 
           {lastReloadReceipt && !lastReloadReceipt.phone.startsWith("WALKIN-") && (
@@ -1305,29 +1331,72 @@ export function MemberManager({
                   </div>
 
                   <div className="flex items-center justify-between pt-2.5 border-t border-border text-xs text-muted-foreground">
-                    <span>
-                      {promo.validityMonths
-                        ? isZh
-                          ? `有效期 ${promo.validityMonths} 个月`
-                          : `${promo.validityMonths} months validity`
-                        : isZh
-                        ? "永久有效"
-                        : "No expiry"}
-                    </span>
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span>
+                        {promo.validityMonths
+                          ? isZh
+                            ? `有效期 ${promo.validityMonths} 个月`
+                            : `${promo.validityMonths} months validity`
+                          : isZh
+                          ? "永久有效"
+                          : "No expiry"}
+                      </span>
+                      {(promo.boundCount ?? 0) > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setBoundMembersPromoTarget(promo)}
+                          title={
+                            isZh
+                              ? "点击查看绑定会员与剩余次数"
+                              : "Click to view bound members & remaining sessions"
+                          }
+                          className="inline-flex items-center gap-1 rounded-md border border-border bg-secondary px-2 py-0.5 text-[11px] font-medium text-secondary-foreground tabular-nums hover:border-primary/40 hover:bg-primary/10 hover:text-primary transition-colors cursor-pointer"
+                        >
+                          <Users className="h-3 w-3 shrink-0" />
+                          <span>
+                            {isZh
+                              ? `已绑定 ${promo.boundCount} 人 · 已锁定`
+                              : `${promo.boundCount} bound · Locked`}
+                          </span>
+                        </button>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1.5">
                       <Button
                         size="icon"
                         variant="ghost"
+                        disabled={(promo.boundCount ?? 0) > 0}
                         onClick={() => openEditPromo(promo)}
-                        className="h-7 w-7 cursor-pointer"
+                        title={
+                          (promo.boundCount ?? 0) > 0
+                            ? isZh
+                              ? "已绑定会员，条款已锁定"
+                              : "Locked: already bound to members"
+                            : isZh
+                            ? "编辑配套"
+                            : "Edit promo"
+                        }
+                        aria-label={isZh ? "编辑配套" : "Edit promo"}
+                        className="h-10 w-10 sm:h-8 sm:w-8 cursor-pointer disabled:opacity-35"
                       >
                         <Pencil className="h-3.5 w-3.5" />
                       </Button>
                       <Button
                         size="icon"
                         variant="ghost"
+                        disabled={(promo.activeBoundCount ?? 0) > 0}
                         onClick={() => handleDeletePromo(promo.id)}
-                        className="h-7 w-7 text-destructive hover:bg-destructive/10 cursor-pointer"
+                        title={
+                          (promo.activeBoundCount ?? 0) > 0
+                            ? isZh
+                              ? "仍有会员持有剩余次数，不可删除"
+                              : "Cannot delete: members still have active sessions"
+                            : isZh
+                            ? "删除配套"
+                            : "Delete promo"
+                        }
+                        aria-label={isZh ? "删除配套" : "Delete promo"}
+                        className="h-10 w-10 sm:h-8 sm:w-8 text-destructive hover:bg-destructive/10 cursor-pointer disabled:opacity-35"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </Button>
@@ -1796,7 +1865,7 @@ export function MemberManager({
       {/* DIALOG: RELOAD CREDIT                                             */}
       {/* ================================================================= */}
       <Dialog open={!!reloadTarget} onOpenChange={(o) => !o && setReloadTarget(null)}>
-        <DialogContent className="max-w-md rounded-xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="w-[calc(100%-2rem)] sm:max-w-md rounded-2xl max-h-[90vh] overflow-y-auto overflow-x-hidden">
           <DialogHeader>
             <DialogTitle>
               {isZh ? "会员充值" : "Reload Credit"} — {reloadTarget?.name}
@@ -1818,7 +1887,7 @@ export function MemberManager({
                     key={amt}
                     type="button"
                     onClick={() => setReloadAmountStr(amt)}
-                    className={`py-2 rounded-lg text-xs font-semibold border cursor-pointer tabular-nums ${
+                    className={`h-10 sm:h-9 rounded-lg text-xs font-semibold border cursor-pointer tabular-nums ${
                       reloadAmountStr === amt
                         ? "border-primary bg-accent text-accent-foreground"
                         : "bg-card hover:bg-muted"
@@ -1834,7 +1903,7 @@ export function MemberManager({
                 step="0.01"
                 value={reloadAmountStr}
                 onChange={(e) => setReloadAmountStr(e.target.value)}
-                className="font-mono font-semibold"
+                className="h-10 font-mono font-semibold"
               />
             </div>
 
@@ -1848,15 +1917,45 @@ export function MemberManager({
                 step="0.01"
                 value={bonusCreditStr}
                 onChange={(e) => setBonusCreditStr(e.target.value)}
-                className="font-mono"
+                className="h-10 font-mono"
               />
             </div>
 
-            <div className="p-3 rounded-lg border border-border bg-muted/30 space-y-2">
+            {/* Live New Balance Preview (Tesler's Law / Cognitive Load) */}
+            {(() => {
+              const currentCents = reloadTarget?.creditBalanceCents || 0;
+              const reloadCents = Math.max(
+                0,
+                Math.round((parseFloat(reloadAmountStr) || 0) * 100)
+              );
+              const bonusCents = Math.max(
+                0,
+                Math.round((parseFloat(bonusCreditStr) || 0) * 100)
+              );
+              const addedTotalCents = reloadCents + bonusCents;
+              const newBalanceCents = currentCents + addedTotalCents;
+              return (
+                <div className="px-3.5 py-2.5 rounded-xl border border-primary/25 bg-primary/5 flex items-center justify-between gap-2 text-xs tabular-nums">
+                  <span className="text-muted-foreground">
+                    {isZh ? "充值后预计余额" : "New Balance After Reload"}
+                    {bonusCents > 0
+                      ? isZh
+                        ? ` (含赠 ${formatPrice(bonusCents, currencySymbol)})`
+                        : ` (incl. +${formatPrice(bonusCents, currencySymbol)} bonus)`
+                      : ""}
+                  </span>
+                  <span className="font-mono font-bold text-sm text-primary">
+                    {formatPrice(newBalanceCents, currencySymbol)}
+                  </span>
+                </div>
+              );
+            })()}
+
+            <div className="p-3 rounded-xl border border-border bg-muted/30 space-y-2">
               <Label className="text-xs font-semibold">
                 {isZh ? "赠送免费服务" : "Free Bonus Service"}
               </Label>
-              <div className="grid grid-cols-2 gap-1.5 max-h-32 overflow-y-auto">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-36 overflow-y-auto">
                 {services
                   .filter((s) => s.type !== "PRODUCT")
                   .map((s) => {
@@ -1864,7 +1963,7 @@ export function MemberManager({
                     return (
                       <label
                         key={s.id}
-                        className={`flex items-center gap-2 p-2 rounded-md border text-xs cursor-pointer ${
+                        className={`flex items-center gap-2 p-2.5 sm:p-2 rounded-lg border text-xs cursor-pointer ${
                           checked ? "border-primary bg-accent font-medium" : "bg-card"
                         }`}
                       >
@@ -1900,7 +1999,7 @@ export function MemberManager({
                     key={pm}
                     type="button"
                     onClick={() => setReloadPaymentMethod(pm)}
-                    className={`py-2 rounded-lg text-xs font-semibold border cursor-pointer ${
+                    className={`h-10 sm:h-9 rounded-lg text-xs font-semibold border cursor-pointer ${
                       reloadPaymentMethod === pm
                         ? "border-primary bg-accent text-accent-foreground"
                         : "bg-card text-muted-foreground"
@@ -1926,15 +2025,23 @@ export function MemberManager({
               value={reloadNotes}
               onChange={(e) => setReloadNotes(e.target.value)}
               placeholder={isZh ? "备注（选填）" : "Note (optional)"}
-              className="text-xs"
+              className="h-10 text-xs"
             />
           </div>
 
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setReloadTarget(null)}>
+          <DialogFooter className="gap-2.5">
+            <Button
+              variant="outline"
+              onClick={() => setReloadTarget(null)}
+              className="h-10 sm:h-9 w-full sm:w-auto cursor-pointer"
+            >
               {isZh ? "取消" : "Cancel"}
             </Button>
-            <Button onClick={handleConfirmReload} disabled={isPending}>
+            <Button
+              onClick={handleConfirmReload}
+              disabled={isPending}
+              className="h-10 sm:h-9 w-full sm:w-auto cursor-pointer"
+            >
               {isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               {isZh ? "确认充值" : "Confirm"}
             </Button>
@@ -1946,11 +2053,17 @@ export function MemberManager({
       {/* DIALOG: BIND PROMO                                                */}
       {/* ================================================================= */}
       <Dialog open={!!assignTarget} onOpenChange={(o) => !o && setAssignTarget(null)}>
-        <DialogContent className="max-w-md rounded-xl">
+        <DialogContent className="w-[calc(100%-2rem)] sm:max-w-md rounded-2xl">
           <DialogHeader>
             <DialogTitle>
               {isZh ? "绑定配套" : "Bind Promo"} — {assignTarget?.name}
             </DialogTitle>
+            <DialogDescription className="text-xs tabular-nums">
+              {isZh ? "可用储值余额：" : "Available credit: "}
+              <span className="font-mono font-semibold text-foreground">
+                {formatPrice(assignTarget?.creditBalanceCents || 0, currencySymbol)}
+              </span>
+            </DialogDescription>
           </DialogHeader>
 
           {promos.length === 0 ? (
@@ -2007,54 +2120,96 @@ export function MemberManager({
                 </span>
               </label>
 
-              <div className="grid grid-cols-4 gap-2">
-                {(["DUITNOW_QR", "CASH", "CARD", "CREDIT"] as const).map((pm) => (
-                  <button
-                    key={pm}
-                    type="button"
-                    onClick={() => setAssignPaymentMethod(pm)}
-                    className={`py-2 rounded-lg text-xs font-semibold border cursor-pointer ${
-                      assignPaymentMethod === pm
-                        ? "border-primary bg-accent text-accent-foreground"
-                        : "bg-card text-muted-foreground"
-                    }`}
-                  >
-                    {pm === "DUITNOW_QR"
-                      ? isZh
-                        ? "扫码"
-                        : "QR"
-                      : pm === "CASH"
-                      ? isZh
-                        ? "现金"
-                        : "Cash"
-                      : pm === "CARD"
-                      ? isZh
-                        ? "刷卡"
-                        : "Card"
-                      : isZh
-                      ? "储值扣款"
-                      : "Credit"}
-                  </button>
-                ))}
-              </div>
+              {(() => {
+                const selectedPromoObj = promos.find((p) => p.id === selectedPromoId);
+                const promoPriceCents = selectedPromoObj?.priceCents ?? 0;
+                const memberCreditCents = assignTarget?.creditBalanceCents ?? 0;
+                const canPayWithCredit = memberCreditCents >= promoPriceCents;
+
+                return (
+                  <div className="space-y-1.5">
+                    <div className="grid grid-cols-4 gap-2">
+                      {(["DUITNOW_QR", "CASH", "CARD", "CREDIT"] as const).map((pm) => {
+                        const isCreditDisabled = pm === "CREDIT" && !canPayWithCredit;
+                        return (
+                          <button
+                            key={pm}
+                            type="button"
+                            disabled={isCreditDisabled}
+                            onClick={() => setAssignPaymentMethod(pm)}
+                            title={
+                              isCreditDisabled
+                                ? isZh
+                                  ? "储值余额不足"
+                                  : "Insufficient credit balance"
+                                : undefined
+                            }
+                            className={`h-10 sm:h-9 rounded-lg text-xs font-semibold border transition-colors ${
+                              isCreditDisabled
+                                ? "bg-muted/40 text-muted-foreground/40 border-border/50 cursor-not-allowed"
+                                : assignPaymentMethod === pm
+                                ? "border-primary bg-accent text-accent-foreground cursor-pointer"
+                                : "bg-card text-muted-foreground hover:text-foreground cursor-pointer"
+                            }`}
+                          >
+                            {pm === "DUITNOW_QR"
+                              ? isZh
+                                ? "扫码"
+                                : "QR"
+                              : pm === "CASH"
+                              ? isZh
+                                ? "现金"
+                                : "Cash"
+                              : pm === "CARD"
+                              ? isZh
+                                ? "刷卡"
+                                : "Card"
+                              : isZh
+                              ? "储值"
+                              : "Credit"}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {!canPayWithCredit && promoPriceCents > 0 && (
+                      <p className="text-[11px] text-muted-foreground tabular-nums">
+                        {isZh
+                          ? `储值余额不足以支付此配套（需 ${formatPrice(promoPriceCents, currencySymbol)}）`
+                          : `Credit option requires ${formatPrice(promoPriceCents, currencySymbol)} balance`}
+                      </p>
+                    )}
+                  </div>
+                );
+              })()}
 
               <Input
                 value={assignNotes}
                 onChange={(e) => setAssignNotes(e.target.value)}
                 placeholder={isZh ? "备注（选填）" : "Note (optional)"}
-                className="text-xs"
+                className="h-10 text-xs"
               />
             </div>
           )}
 
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setAssignTarget(null)}>
+          <DialogFooter className="gap-2.5">
+            <Button
+              variant="outline"
+              onClick={() => setAssignTarget(null)}
+              className="h-10 sm:h-9 w-full sm:w-auto cursor-pointer"
+            >
               {isZh ? "取消" : "Cancel"}
             </Button>
             {promos.length > 0 && (
               <Button
                 onClick={handleConfirmAssignPromo}
-                disabled={isPending || !selectedPromoId}
+                disabled={
+                  isPending ||
+                  !selectedPromoId ||
+                  (assignPaymentMethod === "CREDIT" &&
+                    (assignTarget?.creditBalanceCents ?? 0) <
+                      (promos.find((p) => p.id === selectedPromoId)?.priceCents ?? 0))
+                }
+                className="h-10 sm:h-9 w-full sm:w-auto cursor-pointer"
               >
                 {isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
                 {isZh ? "确认绑定" : "Confirm"}
@@ -2068,7 +2223,7 @@ export function MemberManager({
       {/* DIALOG: PROMO TEMPLATE CREATE / EDIT                              */}
       {/* ================================================================= */}
       <Dialog open={promoDialogOpen} onOpenChange={setPromoDialogOpen}>
-        <DialogContent className="max-w-md rounded-xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="w-[calc(100%-2rem)] sm:max-w-md rounded-2xl max-h-[90vh] overflow-y-auto overflow-x-hidden">
           <DialogHeader>
             <DialogTitle>
               {editPromoTarget
@@ -2125,13 +2280,13 @@ export function MemberManager({
               <Label className="text-xs font-semibold">
                 {isZh ? "适用服务 *" : "Eligible Services *"}
               </Label>
-              <div className="grid grid-cols-2 gap-1.5 max-h-40 overflow-y-auto">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-40 overflow-y-auto">
                 {services.map((s) => {
                   const checked = promoServiceIds.includes(s.id);
                   return (
                     <label
                       key={s.id}
-                      className={`flex items-center gap-2 p-2 rounded-lg border text-xs cursor-pointer ${
+                      className={`flex items-center gap-2 p-2.5 sm:p-2 rounded-lg border text-xs cursor-pointer ${
                         checked ? "border-primary bg-accent font-medium" : "bg-card"
                       }`}
                     >
@@ -2162,7 +2317,7 @@ export function MemberManager({
                     key={opt.val}
                     type="button"
                     onClick={() => setPromoValidityMonths(opt.val)}
-                    className={`py-2 rounded-lg text-xs font-semibold border cursor-pointer ${
+                    className={`h-10 sm:h-9 rounded-lg text-xs font-semibold border cursor-pointer ${
                       promoValidityMonths === opt.val
                         ? "border-primary bg-accent text-accent-foreground"
                         : "bg-card text-muted-foreground"
@@ -2175,11 +2330,19 @@ export function MemberManager({
             </div>
           </div>
 
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setPromoDialogOpen(false)}>
+          <DialogFooter className="gap-2.5">
+            <Button
+              variant="outline"
+              onClick={() => setPromoDialogOpen(false)}
+              className="h-10 sm:h-9 w-full sm:w-auto cursor-pointer"
+            >
               {isZh ? "取消" : "Cancel"}
             </Button>
-            <Button onClick={handleSavePromo} disabled={isPending}>
+            <Button
+              onClick={handleSavePromo}
+              disabled={isPending}
+              className="h-10 sm:h-9 w-full sm:w-auto cursor-pointer"
+            >
               {isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               {isZh ? "保存" : "Save"}
             </Button>
@@ -2194,33 +2357,49 @@ export function MemberManager({
         open={!!editMemberTarget}
         onOpenChange={(o) => !o && setEditMemberTarget(null)}
       >
-        <DialogContent className="max-w-sm rounded-xl">
+        <DialogContent className="w-[calc(100%-2rem)] sm:max-w-sm rounded-2xl">
           <DialogHeader>
             <DialogTitle>{isZh ? "编辑会员资料" : "Edit Member"}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             <div className="space-y-1">
               <Label className="text-xs">{isZh ? "姓名" : "Name"}</Label>
-              <Input value={editName} onChange={(e) => setEditName(e.target.value)} />
+              <Input
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                className="h-10"
+              />
             </div>
             <div className="space-y-1">
               <Label className="text-xs">{isZh ? "手机号" : "Phone"}</Label>
               <Input
                 value={editPhone}
                 onChange={(e) => setEditPhone(e.target.value)}
-                className="font-mono"
+                className="h-10 font-mono"
               />
             </div>
             <div className="space-y-1">
               <Label className="text-xs">{isZh ? "备注" : "Note"}</Label>
-              <Input value={editNotes} onChange={(e) => setEditNotes(e.target.value)} />
+              <Input
+                value={editNotes}
+                onChange={(e) => setEditNotes(e.target.value)}
+                className="h-10"
+              />
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setEditMemberTarget(null)}>
+          <DialogFooter className="gap-2.5">
+            <Button
+              variant="outline"
+              onClick={() => setEditMemberTarget(null)}
+              className="h-10 sm:h-9 w-full sm:w-auto cursor-pointer"
+            >
               {isZh ? "取消" : "Cancel"}
             </Button>
-            <Button onClick={handleSaveEditMember} disabled={isPending}>
+            <Button
+              onClick={handleSaveEditMember}
+              disabled={isPending}
+              className="h-10 sm:h-9 w-full sm:w-auto cursor-pointer"
+            >
               {isZh ? "保存" : "Save"}
             </Button>
           </DialogFooter>
@@ -2231,7 +2410,7 @@ export function MemberManager({
         open={!!adjustTarget}
         onOpenChange={(o) => !o && setAdjustTarget(null)}
       >
-        <DialogContent className="max-w-sm rounded-xl">
+        <DialogContent className="w-[calc(100%-2rem)] sm:max-w-sm rounded-2xl">
           <DialogHeader>
             <DialogTitle>
               {isZh ? "储值手动调账" : "Adjust Credit"} — {adjustTarget?.name}
@@ -2246,7 +2425,7 @@ export function MemberManager({
               <button
                 type="button"
                 onClick={() => setAdjustDirection("ADD")}
-                className={`py-2 rounded-lg text-xs font-semibold border cursor-pointer ${
+                className={`h-10 sm:h-9 rounded-lg text-xs font-semibold border cursor-pointer ${
                   adjustDirection === "ADD"
                     ? "border-primary bg-accent text-accent-foreground"
                     : "bg-card text-muted-foreground"
@@ -2257,7 +2436,7 @@ export function MemberManager({
               <button
                 type="button"
                 onClick={() => setAdjustDirection("DEDUCT")}
-                className={`py-2 rounded-lg text-xs font-semibold border cursor-pointer ${
+                className={`h-10 sm:h-9 rounded-lg text-xs font-semibold border cursor-pointer ${
                   adjustDirection === "DEDUCT"
                     ? "border-destructive bg-destructive/10 text-destructive"
                     : "bg-card text-muted-foreground"
@@ -2277,7 +2456,7 @@ export function MemberManager({
                 value={adjustAmountStr}
                 onChange={(e) => setAdjustAmountStr(e.target.value)}
                 placeholder="0.00"
-                className="font-mono"
+                className="h-10 font-mono"
               />
             </div>
             <div className="space-y-1">
@@ -2288,14 +2467,23 @@ export function MemberManager({
                 value={adjustReason}
                 onChange={(e) => setAdjustReason(e.target.value)}
                 placeholder={isZh ? "例如：充值输入错误冲正" : "e.g. Correct reload typo"}
+                className="h-10"
               />
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setAdjustTarget(null)}>
+          <DialogFooter className="gap-2.5">
+            <Button
+              variant="outline"
+              onClick={() => setAdjustTarget(null)}
+              className="h-10 sm:h-9 w-full sm:w-auto cursor-pointer"
+            >
               {isZh ? "取消" : "Cancel"}
             </Button>
-            <Button onClick={handleConfirmAdjustCredit} disabled={isPending}>
+            <Button
+              onClick={handleConfirmAdjustCredit}
+              disabled={isPending}
+              className="h-10 sm:h-9 w-full sm:w-auto cursor-pointer"
+            >
               {isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               {isZh ? "确认调账" : "Confirm"}
             </Button>
@@ -2307,7 +2495,7 @@ export function MemberManager({
         open={!!deleteMemberTarget}
         onOpenChange={(o) => !o && setDeleteMemberTarget(null)}
       >
-        <DialogContent className="max-w-sm rounded-xl">
+        <DialogContent className="w-[calc(100%-2rem)] sm:max-w-sm rounded-2xl">
           <DialogHeader>
             <DialogTitle className="text-destructive">
               {isZh ? "移除会员" : "Remove Member"}
@@ -2334,16 +2522,115 @@ export function MemberManager({
               )}
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteMemberTarget(null)}>
+          <DialogFooter className="gap-2.5">
+            <Button
+              variant="outline"
+              onClick={() => setDeleteMemberTarget(null)}
+              className="h-10 sm:h-9 w-full sm:w-auto cursor-pointer"
+            >
               {isZh ? "取消" : "Cancel"}
             </Button>
             <Button
               variant="destructive"
               onClick={handleConfirmDeleteMember}
               disabled={isPending}
+              className="h-10 sm:h-9 w-full sm:w-auto cursor-pointer"
             >
               {isZh ? "确认移除" : "Remove"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bound Members List Dialog for Promo Package */}
+      <Dialog
+        open={!!boundMembersPromoTarget}
+        onOpenChange={(o) => !o && setBoundMembersPromoTarget(null)}
+      >
+        <DialogContent className="w-[calc(100%-2rem)] sm:max-w-md rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <Ticket className="h-4 w-4 text-primary shrink-0" />
+              <span className="truncate">{boundMembersPromoTarget?.name}</span>
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              {(() => {
+                const list = boundMembersPromoTarget?.boundMembers ?? [];
+                const activeHolders = list.filter(
+                  (m) => m.status === "ACTIVE" && m.remainingSessions > 0
+                ).length;
+                const totalRemaining = list.reduce(
+                  (sum, m) =>
+                    m.status === "ACTIVE" ? sum + m.remainingSessions : sum,
+                  0
+                );
+                return isZh
+                  ? `共绑定 ${list.length} 人 · ${activeHolders} 人使用中 · 剩余总次数 ${totalRemaining} 次`
+                  : `${list.length} bound · ${activeHolders} active · ${totalRemaining} total sessions left`;
+              })()}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="max-h-[60vh] overflow-y-auto divide-y divide-border rounded-xl border border-border bg-card">
+            {(boundMembersPromoTarget?.boundMembers ?? []).length === 0 ? (
+              <div className="p-6 text-center text-xs text-muted-foreground">
+                {isZh ? "暂无绑定会员" : "No members bound to this promo"}
+              </div>
+            ) : (
+              (boundMembersPromoTarget?.boundMembers ?? []).map((bm) => {
+                const isActive =
+                  bm.status === "ACTIVE" && bm.remainingSessions > 0;
+                return (
+                  <button
+                    key={bm.memberPackageId}
+                    type="button"
+                    onClick={() => {
+                      setBoundMembersPromoTarget(null);
+                      openMemberDetail(bm.customerId);
+                    }}
+                    className="w-full p-3 flex items-center justify-between gap-3 text-left hover:bg-muted/40 transition-colors cursor-pointer"
+                  >
+                    <div className="min-w-0 space-y-0.5">
+                      <div className="font-semibold text-sm text-foreground truncate">
+                        {bm.customerName}
+                      </div>
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground font-mono tabular-nums">
+                        <span>{bm.customerPhone}</span>
+                        <span>·</span>
+                        <span>
+                          {format(new Date(bm.createdAt), "dd MMM yyyy", {
+                            locale: dateLocale,
+                          })}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span
+                        className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-semibold font-mono tabular-nums ${
+                          isActive
+                            ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20"
+                            : "bg-muted text-muted-foreground border border-border"
+                        }`}
+                      >
+                        {bm.remainingSessions}/{bm.totalSessions}{" "}
+                        {isZh ? "剩余" : "left"}
+                      </span>
+                      <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                    </div>
+                  </button>
+                );
+              })
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setBoundMembersPromoTarget(null)}
+              className="h-10 sm:h-9 w-full sm:w-auto cursor-pointer"
+            >
+              {isZh ? "关闭" : "Close"}
             </Button>
           </DialogFooter>
         </DialogContent>

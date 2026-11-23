@@ -123,6 +123,31 @@ export function normalizePhoneNumber(raw: string): string {
 }
 
 /**
+ * Generates phone search substrings so searching `0164738833`, `60164738833`,
+ * `164738833`, or `016` matches records stored either as `0164738833` or `164738833`.
+ */
+export function getPhoneSearchVariants(rawQuery: string): string[] {
+  const trimmed = rawQuery.trim();
+  const variants = new Set<string>();
+  if (trimmed) variants.add(trimmed);
+
+  const normalized = normalizePhoneNumber(trimmed);
+  if (normalized && normalized.length >= 2) {
+    variants.add(normalized);
+    if (normalized.startsWith("0") && normalized.length >= 3) {
+      variants.add(normalized.slice(1));
+    }
+  }
+
+  const digits = trimmed.replace(/\D/g, "");
+  if (digits.startsWith("0") && digits.length >= 3) {
+    variants.add(digits.slice(1));
+  }
+
+  return Array.from(variants);
+}
+
+/**
  * Generate a per-action idempotency key safe across both secure (HTTPS/localhost)
  * and local LAN HTTP environments.
  */

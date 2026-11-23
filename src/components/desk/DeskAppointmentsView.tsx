@@ -503,13 +503,26 @@ export function DeskAppointmentsView({
                       {/* Right: Quick Action Buttons */}
                       <div className="flex items-center gap-2.5 shrink-0 self-end sm:self-center">
                         {/* WhatsApp CTA */}
-                        {apt.phoneNumber && (
+                        {apt.phoneNumber && !apt.phoneNumber.startsWith("WALKIN-") && (
                           <a
-                            href={`https://wa.me/${apt.phoneNumber.replace(/\D/g, "")}`}
+                            href={(() => {
+                              let digits = apt.phoneNumber.replace(/\D/g, "");
+                              if (digits.startsWith("0")) {
+                                digits = "60" + digits.slice(1);
+                              } else if (
+                                digits.startsWith("1") &&
+                                digits.length >= 9 &&
+                                digits.length <= 10
+                              ) {
+                                digits = "60" + digits;
+                              }
+                              return `https://wa.me/${digits}`;
+                            })()}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="p-3 rounded-xl border hover:bg-muted text-green-600"
                             title="Chat on WhatsApp"
+                            aria-label="Chat on WhatsApp"
                           >
                             <MessageCircle className="h-5 w-5" />
                           </a>
@@ -517,33 +530,33 @@ export function DeskAppointmentsView({
 
                         {!isCompleted && !isCancelled && (
                           <>
-                            {/* Ring up sale */}
-                            <Button
-                              type="button"
-                              onClick={() => onRingUpAppointment(apt.id)}
-                              size="sm"
-                              variant="outline"
-                              className="h-12 px-4 text-sm font-bold border border-border/80 bg-card hover:bg-muted text-foreground gap-1.5 rounded-xl shadow-xs cursor-pointer"
-                            >
-                              <Receipt className="h-4 w-4" />
-                              <DeskText
-                                text={DESK_DICT.appointmentView.ringUpBtn}
-                                mode={languageMode}
-                                layout="inline"
-                              />
-                            </Button>
-
-                            {/* Mark completed */}
+                            {/* Mark completed (secondary action) */}
                             <Button
                               type="button"
                               onClick={() => handleMarkStatus(apt.id, "COMPLETED")}
                               disabled={isPending}
                               size="sm"
-                              className="h-12 px-4 text-sm font-bold bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5 rounded-xl shadow-xs cursor-pointer"
+                              variant="outline"
+                              className="h-12 px-3.5 text-xs sm:text-sm font-semibold border border-border/80 bg-card hover:bg-muted text-muted-foreground hover:text-foreground gap-1.5 rounded-xl cursor-pointer"
                             >
                               <CheckCircle2 className="h-4 w-4" />
                               <DeskText
                                 text={DESK_DICT.appointmentView.markDoneBtn}
+                                mode={languageMode}
+                                layout="inline"
+                              />
+                            </Button>
+
+                            {/* Ring up sale (Primary CTA — Von Restorff Effect) */}
+                            <Button
+                              type="button"
+                              onClick={() => onRingUpAppointment(apt.id)}
+                              size="sm"
+                              className="h-12 px-4 text-sm font-bold bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5 rounded-xl shadow-xs cursor-pointer"
+                            >
+                              <Receipt className="h-4 w-4" />
+                              <DeskText
+                                text={DESK_DICT.appointmentView.ringUpBtn}
                                 mode={languageMode}
                                 layout="inline"
                               />

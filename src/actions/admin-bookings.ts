@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "./auth";
 import { revalidatePath } from "next/cache";
 import { invalidateBookingCache } from "@/lib/booking-cache";
+import { getPhoneSearchVariants } from "@/lib/utils";
 import type { ActionResult, BookingDto, BookingStatus } from "@/types";
 
 // ----------------------------------------------------------------
@@ -182,11 +183,14 @@ export async function getAllBookings(opts?: {
 
     if (hasSearch) {
       const q = opts!.search!.trim();
+      const phoneVariants = getPhoneSearchVariants(q);
       andConditions.push({
         OR: [
           { referenceCode: { contains: q, mode: "insensitive" } },
           { customer: { name: { contains: q, mode: "insensitive" } } },
-          { customer: { phoneNumber: { contains: q } } },
+          ...phoneVariants.map((variant) => ({
+            customer: { phoneNumber: { contains: variant } },
+          })),
           { service: { name: { contains: q, mode: "insensitive" } } },
         ],
       });

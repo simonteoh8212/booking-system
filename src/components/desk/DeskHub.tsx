@@ -6,13 +6,14 @@ import { lockDeskSession } from "@/actions/auth";
 import {
   getDeskDailySummary,
   getDeskAppointments,
+  updateDeskAppointmentStatus,
   type DeskDailySummary,
   type DeskAppointmentItem,
 } from "@/actions/desk";
 import {
   updateDeskLanguageSetting,
 } from "@/actions/deposit";
-import { formatPrice, getServiceImage, isInternalAppMode, toBusinessDateString } from "@/lib/utils";
+import { formatPrice, getServiceImage, toBusinessDateString } from "@/lib/utils";
 import Image from "next/image";
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
@@ -26,13 +27,16 @@ import { DeskFinancialReportView } from "./DeskFinancialReportView";
 import { AnimatedServiceCountBadge } from "./AnimatedServiceCountBadge";
 import { DeskPinUnlockDialog } from "./DeskPinUnlockDialog";
 import { TodaySalesDetailsDialog } from "@/components/admin/TodaySalesDetailsDialog";
-import { DeskLanguageSwitcher } from "./DeskLanguageSwitcher";
+import { CustomerReceiptDialog } from "@/components/admin/CustomerReceiptDialog";
+import { DailyBriefingDialog } from "@/components/admin/DailyBriefingDialog";
 import { DeskLanguageFirstTimeModal } from "./DeskLanguageFirstTimeModal";
 import { DeskText } from "./DeskText";
 import { FlagIcon } from "@/components/FlagIcon";
-import { RushModeControl } from "@/components/admin/RushModeControl";
 import { EmergencyClosureModal } from "@/components/admin/EmergencyClosureModal";
-import { buildMemberCreditWhatsAppUrl } from "@/lib/whatsapp";
+import {
+  buildCustomerReceiptWhatsAppUrl,
+  type CustomerReceiptData,
+} from "@/lib/whatsapp";
 import {
   DESK_DICT,
   DESK_LANGUAGE_OPTIONS,
@@ -54,7 +58,6 @@ import {
   Eye,
   EyeOff,
   BarChart3,
-  Menu,
   ChevronRight,
   ChevronDown,
   ChevronUp,
@@ -63,6 +66,7 @@ import {
   LayoutDashboard,
   Coins,
   MessageCircle,
+  Printer,
   X,
 } from "lucide-react";
 import {
@@ -101,13 +105,9 @@ export function DeskHub({
     initialSummary.deskLanguage || "ONLY_EN"
   );
   const [showFirstTimeLangModal, setShowFirstTimeLangModal] = useState(false);
-  const [lastCreditReceipt, setLastCreditReceipt] = useState<{
-    customerName: string;
-    customerPhone: string;
-    creditUsedCents: number;
-    remainingCreditCents: number;
-    referenceCode?: string;
-  } | null>(null);
+  const [lastSaleReceipt, setLastSaleReceipt] =
+    useState<CustomerReceiptData | null>(null);
+  const [isReceiptDialogOpen, setIsReceiptDialogOpen] = useState(false);
   const [isEmergencyModalOpen, setIsEmergencyModalOpen] = useState(false);
   // Backend visibility flags controlled in Admin Settings
   const isTodayCardVisible = summary.showTodaySales !== false;
@@ -131,6 +131,8 @@ export function DeskHub({
 
   // Collapsible toggle for Today's Service Sales Breakdown (default collapsed to avoid POS button confusion)
   const [isBreakdownExpanded, setIsBreakdownExpanded] = useState<boolean>(false);
+  const [isAppointmentsStripExpanded, setIsAppointmentsStripExpanded] =
+    useState<boolean>(true);
 
   function toggleBreakdownExpanded() {
     setIsBreakdownExpanded((prev) => {
@@ -424,17 +426,25 @@ export function DeskHub({
         }
       );
 
-      if (
-        (saleData.creditUsedCents ?? 0) > 0 &&
-        saleData.customerPhone &&
-        !saleData.customerPhone.startsWith("WALKIN-")
-      ) {
-        setLastCreditReceipt({
-          customerName: saleData.customerName || "Member",
-          customerPhone: saleData.customerPhone,
+      if (saleData.receipt) {
+        setLastSaleReceipt(saleData.receipt);
+      } else {
+        setLastSaleReceipt({
+          referenceCode: saleData.referenceCode || "SALE",
+          timestampIso: new Date().toISOString(),
+          customerName: saleData.customerName || "Walk-in Customer",
+          customerPhone: saleData.customerPhone || null,
+          items: saleData.serviceNames.map((n) => ({
+            name: n,
+            originalPriceCents: saleData.totalCents,
+            paidPriceCents: saleData.totalCents,
+            promoLabel: null,
+          })),
+          subtotalCents: saleData.totalCents + (saleData.creditUsedCents ?? 0),
           creditUsedCents: saleData.creditUsedCents ?? 0,
-          remainingCreditCents: saleData.remainingCreditCents ?? 0,
-          referenceCode: saleData.referenceCode,
+          remainingCreditCents: saleData.remainingCreditCents ?? null,
+          totalPaidCents: saleData.totalCents,
+          paymentMethod: "CASH",
         });
       }
     }
@@ -746,39 +756,87 @@ export function DeskHub({
         </div>
       </div>
 
-      {lastCreditReceipt && (
+      {lastSaleReceipt && (
         <div className="p-3.5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 flex flex-wrap items-center justify-between gap-3">
-          <div className="text-xs font-semibold text-foreground tabular-nums">
-            {languageMode === "ONLY_ZH"
-              ? `${lastCreditReceipt.customerName} 储值已扣款 ${formatPrice(lastCreditReceipt.creditUsedCents, currencySymbol)} · 剩余 ${formatPrice(lastCreditReceipt.remainingCreditCents, currencySymbol)}`
-              : `${lastCreditReceipt.customerName} used ${formatPrice(lastCreditReceipt.creditUsedCents, currencySymbol)} credit · Remaining ${formatPrice(lastCreditReceipt.remainingCreditCents, currencySymbol)}`}
-          </div>
-          <div className="flex items-center gap-2">
-            <a
-              href={buildMemberCreditWhatsAppUrl({
-                customerName: lastCreditReceipt.customerName,
-                customerPhone: lastCreditReceipt.customerPhone,
-                action: "DEDUCT",
-                amountCents: lastCreditReceipt.creditUsedCents,
-                newBalanceCents: lastCreditReceipt.remainingCreditCents,
-                currencySymbol,
-                referenceCode: lastCreditReceipt.referenceCode,
-                businessName,
-                language: languageMode === "ONLY_ZH" ? "zh" : "en",
-              })}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold transition-colors"
-            >
-              <MessageCircle className="h-3.5 w-3.5" />
-              <span>
-                {languageMode === "ONLY_ZH" ? "发送 WhatsApp 凭证" : "Send WhatsApp Receipt"}
+          <div className="min-w-0 space-y-0.5">
+            <div className="flex items-center gap-2 text-xs font-bold text-foreground tabular-nums">
+              <Receipt className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+              <span className="truncate">
+                {lastSaleReceipt.customerName} · {lastSaleReceipt.referenceCode}
               </span>
-            </a>
+              <span className="font-mono text-emerald-700 dark:text-emerald-400">
+                {formatPrice(lastSaleReceipt.totalPaidCents, currencySymbol)}
+              </span>
+            </div>
+            <div className="text-[11px] text-muted-foreground tabular-nums truncate">
+              {lastSaleReceipt.items
+                .map((it) => resolveServiceName(it.name, languageMode).primary)
+                .join(", ")}
+              {(lastSaleReceipt.creditUsedCents ?? 0) > 0
+                ? languageMode === "ONLY_ZH"
+                  ? ` · 储值扣款 ${formatPrice(lastSaleReceipt.creditUsedCents ?? 0, currencySymbol)}（余额 ${formatPrice(lastSaleReceipt.remainingCreditCents ?? 0, currencySymbol)}）`
+                  : ` · Credit used ${formatPrice(lastSaleReceipt.creditUsedCents ?? 0, currencySymbol)} (Bal ${formatPrice(lastSaleReceipt.remainingCreditCents ?? 0, currencySymbol)})`
+                : ""}
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setIsReceiptDialogOpen(true)}
+              className="h-9 px-3 rounded-lg bg-card text-xs font-semibold gap-1.5 cursor-pointer"
+            >
+              <Printer className="h-3.5 w-3.5" />
+              <span>
+                {languageMode === "ONLY_ZH" ? "查看 / 打印收据" : "Receipt / Print"}
+              </span>
+            </Button>
+
+            {lastSaleReceipt.customerPhone &&
+            !lastSaleReceipt.customerPhone.startsWith("WALKIN-") ? (
+              <a
+                href={buildCustomerReceiptWhatsAppUrl(
+                  {
+                    ...lastSaleReceipt,
+                    items: lastSaleReceipt.items.map((it) => ({
+                      ...it,
+                      name: resolveServiceName(it.name, languageMode).primary,
+                    })),
+                  },
+                  {
+                    language: languageMode === "ONLY_ZH" ? "zh" : "en",
+                    businessName,
+                    currencySymbol,
+                  }
+                )}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold transition-colors"
+              >
+                <MessageCircle className="h-3.5 w-3.5" />
+                <span>
+                  {languageMode === "ONLY_ZH" ? "WhatsApp 收据" : "WhatsApp"}
+                </span>
+              </a>
+            ) : (
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => setIsReceiptDialogOpen(true)}
+                className="h-9 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold gap-1.5 cursor-pointer"
+              >
+                <MessageCircle className="h-3.5 w-3.5" />
+                <span>
+                  {languageMode === "ONLY_ZH" ? "WhatsApp 收据" : "WhatsApp"}
+                </span>
+              </Button>
+            )}
+
             <button
               type="button"
-              onClick={() => setLastCreditReceipt(null)}
-              className="p-1 rounded-md text-muted-foreground hover:text-foreground cursor-pointer"
+              onClick={() => setLastSaleReceipt(null)}
+              className="p-1.5 rounded-md text-muted-foreground hover:text-foreground cursor-pointer"
               aria-label="Dismiss"
             >
               <X className="h-4 w-4" />
@@ -840,6 +898,123 @@ export function DeskHub({
           </button>
         )}
       </div>
+
+      {/* Today's Appointments Quick-Glance Queue */}
+      {(() => {
+        const upcomingToday = appointments
+          .filter((a) => a.status === "PENDING" || a.status === "CONFIRMED")
+          .sort((a, b) => a.startDatetime.localeCompare(b.startDatetime));
+        if (upcomingToday.length === 0) return null;
+
+        const isZhMode = languageMode === "ONLY_ZH";
+        return (
+          <Card className="border border-border/80 bg-card rounded-2xl shadow-xs overflow-hidden">
+            <div className="px-4 py-3 sm:px-5 flex items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={() =>
+                  setIsAppointmentsStripExpanded((prev) => !prev)
+                }
+                className="flex items-center gap-2.5 min-w-0 text-left cursor-pointer"
+              >
+                <div className="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                  <CalendarDays className="h-4 w-4" />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-sm font-bold text-foreground">
+                      {isZhMode ? "今日待办预约" : "Today's Upcoming"}
+                    </span>
+                    <Badge
+                      variant="secondary"
+                      className="text-[11px] font-mono tabular-nums px-1.5 py-0 h-5"
+                    >
+                      {upcomingToday.length}
+                    </Badge>
+                  </div>
+                </div>
+                {isAppointmentsStripExpanded ? (
+                  <ChevronUp className="h-4 w-4 text-muted-foreground shrink-0" />
+                ) : (
+                  <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
+                )}
+              </button>
+
+              {isMakeAppointmentVisible && (
+                <button
+                  type="button"
+                  onClick={() => setView("APPOINTMENTS")}
+                  className="text-xs font-semibold text-primary hover:underline cursor-pointer shrink-0"
+                >
+                  {isZhMode ? "查看全部" : "View All"}
+                </button>
+              )}
+            </div>
+
+            {isAppointmentsStripExpanded && (
+              <div className="border-t border-border/60 divide-y divide-border/60">
+                {upcomingToday.slice(0, 4).map((apt) => {
+                  const timeStr = new Intl.DateTimeFormat("en-US", {
+                    timeZone: "Asia/Kuala_Lumpur",
+                    hour: "numeric",
+                    minute: "2-digit",
+                    hour12: true,
+                  }).format(new Date(apt.startDatetime));
+                  const svcLabel = resolveServiceName(
+                    apt.serviceName,
+                    languageMode
+                  ).primary;
+
+                  return (
+                    <div
+                      key={apt.id}
+                      className="px-4 py-2.5 sm:px-5 flex items-center justify-between gap-3"
+                    >
+                      <div className="min-w-0 flex items-center gap-3">
+                        <span className="text-xs font-mono font-bold text-primary tabular-nums shrink-0 w-16">
+                          {timeStr}
+                        </span>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-sm font-semibold text-foreground truncate">
+                              {apt.customerName}
+                            </span>
+                            {apt.status === "PENDING" && (
+                              <span className="inline-flex items-center px-1.5 py-0.2 rounded bg-amber-500/15 text-amber-700 dark:text-amber-400 text-[10px] font-semibold shrink-0">
+                                {isZhMode ? "待确认" : "Pending"}
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-xs text-muted-foreground truncate">
+                            {svcLabel}
+                          </div>
+                        </div>
+                      </div>
+
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleRingUpFromAppointment(apt.id)}
+                        className="h-8 px-2.5 rounded-lg text-xs font-semibold shrink-0 cursor-pointer"
+                      >
+                        {isZhMode ? "结账" : "Checkout"}
+                      </Button>
+                    </div>
+                  );
+                })}
+                {upcomingToday.length > 4 && (
+                  <div className="px-4 py-2 text-center text-[11px] text-muted-foreground bg-muted/20">
+                    {isZhMode
+                      ? `还有 ${upcomingToday.length - 4} 位预约顾客`
+                      : `+${upcomingToday.length - 4} more scheduled today`}
+                  </div>
+                )}
+              </div>
+            )}
+          </Card>
+        );
+      })()}
 
       {/* Mobile-Only: Quick Compact Scoreboard Pill */}
       {totalVisibleScoreboardCards > 0 && (
@@ -1321,6 +1496,16 @@ export function DeskHub({
         onSelect={handleFirstTimeLangSelect}
       />
 
+      {/* Customer Receipt Preview / Print / WhatsApp Dialog */}
+      <CustomerReceiptDialog
+        receipt={lastSaleReceipt}
+        open={isReceiptDialogOpen}
+        onOpenChange={setIsReceiptDialogOpen}
+        businessName={businessName}
+        currencySymbol={currencySymbol}
+        languageMode={languageMode}
+      />
+
       {/* Emergency Closure & Mass Reschedule Modal */}
       <EmergencyClosureModal
         isOpen={isEmergencyModalOpen}
@@ -1330,6 +1515,39 @@ export function DeskHub({
         }}
         langMode={languageMode}
         currencySymbol={currencySymbol}
+      />
+
+      {/* Once-per-day Schedule Briefing Popup (only when today has upcoming appointments) */}
+      <DailyBriefingDialog
+        appointments={appointments.map((a) => ({
+          id: a.id,
+          customerName: a.customerName,
+          phoneNumber: a.phoneNumber,
+          serviceName: a.serviceName,
+          startDatetime: a.startDatetime,
+          status: a.status,
+        }))}
+        languageMode={languageMode}
+        suppressAutoOpen={
+          showFirstTimeLangModal || isPinDialogOpen || view !== "HUB"
+        }
+        onConfirmBooking={async (id) => {
+          const res = await updateDeskAppointmentStatus(id, "CONFIRMED");
+          if (res.success) {
+            setAppointments((prev) =>
+              prev.map((a) => (a.id === id ? { ...a, status: "CONFIRMED" } : a))
+            );
+            toast.success(
+              languageMode === "ONLY_ZH" ? "预约已确认" : "Booking confirmed"
+            );
+          } else {
+            toast.error(res.error);
+          }
+        }}
+        onCheckoutBooking={handleRingUpFromAppointment}
+        onViewAgenda={
+          isMakeAppointmentVisible ? () => setView("APPOINTMENTS") : undefined
+        }
       />
     </div>
     </>

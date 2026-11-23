@@ -202,6 +202,18 @@ export interface MonthlyFinancialReportDto {
 // ----------------------------------------------------------------
 // Member, Credit & Promo Package DTOs
 // ----------------------------------------------------------------
+export interface PromoBoundMemberDto {
+  memberPackageId: string;
+  customerId: string;
+  customerName: string;
+  customerPhone: string;
+  remainingSessions: number;
+  totalSessions: number;
+  status: string;
+  expiresAt: string | null;
+  createdAt: string;
+}
+
 export interface PromoPackageDto {
   id: string;
   name: string;
@@ -211,6 +223,9 @@ export interface PromoPackageDto {
   serviceIds: string[];
   validityMonths: number | null;
   isActive: boolean;
+  boundCount?: number;
+  activeBoundCount?: number;
+  boundMembers?: PromoBoundMemberDto[];
   createdAt: string;
 }
 

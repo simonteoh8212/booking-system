@@ -22,7 +22,7 @@ import {
 import { formatPrice } from "@/lib/utils";
 import { format } from "date-fns";
 import type { BookingDto, BookingStatus } from "@/types";
-import { Loader2, Trash2, Phone } from "lucide-react";
+import { Loader2, Trash2, MessageCircle } from "lucide-react";
 
 const STATUS_OPTIONS: { id: BookingStatus; en: string; zh: string }[] = [
   { id: "PENDING", en: "Pending", zh: "待处理" },
@@ -92,8 +92,11 @@ export function AgendaCard({
       </div>
 
       {/* Details */}
-      <div className="flex-1 min-w-0">
+      <div className="flex-1 min-w-0 space-y-1">
         <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-sm font-bold text-foreground truncate">
+            {booking.customer.name}
+          </span>
           <BookingStatusBadge
             status={booking.status}
             receiptSubmittedAt={booking.receiptSubmittedAt}
@@ -103,18 +106,41 @@ export function AgendaCard({
         <p className="text-sm text-muted-foreground truncate">
           {booking.service.name}
         </p>
-        <div className="flex items-center gap-3 mt-1">
-          <span className="text-xs text-muted-foreground flex items-center gap-1">
-            <Phone className="h-3 w-3" />
-            {booking.customer.phoneNumber}
-          </span>
-          <span className="text-xs font-medium text-primary">
+        <div className="flex items-center gap-3 flex-wrap pt-0.5">
+          {booking.customer.phoneNumber.startsWith("WALKIN-") ? (
+            <span className="text-xs text-muted-foreground">
+              {isZh ? "散客" : "Walk-in"}
+            </span>
+          ) : (
+            <a
+              href={(() => {
+                let digits = booking.customer.phoneNumber.replace(/\D/g, "");
+                if (digits.startsWith("0")) {
+                  digits = "60" + digits.slice(1);
+                } else if (
+                  digits.startsWith("1") &&
+                  digits.length >= 9 &&
+                  digits.length <= 10
+                ) {
+                  digits = "60" + digits;
+                }
+                return `https://wa.me/${digits}`;
+              })()}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-emerald-600 dark:text-emerald-400 hover:underline inline-flex items-center gap-1 font-mono font-medium"
+            >
+              <MessageCircle className="h-3.5 w-3.5 shrink-0" />
+              <span>{booking.customer.phoneNumber}</span>
+            </a>
+          )}
+          <span className="text-xs font-semibold text-primary tabular-nums">
             {formatPrice(booking.totalPriceCents, currencySymbol)}
           </span>
           {booking.depositDueCents != null &&
           booking.depositDueCents > 0 &&
           booking.depositDueCents < booking.totalPriceCents && (
-            <span className="text-[11px] text-muted-foreground">
+            <span className="text-[11px] text-muted-foreground tabular-nums">
               ({isZh ? "定金" : "Dep"}:{" "}
               <span className="text-green-600 font-semibold">
                 {formatPrice(booking.depositDueCents, currencySymbol)}
@@ -152,7 +178,7 @@ export function AgendaCard({
                 booking.status === "CANCELLED" || booking.status === "COMPLETED"
               }
             >
-              <SelectTrigger className="w-32 h-8 text-xs">
+              <SelectTrigger className="w-32 h-10 sm:h-8 text-xs">
                 <SelectValue>{currentStatusLabel}</SelectValue>
               </SelectTrigger>
               <SelectContent>
@@ -169,42 +195,53 @@ export function AgendaCard({
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+                  className="h-10 w-10 sm:h-8 sm:w-8 text-destructive hover:text-destructive hover:bg-destructive/10 cursor-pointer"
                   onClick={() => setCancelOpen(true)}
+                  aria-label={isZh ? "取消预约" : "Cancel booking"}
                 >
                   <Trash2 className="h-4 w-4" />
                 </Button>
                 <Dialog open={cancelOpen} onOpenChange={setCancelOpen}>
-                  <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>
-                      {isZh ? "取消此预约？" : "Cancel Booking?"}
-                    </DialogTitle>
-                    <DialogDescription>
-                      {isZh ? (
-                        <>
-                          即将取消客户 <strong>{booking.customer.name}</strong> 的预约单{" "}
-                          <strong>{booking.referenceCode}</strong>，并立即释放该时段。此操作无法撤销。
-                        </>
-                      ) : (
-                        <>
-                          This will cancel booking <strong>{booking.referenceCode}</strong> for{" "}
-                          <strong>{booking.customer.name}</strong> and immediately free up the slot.
-                          This action cannot be undone.
-                        </>
-                      )}
-                    </DialogDescription>
-                  </DialogHeader>
-                  <DialogFooter>
-                    <Button variant="outline" onClick={() => setCancelOpen(false)} disabled={isPending}>
-                      {isZh ? "保留预约" : "Keep Booking"}
-                    </Button>
-                    <Button variant="destructive" onClick={handleCancel} disabled={isPending}>
-                      {isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                      {isZh ? "确认取消" : "Cancel Booking"}
-                    </Button>
-                  </DialogFooter>
-                </DialogContent>
+                  <DialogContent className="w-[calc(100%-2rem)] sm:max-w-md rounded-2xl">
+                    <DialogHeader>
+                      <DialogTitle>
+                        {isZh ? "取消此预约？" : "Cancel Booking?"}
+                      </DialogTitle>
+                      <DialogDescription className="text-xs leading-relaxed">
+                        {isZh ? (
+                          <>
+                            即将取消客户 <strong>{booking.customer.name}</strong> 的预约单{" "}
+                            <strong>{booking.referenceCode}</strong>，并立即释放该时段。此操作无法撤销。
+                          </>
+                        ) : (
+                          <>
+                            This will cancel booking <strong>{booking.referenceCode}</strong> for{" "}
+                            <strong>{booking.customer.name}</strong> and immediately free up the slot.
+                            This action cannot be undone.
+                          </>
+                        )}
+                      </DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter className="gap-2.5">
+                      <Button
+                        variant="outline"
+                        onClick={() => setCancelOpen(false)}
+                        disabled={isPending}
+                        className="h-10 sm:h-9 w-full sm:w-auto cursor-pointer"
+                      >
+                        {isZh ? "保留预约" : "Keep Booking"}
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        onClick={handleCancel}
+                        disabled={isPending}
+                        className="h-10 sm:h-9 w-full sm:w-auto cursor-pointer"
+                      >
+                        {isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                        {isZh ? "确认取消" : "Cancel Booking"}
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
                 </Dialog>
               </>
             )}
