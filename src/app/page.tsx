@@ -72,7 +72,7 @@ export default async function BookingPage() {
               <span>Watch Demo Video / 功能演示视频</span>
             </Link>
           </p>
-          <p>Secure booking powered by BookEase</p>
+          <p>Secure online booking</p>
         </footer>
       </div>
     </CustomerLanguageProvider>

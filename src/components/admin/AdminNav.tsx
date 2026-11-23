@@ -62,6 +62,8 @@ const navItems: NavItem[] = [
   { href: "/admin/settings", label: { zh: "系统设置", en: "Settings" }, icon: Settings },
 ];
 
+const BRAND_NAME = process.env.NEXT_PUBLIC_BUSINESS_NAME?.trim() || "SideBox";
+
 const mobileMoreItems: NavItem[] = navItems.slice(4);
 
 interface AdminNavProps {
@@ -322,7 +324,7 @@ export function AdminNav({
         <div className="h-14 px-2 flex items-center justify-between border-b border-border/80">
           <Link
             href="/admin"
-            title="SideBox"
+            title={BRAND_NAME}
             className="flex items-center font-bold text-foreground min-w-0 pl-1"
           >
             <span className="w-7 h-7 rounded-lg bg-primary text-primary-foreground flex items-center justify-center shrink-0">
@@ -330,13 +332,13 @@ export function AdminNav({
             </span>
             <span
               className={cn(
-                "tracking-tight text-sm font-extrabold whitespace-nowrap overflow-hidden transition-[max-width,opacity,transform,margin] duration-300 ease-out",
+                "tracking-tight text-sm font-extrabold whitespace-nowrap overflow-hidden truncate transition-[max-width,opacity,transform,margin] duration-300 ease-out",
                 isCollapsed
                   ? "max-w-0 opacity-0 -translate-x-1 ml-0 pointer-events-none"
-                  : "max-w-[110px] opacity-100 translate-x-0 ml-2.5"
+                  : "max-w-[130px] opacity-100 translate-x-0 ml-2.5"
               )}
             >
-              SideBox
+              {BRAND_NAME}
             </span>
           </Link>
 
@@ -592,11 +594,11 @@ export function AdminNav({
       {/* MOBILE TOP BAR + DETACHED FLOATING PILL NAVIGATION (< 768px)      */}
       {/* ================================================================= */}
       <header className="md:hidden sticky top-0 z-40 h-12 border-b border-border bg-background/95 backdrop-blur px-4 flex items-center justify-between">
-        <Link href="/admin" className="flex items-center gap-2 font-bold text-foreground">
-          <span className="w-6 h-6 rounded-md bg-primary text-primary-foreground flex items-center justify-center">
+        <Link href="/admin" className="flex items-center gap-2 font-bold text-foreground min-w-0">
+          <span className="w-6 h-6 rounded-md bg-primary text-primary-foreground flex items-center justify-center shrink-0">
             <Box className="h-3.5 w-3.5" />
           </span>
-          <span className="text-sm font-extrabold tracking-tight">SideBox</span>
+          <span className="text-sm font-extrabold tracking-tight truncate">{BRAND_NAME}</span>
         </Link>
 
         <div className="flex items-center gap-2">

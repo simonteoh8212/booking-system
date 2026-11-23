@@ -4,7 +4,7 @@ import { ProductDemoPlayer } from "@/components/demo/ProductDemoPlayer";
 import { ArrowLeft, Sparkles, CheckCircle2, ShieldCheck, Zap, Smartphone, Monitor } from "lucide-react";
 
 export const metadata: Metadata = {
-  title: "Live Product Demo Video | BookEase",
+  title: "Live Product Demo Video | Salon Booking System",
   description:
     "Interactive step-by-step introduction video showing customer self-booking and salon front desk management in real-time.",
 };
@@ -101,7 +101,7 @@ export default function DemoPage() {
 
       {/* Footer */}
       <footer className="border-t border-slate-900 py-6 text-center text-xs text-slate-500">
-        <p>BookEase Booking System • Interactive Demo Video</p>
+        <p>Salon Booking System • Interactive Demo Video</p>
       </footer>
     </div>
   );

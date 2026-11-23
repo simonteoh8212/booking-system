@@ -202,7 +202,7 @@ export function ProductDemoPlayer() {
           </div>
           <div>
             <h2 className="text-base sm:text-lg font-extrabold text-white tracking-tight flex items-center gap-2">
-              BookEase Mobile Web App
+              Salon Mobile Web App
               <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 font-bold border border-emerald-500/30">
                 PWA Ready
               </span>
@@ -348,7 +348,7 @@ export function ProductDemoPlayer() {
             <div className="pt-2 pb-2.5 px-4 bg-slate-900 border-b border-slate-800/80 flex items-center justify-between">
               <div>
                 <p className="text-[9px] uppercase font-bold text-emerald-400 tracking-wider">
-                  BookEase Salon
+                  Salon App
                 </p>
                 <h4 className="text-xs font-black text-white">Luxe Beauty & Spa</h4>
               </div>
