@@ -6,8 +6,12 @@ export default function manifest(): MetadataRoute.Manifest {
   const shortName = process.env.NEXT_PUBLIC_APP_SHORT_NAME || appName;
   const rawPrimary = process.env.NEXT_PUBLIC_PRIMARY_COLOR?.trim();
   const themeColor =
-    rawPrimary && /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(rawPrimary)
-      ? rawPrimary
+    rawPrimary && /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(rawPrimary)
+      ? rawPrimary.length === 9
+        ? rawPrimary.slice(0, 7)
+        : rawPrimary.length === 5
+        ? rawPrimary.slice(0, 4)
+        : rawPrimary
       : '#70adf5';
 
   return {

@@ -32,21 +32,24 @@ const appName = process.env.NEXT_PUBLIC_APP_NAME || "SideBox";
 function sanitizeCssColor(raw?: string): string | null {
   const val = raw?.trim();
   if (!val) return null;
-  if (/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(val)) return val;
+  if (/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(val)) {
+    return val;
+  }
   if (/^oklch\(\s*[0-9.]+%?\s+[0-9.]+\s+[0-9.]+\s*\)$/i.test(val)) return val;
   return null;
 }
 
 function getContrastForeground(hexColor: string): string {
   if (!hexColor.startsWith("#")) return "#ffffff";
+  const body = hexColor.slice(1);
   const hex =
-    hexColor.length === 4
-      ? hexColor
-          .slice(1)
+    body.length === 3 || body.length === 4
+      ? body
+          .slice(0, 3)
           .split("")
           .map((c) => c + c)
           .join("")
-      : hexColor.slice(1);
+      : body.slice(0, 6);
   const r = parseInt(hex.slice(0, 2), 16);
   const g = parseInt(hex.slice(2, 4), 16);
   const b = parseInt(hex.slice(4, 6), 16);
